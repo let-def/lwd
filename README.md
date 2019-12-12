@@ -1,0 +1,2 @@
+# lwd
+Lightweight document
