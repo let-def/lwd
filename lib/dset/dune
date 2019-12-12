@@ -1,9 +1,0 @@
-(library
- (name dset)
- (modules dset)
- (wrapped false))
-
-(test
- (name test_1)
- (modules test_1)
- (libraries dset))
