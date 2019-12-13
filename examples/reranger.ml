@@ -9,7 +9,7 @@ let is_double_click =
     let k' = !k in
     incr k;
     fun () ->
-      let time = Unix.time () in
+      let time = Unix.gettimeofday () in
       let result =
         let k, t = !last in
         k = k' && t +. 0.4 >= time
@@ -20,6 +20,8 @@ let is_double_click =
 let remember_width ~wref ui =
   wref := max (Ui.layout_spec ui).Ui.w !wref;
   Ui.resize ~w:!wref ui
+
+let menu_quit = main_menu_item "Quit" (fun () -> exit 0)
 
 let rec dir ?(initial_path = []) ?after_width:(wref = ref 0) path =
   let column = Lwd.var (Lwd.return Ui.empty) in
@@ -130,6 +132,9 @@ let () =
     in
     List.rev (split (Sys.getcwd ()))
   in
+  let ui =
+    Lwd_utils.pack Ui.pack_y [ menu_quit; dir ~initial_path "/"]
+  in
   Ui_loop.run
-    (Lwd.map' (dir ~initial_path "/") (fun ui ->
+    (Lwd.map' ui (fun ui ->
          ui |> Ui.resize ~fill:gravity_fill ~crop:gravity_crop))
