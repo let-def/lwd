@@ -1,0 +1,11 @@
+
+(executable
+ (name cbor_explorer)
+ (modules cbor_explorer)
+ (flags :standard -warn-error -a)
+ (libraries notty notty.unix nottui nottui-widgets cbor containers))
+
+(executable
+ (name cbor_of_fs)
+ (modules cbor_of_fs)
+ (libraries containers cbor))
