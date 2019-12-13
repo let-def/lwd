@@ -17,3 +17,7 @@ run-stress:
 
 run-stress.exe:
 	dune exec examples/stress.exe
+
+run-cbor-explorer.exe:
+	dune exec examples/cbor/cbor_of_fs.exe -- -o curdir.cbor ./
+	dune exec examples/cbor/cbor_explorer.exe -- curdir.cbor
