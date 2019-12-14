@@ -18,8 +18,7 @@ and _ desc =
   | Map2 : 'a t * 'b t * ('a -> 'b -> 'c) -> 'c desc
   | Pair : 'a t * 'b t -> ('a * 'b) desc
   | App  : ('a -> 'b) t * 'a t -> 'b desc
-  | Bind : { child : 'a t; map : 'a -> 'b t;
-             mutable intermediate : 'b t option } -> 'b desc
+  | Join : { child : 'a t t; mutable intermediate : 'a t option } -> 'a desc
   | Var  : { mutable binding : 'a } -> 'a desc
   | Prim : { acquire : unit -> 'a;
              release : 'a -> unit } -> 'a desc
@@ -54,9 +53,8 @@ let map' x f = impure (Map (x, f))
 let map2' x y f = impure (Map2 (x, y, f))
 let pair x y = impure (Pair (x, y))
 let app f x = impure (App (f, x))
-let bind child map = impure (Bind { child; map; intermediate = None })
-let id x = x
-let join child = impure (Bind { child; map = id; intermediate = None })
+let join child = impure (Join { child; intermediate = None })
+let bind x f = join (map f x)
 
 (* Management of trace indices *)
 
@@ -250,7 +248,7 @@ let rec sub_release
             sub_release (sub_release failures self x) self y
           | App  (x, y) ->
             sub_release (sub_release failures self x) self y
-          | Bind ({ child; intermediate; map = _ } as t) ->
+          | Join ({ child; intermediate } as t) ->
             let failures = sub_release failures self child in
             begin match intermediate with
               | None -> failures
@@ -322,7 +320,7 @@ let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
       | App  (x, y) ->
         sub_acquire self x;
         sub_acquire self y
-      | Bind { child; intermediate; map = _ } ->
+      | Join { child; intermediate } ->
         sub_acquire self child;
         begin match intermediate with
           | None -> ()
@@ -362,12 +360,12 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
         | Map2 (x, y, f) -> f (sub_sample self x) (sub_sample self y)
         | Pair (x, y) -> (sub_sample self x, sub_sample self y)
         | App  (f, x) -> (sub_sample self f) (sub_sample self x)
-        | Bind x ->
+        | Join x ->
           let old_intermediate = x.intermediate in
           let intermediate =
             (* We haven't touched any state yet,
-               it is safe for [x.map] or [sub_sample] to raise *)
-            x.map (sub_sample self x.child)
+               it is safe for [sub_sample] to raise *)
+            sub_sample self x.child
           in
           x.intermediate <- Some intermediate;
           sub_acquire self intermediate;
