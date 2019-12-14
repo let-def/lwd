@@ -1,4 +1,9 @@
 (executable
+ (name minimal)
+ (modules minimal)
+ (libraries notty notty.unix nottui nottui-widgets))
+
+(executable
  (name misc)
  (modules misc)
  (libraries notty notty.unix nottui nottui-widgets))
