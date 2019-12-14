@@ -659,9 +659,7 @@ struct
       | None ->
         let quit = Lwd.var false in
         let t = t |> Lwd.map (Ui.event_filter (function
-            | `Key (`ASCII 'q', [`Meta]) ->
-              Lwd.set quit true;
-              `Handled
+            | `Key (`Escape, _) -> Lwd.set quit true; `Handled
             | _ -> `Unhandled
           ))
         in
