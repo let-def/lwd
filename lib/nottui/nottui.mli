@@ -36,11 +36,6 @@ sig
       | `Grab of (x:int -> y:int -> unit) * (x:int -> y:int -> unit)
     ]
 
-  type focus_handler = {
-    action : [`Direct|`Inherited] -> Unescape.key -> may_handle;
-    status : [`Direct|`Inherited] -> [`Change|`Enter|`Leave] -> unit;
-  }
-
   type layout_spec = { w : int; h : int; sw : int; sh : int; }
   val pp_layout_spec : Format.formatter -> layout_spec -> unit
 
@@ -50,7 +45,9 @@ sig
   val empty : t
   val atom : image -> t
   val mouse_area : mouse_handler -> t -> t
-  val focus_area : Time.t -> focus_handler -> t -> t
+  val has_focus : t -> bool Lwd.t
+  val keyboard_area : ?handle:Nottui_focus.t ->
+    (Unescape.key -> may_handle) -> t -> t
   val scroll_area : int -> int -> t -> t
   val size_sensor : (int -> int -> unit) -> t -> t
   val resize :
@@ -61,7 +58,7 @@ sig
     ?handler:mouse_handler -> ?origin:gravity -> ?direction:gravity ->
     t -> t
   val event_filter :
-    ?priority:Time.t ->
+    ?handle:Nottui_focus.t ->
     ([`Key of Unescape.key | `Mouse of Unescape.mouse] -> may_handle) -> t -> t
 
   val join_x : t -> t -> t

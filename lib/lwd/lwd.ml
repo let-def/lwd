@@ -442,6 +442,11 @@ let set_on_invalidate x f =
   | Pure _ | Impure _ -> assert false
   | Root t -> t.on_invalidate <- f
 
+let unsafe_peek = function
+  | Pure x -> Some x
+  | Impure t -> t.value
+  | Root t -> t.value
+
 module Infix = struct
   let (let$) = bind
   let (and$) = pair

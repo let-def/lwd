@@ -100,11 +100,6 @@ struct
       | `Grab of (x:int -> y:int -> unit) * (x:int -> y:int -> unit)
     ]
 
-  type focus_handler = {
-    action : [`Direct | `Inherited] -> Unescape.key -> [`Unhandled | `Handled];
-    status : [`Direct | `Inherited] -> [`Change | `Enter | `Leave] -> unit;
-  }
-
   type layout_spec = { w : int; h : int; sw : int; sh : int }
 
   let pp_layout_spec ppf { w; h; sw; sh } =
@@ -115,11 +110,11 @@ struct
     | Size_sensor of 'a * (int -> int -> unit)
     | Resize of 'a * Gravity.t2 * A.t
     | Mouse_handler of 'a * mouse_handler
-    | Focus_area of 'a
+    | Focus_area of 'a * (Unescape.key -> may_handle)
     | Scroll_area of 'a * int * int
     | Event_filter of 'a *
                       ([`Key of Unescape.key | `Mouse of Unescape.mouse] ->
-                       [`Handled | `Unhandled ])
+                       may_handle)
     | Overlay of 'a overlay
     | X of 'a * 'a
     | Y of 'a * 'a
@@ -139,7 +134,7 @@ struct
     w : int; sw : int;
     h : int; sh : int;
     desc : t desc;
-    focus_chain : focus_handler list * Time.t;
+    focus : Nottui_focus.t;
     mutable cache : cache;
   }
   and cache = {
@@ -152,39 +147,28 @@ struct
   let layout_spec t : layout_spec =
     { w = t.w; h = t.h; sw = t.sw; sh = t.sh }
 
-  let select_focus a b =
-    let _, (pa : Time.t) = a.focus_chain and _, pb = b.focus_chain in
-    if Time.(pb > pa)
-    then b.focus_chain
-    else a.focus_chain
-
   let cache = { vx1 = 0; vy1 = 0; vx2 = 0; vy2 = 0;
                 image = I.empty; overlays = [] }
 
   let empty =
     { w = 0; sw = 0; h = 0; sh = 0;
-      focus_chain = ([], Time.origin); desc = Atom I.empty; cache }
+      focus = Nottui_focus.empty; desc = Atom I.empty; cache }
 
   let atom img =
     { w = I.width img; sw = 0;
       h = I.height img; sh = 0;
-      focus_chain = ([], Time.origin);
+      focus = Nottui_focus.empty;
       desc = Atom img; cache }
 
   let mouse_area f t =
     { t with desc = Mouse_handler (t, f) }
 
-  let focus_area time handler t =
-    let focus_chain =
-      let handlers, time0 = t.focus_chain in
-      if Time.(time > time0) then
-        ([handler], time)
-      else if Time.(time0 > origin) then
-        (handler :: handlers, time0)
-      else
-        t.focus_chain
+  let keyboard_area ?handle f t =
+    let focus = match handle with
+      | None -> t.focus
+      | Some focus -> Nottui_focus.merge focus t.focus
     in
-    { t with desc = Focus_area t; focus_chain }
+    { t with desc = Focus_area (t, f); focus }
 
   let scroll_area x y t =
     { t with desc = Scroll_area (t, x, y) }
@@ -211,38 +195,31 @@ struct
     let o_z = Time.next () in
     fun o_n ->
       let desc = Overlay { o_n; o_x; o_y; o_h; o_z; o_origin; o_direction } in
-      { w = 0; sw = 0; h = 0; sh = 0; desc;
-        focus_chain = ([], Time.origin); cache }
+      { w = 0; sw = 0; h = 0; sh = 0; desc; focus = Nottui_focus.empty; cache }
 
-  let event_filter ?priority f t =
-    let handlers, time = t.focus_chain in
-    let time = match priority with
-      | None -> time
-      | Some time -> time
+  let event_filter ?handle f t =
+    let focus = match handle with
+      | None -> t.focus
+      | Some focus -> focus
     in
-    let focus_handler = {
-      action = (fun _ key -> f (`Key key));
-      status = (fun _ _ -> ());
-    } in
-    { t with desc = Event_filter (t, f);
-             focus_chain = (focus_handler :: handlers, time) }
+    { t with desc = Event_filter (t, f); focus }
 
   let join_x a b = {
     w = (a.w + b.w);   sw = (a.sw + b.sw);
     h = (maxi a.h b.h); sh = (maxi a.sh b.sh);
-    focus_chain = select_focus a b; desc = X (a, b); cache
+    focus = Nottui_focus.merge a.focus b.focus; desc = X (a, b); cache
   }
 
   let join_y a b = {
     w = (maxi a.w b.w); sw = (maxi a.sw b.sw);
     h = (a.h + b.h);   sh = (a.sh + b.sh);
-    focus_chain = select_focus a b; desc = Y (a, b); cache;
+    focus = Nottui_focus.merge a.focus b.focus; desc = Y (a, b); cache;
   }
 
   let join_z a b = {
     w = (maxi a.w b.w); sw = (maxi a.sw b.sw);
     h = (maxi a.h b.h); sh = (maxi a.sh b.sh);
-    focus_chain = select_focus a b; desc = Z (a, b); cache;
+    focus = Nottui_focus.merge a.focus b.focus; desc = Z (a, b); cache;
   }
 
   let pack_x = (empty, join_x)
@@ -252,6 +229,8 @@ struct
   let hcat xs = Lwd_utils.pure_pack pack_x xs
   let vcat xs = Lwd_utils.pure_pack pack_y xs
   let zcat xs = Lwd_utils.pure_pack pack_z xs
+
+  let has_focus t = Nottui_focus.has_focus t.focus
 
   let rec pp ppf t =
     Format.fprintf ppf
@@ -268,7 +247,7 @@ struct
         Gravity.pp (Gravity.p2 gravity)
     | Mouse_handler (n, _) ->
       Format.fprintf ppf "Mouse_handler (@[%a,@ _@])" pp n
-    | Focus_area n ->
+    | Focus_area (n, _) ->
       Format.fprintf ppf "Focus_area (@[%a,@ _@])" pp n
     | Scroll_area (n, _, _) ->
       Format.fprintf ppf "Scroll_area (@[%a,@ _@])" pp n
@@ -304,13 +283,12 @@ struct
     mutable view : ui;
     mutable mouse_grab :
       (int * int * ((x:int -> y:int -> unit) * (x:int -> y:int -> unit))) option;
-    mutable last_focus_chain :
-      focus_handler list;
+    focus : Nottui_focus.root;
   }
 
   let make () = {
     mouse_grab = None;
-    last_focus_chain = [];
+    focus = Nottui_focus.make_root ();
     size = (0, 0);
     view = Ui.empty;
   }
@@ -319,7 +297,8 @@ struct
 
   let update t size ui =
     t.size <- size;
-    t.view <- ui
+    t.view <- ui;
+    Nottui_focus.update t.focus ui.focus
 
   let sort_overlays o = List.sort
       (fun o1 o2 -> - Time.compare o1.o_z o2.o_z) o
@@ -380,7 +359,7 @@ struct
         (aux ox oy sw sh t || handle ox oy f)
       | Size_sensor (desc, _) ->
         aux ox oy sw sh desc
-      | Focus_area desc ->
+      | Focus_area (desc, _) ->
         aux ox oy sw sh desc
       | Scroll_area (desc, sx, sy) ->
         aux (ox - sx) (oy - sy) sw sh desc
@@ -469,7 +448,7 @@ struct
         | Size_sensor (desc, handler) ->
           handler sw sh;
           render_node vx1 vy1 vx2 vy2 sw sh desc
-        | Focus_area desc | Mouse_handler (desc, _) ->
+        | Focus_area (desc, _) | Mouse_handler (desc, _) ->
           render_node vx1 vy1 vx2 vy2 sw sh desc
         | Scroll_area (t', sx, sy) ->
           let cache = render_node
@@ -539,37 +518,7 @@ struct
       t.cache <- cache;
       cache
 
-  let rec drop_focus_chain = function
-    | [] -> ()
-    | [x] -> x.status `Direct `Leave
-    | x :: xs -> x.status `Inherited `Leave; drop_focus_chain xs
-
-  let rec grab_focus_chain = function
-    | [] -> ()
-    | [x] -> x.status `Direct `Enter
-    | x :: xs -> x.status `Inherited `Enter; grab_focus_chain xs
-
-  let rec diff_focus_chain = function
-    | xs, ys when xs == ys -> `Unchanged
-    | (x :: xs), (y :: ys) when x == y ->
-      begin match diff_focus_chain (xs, ys) with
-        | `Unchanged -> ()
-        | `Grow -> x.status `Inherited `Change
-        | `Shrink -> x.status `Direct `Change
-      end;
-      `Unchanged
-    | [], [] -> `Unchanged
-    | [], ys -> grab_focus_chain ys; `Grow
-    | xs, [] -> drop_focus_chain xs; `Shrink
-    | xs, ys -> drop_focus_chain xs; grab_focus_chain ys; `Unchanged
-
-  let update_focus_chain st focus_chain =
-    ignore
-      (diff_focus_chain (st.last_focus_chain, focus_chain) : [> `Unchanged]);
-    st.last_focus_chain <- focus_chain
-
   let image st =
-    update_focus_chain st (fst st.view.focus_chain);
     let flatten (im,todo) o =
       let todo = List.map (shift_o o.o_x o.o_y) o.o_n.cache.overlays @ todo in
       let ovi = I.pad ~l:o.o_x ~t:o.o_y o.o_n.cache.image in
@@ -583,17 +532,36 @@ struct
     let cache = render_node 0 0 w h w h st.view in
     process (cache.image, cache.overlays)
 
-  let rec dispatch_key key = function
-    | [] -> `Unhandled
-    | [h] -> h.action `Direct key
-    | h :: hs ->
-      begin match dispatch_key key hs with
-        | `Unhandled -> h.action `Inherited key
-        | `Handled -> `Handled
+  let rec dispatch_key_branch t =
+    match t.desc with
+    | Atom _ | Overlay _ -> []
+    | X (a, b) | Y (a, b) | Z (a, b) ->
+      begin match Nottui_focus.peek_focus a.focus with
+        | None -> assert false
+        | Some true -> dispatch_key_branch a
+        | Some false -> dispatch_key_branch b
       end
+    | Focus_area (t, f) -> f :: dispatch_key_branch t
+    | Mouse_handler (t, _) | Size_sensor (t, _)
+    | Scroll_area (t, _, _) | Resize (t, _, _) ->
+      dispatch_key_branch t
+    | Event_filter (t, f) ->
+      (fun key -> f (`Key key)) :: dispatch_key_branch t
 
   let dispatch_key st key =
-    dispatch_key key st.last_focus_chain
+    if Nottui_focus.focused st.focus then
+      let branch = dispatch_key_branch st.view in
+      let rec iter = function
+        | f :: fs ->
+          begin match f key with
+          | `Unhandled -> iter fs
+          | `Handled -> `Handled
+          end
+        | [] -> `Unhandled
+      in
+      iter branch
+    else
+      `Unhandled
 
   let dispatch_event t = function
     | `Key key -> dispatch_key t key

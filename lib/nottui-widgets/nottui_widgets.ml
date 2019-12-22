@@ -66,17 +66,13 @@ let vscroll_area ~state ~change t =
       change `Action {state with position};
     `Handled
   in
-  let focus_handler state = {
-    Ui.
-    status = (fun _ _ -> ());
-    action = (fun _ -> function
-        (*| `Arrow `Left , _ -> scroll (-scroll_step) 0*)
-        (*| `Arrow `Right, _ -> scroll (+scroll_step) 0*)
-        | `Arrow `Up   , _ -> scroll state (-scroll_step)
-        | `Arrow `Down , _ -> scroll state (+scroll_step)
-        | _ -> `Unhandled
-      );
-  } in
+  let focus_handler state = function
+    (*| `Arrow `Left , _ -> scroll (-scroll_step) 0*)
+    (*| `Arrow `Right, _ -> scroll (+scroll_step) 0*)
+    | `Arrow `Up   , _ -> scroll state (-scroll_step)
+    | `Arrow `Down , _ -> scroll state (+scroll_step)
+    | _ -> `Unhandled
+  in
   let scroll_handler state ~x:_ ~y:_ = function
     | `Scroll `Up   -> scroll state (-scroll_step)
     | `Scroll `Down -> scroll state (+scroll_step)
@@ -102,7 +98,7 @@ let vscroll_area ~state ~change t =
                                     bound = max 0 (!total - !visible); }
     )
   |> Ui.mouse_area (scroll_handler state)
-  |> Ui.focus_area Time.origin (focus_handler state)
+  |> Ui.keyboard_area (focus_handler state)
 
 let scroll_area ?(offset=0,0) t =
   let offset = Lwd.var offset in
@@ -113,17 +109,13 @@ let scroll_area ?(offset=0,0) t =
     Lwd.set offset (s_x, s_y);
     `Handled
   in
-  let focus_handler = {
-    Ui.
-    status = (fun _ _ -> ());
-    action = (fun _ -> function
-        | `Arrow `Left , _ -> scroll (-scroll_step) 0
-        | `Arrow `Right, _ -> scroll (+scroll_step) 0
-        | `Arrow `Up   , _ -> scroll 0 (-scroll_step)
-        | `Arrow `Down , _ -> scroll 0 (+scroll_step)
-        | _ -> `Unhandled
-      );
-  } in
+  let focus_handler = function
+    | `Arrow `Left , _ -> scroll (-scroll_step) 0
+    | `Arrow `Right, _ -> scroll (+scroll_step) 0
+    | `Arrow `Up   , _ -> scroll 0 (-scroll_step)
+    | `Arrow `Down , _ -> scroll 0 (+scroll_step)
+    | _ -> `Unhandled
+  in
   let scroll_handler ~x:_ ~y:_ = function
     | `Scroll `Up   -> scroll 0 (-scroll_step)
     | `Scroll `Down -> scroll 0 (+scroll_step)
@@ -133,7 +125,7 @@ let scroll_area ?(offset=0,0) t =
   t
   |> Ui.scroll_area s_x s_y
   |> Ui.mouse_area scroll_handler
-  |> Ui.focus_area Time.origin focus_handler
+  |> Ui.keyboard_area focus_handler
 
 let main_menu_item text f =
   let text = string ~attr:attr_menu_main (" " ^ text ^ " ") in
@@ -291,8 +283,7 @@ let sub' str p l =
   else String.sub str p l
 
 let edit_field state ~on_change ~on_submit =
-  let vfocused = Lwd.var false in
-  let time = ref Time.origin in
+  let focus_handle = Nottui__Nottui_focus.make_handle () in
   let update focused (text, pos) =
     let pos = min (max 0 pos) (String.length text) in
     let content =
@@ -311,69 +302,59 @@ let edit_field state ~on_change ~on_submit =
       ) else
         [I.string A.empty (if text = "" then " " else text)]
     in
-    let handler = {
-      Ui.
-      action = (fun _ key -> match key with
-          | `ASCII k, _ ->
-            let text =
-              if pos < String.length text then (
-                String.sub text 0 pos ^ String.make 1 k ^
-                String.sub text pos (String.length text - pos)
-              ) else (
-                text ^ String.make 1 k
-              )
-            in
-            on_change (text, (pos + 1));
-            `Handled
-          | `Backspace, _ ->
-            let text =
-              if pos > 0 then (
-                if pos < String.length text then (
-                  String.sub text 0 (pos - 1) ^
-                  String.sub text pos (String.length text - pos)
-                ) else if String.length text > 0 then (
-                  String.sub text 0 (String.length text - 1)
-                ) else text
-              ) else text
-            in
-            let pos = max 0 (pos - 1) in
-            on_change (text, pos);
-            `Handled
-          | `Enter, _ -> on_submit (text, pos); `Handled
-          | `Arrow `Left, _ ->
-            let pos = min (String.length text) pos in
-            if pos > 0 then (
-              on_change (text, pos - 1);
-              `Handled
-            )
-            else `Unhandled
-          | `Arrow `Right, _ ->
-            let pos = pos + 1 in
-            if pos <= String.length text
-            then (on_change (text, pos); `Handled)
-            else `Unhandled
-          | _ -> `Unhandled);
-      status = (fun _ event ->
-          let focused' = match event with
-            | `Enter -> true
-            | `Leave -> false
-            | _ -> focused
-          in
-          if focused' <> focused then
-            vfocused $= focused'
-        );
-    } in
-    Ui.focus_area !time handler content
+    let handler = function
+      | `ASCII k, _ ->
+        let text =
+          if pos < String.length text then (
+            String.sub text 0 pos ^ String.make 1 k ^
+            String.sub text pos (String.length text - pos)
+          ) else (
+            text ^ String.make 1 k
+          )
+        in
+        on_change (text, (pos + 1));
+        `Handled
+      | `Backspace, _ ->
+        let text =
+          if pos > 0 then (
+            if pos < String.length text then (
+              String.sub text 0 (pos - 1) ^
+              String.sub text pos (String.length text - pos)
+            ) else if String.length text > 0 then (
+              String.sub text 0 (String.length text - 1)
+            ) else text
+          ) else text
+        in
+        let pos = max 0 (pos - 1) in
+        on_change (text, pos);
+        `Handled
+      | `Enter, _ -> on_submit (text, pos); `Handled
+      | `Arrow `Left, _ ->
+        let pos = min (String.length text) pos in
+        if pos > 0 then (
+          on_change (text, pos - 1);
+          `Handled
+        )
+        else `Unhandled
+      | `Arrow `Right, _ ->
+        let pos = pos + 1 in
+        if pos <= String.length text
+        then (on_change (text, pos); `Handled)
+        else `Unhandled
+      | _ -> `Unhandled
+    in
+    Ui.keyboard_area ~handle:focus_handle handler content
   in
-  let node = Lwd.var (Lwd.map2 update (Lwd.get vfocused) state) in
+  let node =
+    Lwd.map2 update
+      (Nottui__Nottui_focus.has_focus focus_handle) state
+  in
   let mouse_grab (text, pos) ~x ~y:_ = function
     | `Left ->
       if x <> pos then on_change (text, x);
-      time := Time.next ();
-      node $= Lwd.map2  update (Lwd.get vfocused) state;
+      Nottui__Nottui_focus.request_focus focus_handle;
       `Handled
     | _ -> `Unhandled
   in
-  Lwd.map2' state !$node @@ fun state content ->
+  Lwd.map2' state node @@ fun state content ->
   Ui.mouse_area (mouse_grab state) content
-

@@ -6,9 +6,13 @@ module A = Notty.A
 let unfoldable summary (f: unit -> Ui.Ui.t Lwd.t) : Ui.Ui.t Lwd.t =
   let opened = ref false in
   let v = Lwd.var W.empty_lwd in
+  let focus = Lwd.var Ui.Time.origin in
+  let focused = Lwd.var `None in
+  let refocus () = Lwd.set focus (Ui.Time.next ()) in
   let cursor ~x:_ ~y:_ = function
      | `Left when !opened ->
        opened := false;
+       refocus ();
        Lwd.set v W.empty_lwd;
        `Handled
      | `Left ->
@@ -18,12 +22,47 @@ let unfoldable summary (f: unit -> Ui.Ui.t Lwd.t) : Ui.Ui.t Lwd.t =
          f()
          |> Lwd.map (fun x -> Ui.Ui.join_x (W.string "> ") x)
        in
+       refocus ();
        Lwd.set v @@  inner;
        `Handled
      | _ -> `Unhandled
   in
+  let cutoff_update v x =
+    let x' = Lwd.peek v in if x <> x' then Lwd.set v x
+  in
+  let handler = { Ui.Ui.
+    action = (fun _ _ -> `Unhandled);
+    status = (fun direct status ->
+        let d = match direct with
+          | `Direct    -> "`Direct"
+          | `Inherited -> "`Inherited"
+        in
+        let s = match status with
+          | `Enter  -> "`Enter"
+          | `Change -> "`Change"
+          | `Leave  -> "`Leave"
+        in
+        prerr_endline (s ^ d);
+        cutoff_update focused @@ match direct, status with
+        | _, `Leave -> `None
+        | `Direct , _ -> `Focused
+        | `Inherited , _ -> `Sub_focused
+      );
+  } in
   let mouse =
-    Lwd.map (fun m -> Ui.Ui.mouse_area cursor m) summary
+    summary
+    |> Lwd.map2 (fun focused ui ->
+        match
+          match focused with
+          | `None -> None
+          | `Focused -> Some Notty.(I.char A.(bg lightblue) '*' 1 1)
+          | `Sub_focused -> Some Notty.(I.char A.(bg blue) '*' 1 1)
+        with
+        | None -> ui
+        | Some img -> Ui.Ui.join_x (Ui.Ui.atom img) ui
+      ) (Lwd.get focused)
+    |> Lwd.map (fun m -> Ui.Ui.mouse_area cursor m)
+    |> Lwd.map2 (fun focus ui -> Ui.Ui.focus_area focus handler ui) (Lwd.get focus)
   in
   Lwd_utils.pack Ui.Ui.pack_x [mouse; Lwd.join @@ Lwd.get v]
 
@@ -67,7 +106,7 @@ let ui_of_cbor (c:C.t) =
              l;
            Lwd.join @@ Lwd_table.reduce (Lwd_utils.lift_monoid Ui.Ui.pack_y) tbl)
   in
-  let w = 
+  let w =
     Lwd.map2 Ui.Ui.join_y w_q
       (Nottui_widgets.scroll_area @@ traverse ~fold:true c)
   in

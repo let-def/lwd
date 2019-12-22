@@ -33,6 +33,8 @@ val is_damaged : 'a root -> bool
 val is_released : 'a root -> bool
 val release : 'a root -> unit
 
+val unsafe_peek : 'a t -> 'a option
+
 module Infix : sig
   val (let$) : 'a t -> ('a -> 'b t) -> 'b t
   val (and$) : 'a t -> 'b t -> ('a * 'b) t

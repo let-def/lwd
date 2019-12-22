@@ -12,21 +12,16 @@ let strict_table () =
   let columns = Lwd_table.make () in
   for colidx = 0 to 99 do
     let rows = Lwd_table.make () in
-    ignore
-    @@ Lwd_table.append rows
-         ~set:(Lwd.return @@ string (Printf.sprintf "Column %d" colidx));
+    Lwd_table.append' rows (printf "Column %d" colidx |> Lwd.pure);
     for rowidx = 0 to 99 do
-      ignore
-      @@ Lwd_table.append rows
-           ~set:(simple_edit (Printf.sprintf "Test-%03d-%03d" colidx rowidx))
+      Lwd_table.append' rows
+        (simple_edit (Printf.sprintf "Test-%03d-%03d" colidx rowidx))
     done;
-    ignore
-    @@ Lwd_table.append columns
-         ~set:
-           ( rows
-           |> Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_y)
-           |> Lwd.join );
-    ignore @@ Lwd_table.append columns ~set:(Lwd.return (string " "))
+    Lwd_table.append' columns
+      ( rows
+        |> Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_y)
+        |> Lwd.join );
+    Lwd_table.append' columns (Lwd.return (string " "))
   done;
   scroll_area
   @@ Lwd.join (Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_x) columns)
