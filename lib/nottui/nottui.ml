@@ -532,25 +532,25 @@ struct
     let cache = render_node 0 0 w h w h st.view in
     process (cache.image, cache.overlays)
 
-  let rec dispatch_key_branch t =
+  let rec dispatch_key_branch acc t =
     match t.desc with
-    | Atom _ | Overlay _ -> []
+    | Atom _ | Overlay _ -> acc
     | X (a, b) | Y (a, b) | Z (a, b) ->
       begin match Nottui_focus.peek_focus a.focus with
         | None -> assert false
-        | Some true -> dispatch_key_branch a
-        | Some false -> dispatch_key_branch b
+        | Some true -> dispatch_key_branch acc a
+        | Some false -> dispatch_key_branch acc b
       end
-    | Focus_area (t, f) -> f :: dispatch_key_branch t
+    | Focus_area (t, f) -> dispatch_key_branch (f :: acc) t
     | Mouse_handler (t, _) | Size_sensor (t, _)
     | Scroll_area (t, _, _) | Resize (t, _, _) ->
-      dispatch_key_branch t
+      dispatch_key_branch acc t
     | Event_filter (t, f) ->
-      (fun key -> f (`Key key)) :: dispatch_key_branch t
+      (fun key -> f (`Key key)) :: dispatch_key_branch acc t
 
   let dispatch_key st key =
     if Nottui_focus.focused st.focus then
-      let branch = dispatch_key_branch st.view in
+      let branch = dispatch_key_branch [] st.view in
       let rec iter = function
         | f :: fs ->
           begin match f key with
