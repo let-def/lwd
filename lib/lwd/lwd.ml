@@ -10,7 +10,8 @@ type 'a t =
       mutable value : 'a option;
       mutable trace_idx : trace_idx;
       mutable on_invalidate : 'a -> unit;
-      mutable child : 'a t option;
+      mutable acquired : bool;
+      child : 'a t;
     } -> 'a t
 
 and _ desc =
@@ -391,15 +392,14 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
 
 type 'a root = 'a t
 
-(* TODO: use of Root after release is not detected and will break invariant *)
 let observe ?(on_invalidate=ignore) child =
   let root = Root {
-      child = Some child;
+      child = child;
       value = None;
       on_invalidate;
-      trace_idx = I0
+      trace_idx = I0;
+      acquired = false;
     } in
-  sub_acquire root child;
   root
 
 let sample = function
@@ -408,34 +408,29 @@ let sample = function
     match t.value with
     | Some value -> value
     | None ->
-      match t.child with
-      | None -> invalid_arg "sample: root has been released"
-      | Some child ->
-        let value = sub_sample self child in
-        t.value <- Some value;
-        value
+      if not t.acquired then (
+        t.acquired <- true;
+        sub_acquire self t.child;
+      );
+      let value = sub_sample self t.child in
+      t.value <- Some value;
+      value
 
 let is_damaged = function
   | Pure _ | Impure _ -> assert false
   | Root { value = None ; _ } -> true
   | Root { value = Some _ ; _ } -> false
 
-let is_released = function
-  | Pure _ | Impure _ -> assert false
-  | Root { child = None ; _ } -> true
-  | Root { child = Some _ ; _ } -> false
-
-let release = function
+let flush = function
   | Pure _ | Impure _ -> assert false
   | Root t as self ->
-    match t.child with
-    | None -> ()
-    | Some child ->
+    if t.acquired then (
       t.value <- None;
-      t.child <- None;
-      match sub_release [] self child with
+      t.acquired <- false;
+      match sub_release [] self t.child with
       | [] -> ()
       | failures -> raise (Release_failure failures)
+    )
 
 let set_on_invalidate x f =
   match x with
