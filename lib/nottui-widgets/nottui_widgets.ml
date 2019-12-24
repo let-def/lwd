@@ -283,7 +283,7 @@ let sub' str p l =
   else String.sub str p l
 
 let edit_field state ~on_change ~on_submit =
-  let focus_handle = Nottui__Nottui_focus.make_handle () in
+  let focus_handle = Nottui.Focus.make () in
   let update focused (text, pos) =
     let pos = min (max 0 pos) (String.length text) in
     let content =
@@ -347,12 +347,12 @@ let edit_field state ~on_change ~on_submit =
   in
   let node =
     Lwd.map2 update
-      (Nottui__Nottui_focus.has_focus focus_handle) state
+      (Nottui.Focus.has_focus focus_handle) state
   in
   let mouse_grab (text, pos) ~x ~y:_ = function
     | `Left ->
       if x <> pos then on_change (text, x);
-      Nottui__Nottui_focus.request_focus focus_handle;
+      Nottui.Focus.request focus_handle;
       `Handled
     | _ -> `Unhandled
   in

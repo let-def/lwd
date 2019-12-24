@@ -3,23 +3,88 @@ open Notty
 let maxi x y : int = if x > y then x else y
 let mini x y : int = if x < y then x else y
 
-module Time :
+module Focus :
 sig
-  type t
-  val origin : t
-  val next : unit -> t
-  val compare : t -> t -> int
-  val (>) : t -> t -> bool
-  val fmt : t Fmt.t
-end =
-struct
-  type t = int
-  let origin = 0
-  let epoch = ref 0
-  let next () = incr epoch; !epoch
-  let compare : t -> t -> int = compare
-  let (>) : t -> t -> bool = (>)
-  let fmt = Fmt.int
+  type handle
+  val void : handle
+  val make : unit -> handle
+  val has_focus : handle -> bool Lwd.t
+  val peek_focus : handle -> bool option
+
+  val merge : handle -> handle -> handle
+  val request : handle -> unit
+
+  type request
+  val get_request : handle -> request Lwd.t
+
+  type root
+  val root : unit -> root
+  val update : root -> request -> unit
+end = struct
+
+  type request = int * bool Lwd.var
+
+  type handle =
+    | Empty
+    | Handle of { request: request Lwd.var; focused: bool Lwd.var; }
+    | Merge  of { request: request Lwd.t; focused: bool Lwd.t;
+                  left: handle; right : handle; }
+
+  let void = Empty
+
+  let make () =
+    let focused = Lwd.var false in
+    Handle { request = Lwd.var (0, focused); focused = focused }
+
+  let default_request = Lwd.pure (0, Lwd.var false)
+
+  let get_request = function
+    | Merge t -> t.request
+    | Handle t -> Lwd.get t.request
+    | Empty -> default_request
+
+  let lwd_false = Lwd.pure false
+
+  let has_focus = function
+    | Empty -> lwd_false
+    | Merge t -> t.focused
+    | Handle t -> Lwd.get t.focused
+
+  let merge t1 t2 =
+    match t1, t2 with
+    | Empty, x | x, Empty -> x
+    | _ ->
+      let argmax (a1, _ as h1) (a2, _ as h2) = if a1 > a2 then h1 else h2 in
+      let request1 = get_request t1 and request2 = get_request t2 in
+      let request = Lwd.map2 argmax request1 request2 in
+      let focused1 = has_focus t1 and focused2 = has_focus t2 in
+      let focused = Lwd.map2 (||) focused1 focused2 in
+      Merge { request; focused; left = t1; right = t2 }
+
+  let clock = ref 0
+
+  let rec request : handle -> unit = function
+    | Handle { request; focused } ->
+      incr clock;
+      Lwd.set request (!clock, focused)
+    | Merge { left; _ }  -> request left
+    | Empty -> ()
+
+  let peek_focus t = Lwd.unsafe_peek (has_focus t)
+
+  type root = {
+    mutable last : bool Lwd.var;
+  }
+
+  let root () = { last = Lwd.var false }
+
+  let update root (new_time, new_focus) =
+    let last_focus = root.last in
+    root.last <- new_focus;
+    if (last_focus != new_focus) && Lwd.peek last_focus then
+      Lwd.set last_focus false;
+    if new_time > 0 && not (Lwd.peek new_focus) then
+      Lwd.set new_focus true
 end
 
 module Gravity :
@@ -125,7 +190,7 @@ struct
     o_h : mouse_handler;
     o_x : int;
     o_y : int;
-    o_z : Time.t;
+    o_z : int;
     o_origin : Gravity.t;
     o_direction : Gravity.t;
   }
@@ -134,7 +199,7 @@ struct
     w : int; sw : int;
     h : int; sh : int;
     desc : t desc;
-    focus : Nottui_focus.t;
+    focus : Focus.handle;
     mutable cache : cache;
   }
   and cache = {
@@ -152,12 +217,12 @@ struct
 
   let empty =
     { w = 0; sw = 0; h = 0; sh = 0;
-      focus = Nottui_focus.empty; desc = Atom I.empty; cache }
+      focus = Focus.void; desc = Atom I.empty; cache }
 
   let atom img =
     { w = I.width img; sw = 0;
       h = I.height img; sh = 0;
-      focus = Nottui_focus.empty;
+      focus = Focus.void;
       desc = Atom img; cache }
 
   let mouse_area f t =
@@ -166,7 +231,7 @@ struct
   let keyboard_area ?handle f t =
     let focus = match handle with
       | None -> t.focus
-      | Some focus -> Nottui_focus.merge focus t.focus
+      | Some focus -> Focus.merge focus t.focus
     in
     { t with desc = Focus_area (t, f); focus }
 
@@ -187,15 +252,17 @@ struct
       (Some sw, _ | None, sw), (Some sh, _ | None, sh) ->
       {t with w; h; sw; sh; desc = Resize (t, g, bg)}
 
+  let last_z = ref 0
+
   let overlay ?dx:(o_x=0) ?dy:(o_y=0)
       ?handler:(o_h=fun ~x:_ ~y:_ _ -> `Unhandled)
       ?origin:(o_origin=Gravity.bottom_left)
       ?direction:(o_direction=Gravity.bottom_right)
     =
-    let o_z = Time.next () in
+    let o_z = incr last_z; !last_z in
     fun o_n ->
       let desc = Overlay { o_n; o_x; o_y; o_h; o_z; o_origin; o_direction } in
-      { w = 0; sw = 0; h = 0; sh = 0; desc; focus = Nottui_focus.empty; cache }
+      { w = 0; sw = 0; h = 0; sh = 0; desc; focus = Focus.void; cache }
 
   let event_filter ?handle f t =
     let focus = match handle with
@@ -207,19 +274,19 @@ struct
   let join_x a b = {
     w = (a.w + b.w);   sw = (a.sw + b.sw);
     h = (maxi a.h b.h); sh = (maxi a.sh b.sh);
-    focus = Nottui_focus.merge a.focus b.focus; desc = X (a, b); cache
+    focus = Focus.merge a.focus b.focus; desc = X (a, b); cache
   }
 
   let join_y a b = {
     w = (maxi a.w b.w); sw = (maxi a.sw b.sw);
     h = (a.h + b.h);   sh = (a.sh + b.sh);
-    focus = Nottui_focus.merge a.focus b.focus; desc = Y (a, b); cache;
+    focus = Focus.merge a.focus b.focus; desc = Y (a, b); cache;
   }
 
   let join_z a b = {
     w = (maxi a.w b.w); sw = (maxi a.sw b.sw);
     h = (maxi a.h b.h); sh = (maxi a.sh b.sh);
-    focus = Nottui_focus.merge a.focus b.focus; desc = Z (a, b); cache;
+    focus = Focus.merge a.focus b.focus; desc = Z (a, b); cache;
   }
 
   let pack_x = (empty, join_x)
@@ -230,7 +297,7 @@ struct
   let vcat xs = Lwd_utils.pure_pack pack_y xs
   let zcat xs = Lwd_utils.pure_pack pack_z xs
 
-  let has_focus t = Nottui_focus.has_focus t.focus
+  let has_focus t = Focus.has_focus t.focus
 
   let rec pp ppf t =
     Format.fprintf ppf
@@ -264,7 +331,7 @@ struct
         field "o_h" (fun r -> r.o_h) (const string "_");
         field "o_x" (fun r -> r.o_x) int;
         field "o_y" (fun r -> r.o_y) int;
-        field "o_z" (fun r -> r.o_z) Time.fmt;
+        field "o_z" (fun r -> r.o_z) int;
         field "o_origin" (fun r -> r.o_origin) Gravity.pp;
         field "o_direction" (fun r -> r.o_direction) Gravity.pp;
       ]) ppf
@@ -283,25 +350,42 @@ struct
     mutable view : ui;
     mutable mouse_grab :
       (int * int * ((x:int -> y:int -> unit) * (x:int -> y:int -> unit))) option;
-    focus : Nottui_focus.root;
+    focus_var : Focus.handle Lwd.var;
+    focus_root : Focus.request Lwd.root;
+    focus : Focus.root;
+    focused_var: bool Lwd.t Lwd.var;
+    focused_root: bool Lwd.root;
   }
 
-  let make () = {
-    mouse_grab = None;
-    focus = Nottui_focus.make_root ();
-    size = (0, 0);
-    view = Ui.empty;
-  }
+  let make () =
+    let focus_var = Lwd.var Focus.void in
+    let focus_root =
+      Lwd.observe (Lwd.bind (Lwd.get focus_var) Focus.get_request)
+    in
+    let focused_var = Lwd.var (Lwd.pure false) in
+    let focused_root = Lwd.observe (Lwd.join (Lwd.get focused_var)) in
+    {
+      mouse_grab = None;
+      focus = Focus.root ();
+      size = (0, 0);
+      view = Ui.empty;
+      focus_var;
+      focus_root;
+      focused_var;
+      focused_root;
+    }
 
   let size t = t.size
 
   let update t size ui =
     t.size <- size;
     t.view <- ui;
-    Nottui_focus.update t.focus ui.focus
+    Lwd.set t.focus_var ui.focus;
+    Lwd.set t.focused_var (Focus.has_focus ui.focus);
+    Focus.update t.focus (Lwd.sample t.focus_root)
 
   let sort_overlays o = List.sort
-      (fun o1 o2 -> - Time.compare o1.o_z o2.o_z) o
+      (fun o1 o2 -> - compare o1.o_z o2.o_z) o
 
   let split ~a ~sa ~b ~sb total =
     let stretch = sa + sb in
@@ -536,7 +620,7 @@ struct
     match t.desc with
     | Atom _ | Overlay _ -> acc
     | X (a, b) | Y (a, b) | Z (a, b) ->
-      begin match Nottui_focus.peek_focus a.focus with
+      begin match Focus.peek_focus a.focus with
         | None -> assert false
         | Some true -> dispatch_key_branch acc a
         | Some false -> dispatch_key_branch acc b
@@ -549,13 +633,13 @@ struct
       (fun key -> f (`Key key)) :: dispatch_key_branch acc t
 
   let dispatch_key st key =
-    if Nottui_focus.focused st.focus then
+    if Lwd.sample st.focused_root then
       let branch = dispatch_key_branch [] st.view in
       let rec iter = function
         | f :: fs ->
           begin match f key with
-          | `Unhandled -> iter fs
-          | `Handled -> `Handled
+            | `Unhandled -> iter fs
+            | `Handled -> `Handled
           end
         | [] -> `Unhandled
       in
@@ -617,8 +701,8 @@ struct
       )
     in
     loop ();
-    Lwd.release root;
-    Lwd.release quit
+    Lwd.flush root;
+    Lwd.flush quit
 
   let run ?tick_period ?tick ?term ?(renderer=Renderer.make ())
           ?quit t =
