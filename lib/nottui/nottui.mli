@@ -3,11 +3,13 @@ open Notty
 module Focus :
 sig
   type handle
-  val void : handle
   val make : unit -> handle
-  val has_focus : handle -> bool Lwd.t
-  val peek_focus : handle -> bool option
   val request : handle -> unit
+
+  type status
+  val empty : status
+  val status : handle -> status Lwd.t
+  val has_focus : status -> bool
 end
 
 module Gravity :
@@ -45,8 +47,8 @@ sig
   val empty : t
   val atom : image -> t
   val mouse_area : mouse_handler -> t -> t
-  val has_focus : t -> bool Lwd.t
-  val keyboard_area : ?handle:Focus.handle ->
+  val has_focus : t -> bool
+  val keyboard_area : ?focus:Focus.status ->
     (Unescape.key -> may_handle) -> t -> t
   val scroll_area : int -> int -> t -> t
   val size_sensor : (int -> int -> unit) -> t -> t
@@ -58,7 +60,7 @@ sig
     ?handler:mouse_handler -> ?origin:gravity -> ?direction:gravity ->
     t -> t
   val event_filter :
-    ?handle:Focus.handle ->
+    ?focus:Focus.status ->
     ([`Key of Unescape.key | `Mouse of Unescape.mouse] -> may_handle) -> t -> t
 
   val join_x : t -> t -> t

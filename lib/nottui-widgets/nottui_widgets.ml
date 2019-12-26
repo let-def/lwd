@@ -283,12 +283,11 @@ let sub' str p l =
   else String.sub str p l
 
 let edit_field state ~on_change ~on_submit =
-  let focus_handle = Nottui.Focus.make () in
-  let update focused (text, pos) =
+  let update focus (text, pos) =
     let pos = min (max 0 pos) (String.length text) in
     let content =
       Ui.atom @@ I.hcat @@
-      if focused then (
+      if Focus.has_focus focus then (
         let attr = A.(bg lightblue) in
         let len = String.length text in
         (if pos >= len
@@ -343,16 +342,16 @@ let edit_field state ~on_change ~on_submit =
         else `Unhandled
       | _ -> `Unhandled
     in
-    Ui.keyboard_area ~handle:focus_handle handler content
+    Ui.keyboard_area ~focus handler content
   in
+  let focus = Focus.make () in
   let node =
-    Lwd.map2 update
-      (Nottui.Focus.has_focus focus_handle) state
+    Lwd.map2 update (Nottui.Focus.status focus) state
   in
   let mouse_grab (text, pos) ~x ~y:_ = function
     | `Left ->
       if x <> pos then on_change (text, x);
-      Nottui.Focus.request focus_handle;
+      Nottui.Focus.request focus;
       `Handled
     | _ -> `Unhandled
   in

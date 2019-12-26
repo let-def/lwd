@@ -32,7 +32,7 @@ val sample : 'a root -> 'a
 val is_damaged : 'a root -> bool
 val flush : 'a root -> unit
 
-val unsafe_peek : 'a t -> 'a option
+(*val unsafe_peek : 'a t -> 'a option*)
 
 module Infix : sig
   val (let$) : 'a t -> ('a -> 'b t) -> 'b t

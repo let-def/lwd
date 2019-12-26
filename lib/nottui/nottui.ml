@@ -6,85 +6,63 @@ let mini x y : int = if x < y then x else y
 module Focus :
 sig
   type handle
-  val void : handle
   val make : unit -> handle
-  val has_focus : handle -> bool Lwd.t
-  val peek_focus : handle -> bool option
-
-  val merge : handle -> handle -> handle
   val request : handle -> unit
 
-  type request
-  val get_request : handle -> request Lwd.t
+  type request = int * bool Lwd.var
+  type status =
+    | Empty
+    | Request of bool * request Lwd.t
 
-  type root
-  val root : unit -> root
-  val update : root -> request -> unit
+  val empty : status
+  (*val is_empty : status -> bool*)
+  val status : handle -> status Lwd.t
+  val has_focus : status -> bool
+  val merge : status -> status -> status
 end = struct
+
+  type handle = int Lwd.var * bool Lwd.var
+  let make () = (Lwd.var 0, Lwd.var false)
 
   type request = int * bool Lwd.var
 
-  type handle =
+  type status =
     | Empty
-    | Handle of { request: request Lwd.var; focused: bool Lwd.var; }
-    | Merge  of { request: request Lwd.t; focused: bool Lwd.t;
-                  left: handle; right : handle; }
+    | Request of bool * request Lwd.t
 
-  let void = Empty
+  let empty : status = Empty
 
-  let make () =
-    let focused = Lwd.var false in
-    Handle { request = Lwd.var (0, focused); focused = focused }
+  (*let is_empty = function Empty -> true | Request _ -> false*)
 
-  let default_request = Lwd.pure (0, Lwd.var false)
-
-  let get_request = function
-    | Merge t -> t.request
-    | Handle t -> Lwd.get t.request
-    | Empty -> default_request
-
-  let lwd_false = Lwd.pure false
+  let status (vi, vb : handle) =
+    let rq = Lwd.pair (Lwd.get vi) (Lwd.pure vb) in
+    Lwd.map (fun b -> Request (b, rq)) (Lwd.get vb)
 
   let has_focus = function
-    | Empty -> lwd_false
-    | Merge t -> t.focused
-    | Handle t -> Lwd.get t.focused
-
-  let merge t1 t2 =
-    match t1, t2 with
-    | Empty, x | x, Empty -> x
-    | _ ->
-      let argmax (a1, _ as h1) (a2, _ as h2) = if a1 > a2 then h1 else h2 in
-      let request1 = get_request t1 and request2 = get_request t2 in
-      let request = Lwd.map2 argmax request1 request2 in
-      let focused1 = has_focus t1 and focused2 = has_focus t2 in
-      let focused = Lwd.map2 (||) focused1 focused2 in
-      Merge { request; focused; left = t1; right = t2 }
+    | Empty -> false
+    | Request (b, _) -> b
 
   let clock = ref 0
 
-  let rec request : handle -> unit = function
-    | Handle { request; focused } ->
-      incr clock;
-      Lwd.set request (!clock, focused)
-    | Merge { left; _ }  -> request left
-    | Empty -> ()
+  let request (r, _ : handle) =
+    incr clock;
+    Lwd.set r !clock
 
-  let peek_focus t = Lwd.unsafe_peek (has_focus t)
+  let merge_request (i1, _ as r1) (i2, _ as r2) : request =
+    if i1 < i2 then r2 else r1
 
-  type root = {
-    mutable last : bool Lwd.var;
-  }
+  let merge s1 s2 : status = match s1, s2 with
+    | Empty, x | x, Empty -> x
+    | Request (b1, l1), Request (b2, l2) ->
+      Request (b1 || b2, Lwd.map2 merge_request l1 l2)
 
-  let root () = { last = Lwd.var false }
-
-  let update root (new_time, new_focus) =
+  (*let update root (new_time, new_focus) =
     let last_focus = root.last in
     root.last <- new_focus;
     if (last_focus != new_focus) && Lwd.peek last_focus then
       Lwd.set last_focus false;
     if new_time > 0 && not (Lwd.peek new_focus) then
-      Lwd.set new_focus true
+      Lwd.set new_focus true*)
 end
 
 module Gravity :
@@ -199,7 +177,7 @@ struct
     w : int; sw : int;
     h : int; sh : int;
     desc : t desc;
-    focus : Focus.handle;
+    focus : Focus.status;
     mutable cache : cache;
   }
   and cache = {
@@ -217,19 +195,19 @@ struct
 
   let empty =
     { w = 0; sw = 0; h = 0; sh = 0;
-      focus = Focus.void; desc = Atom I.empty; cache }
+      focus = Focus.empty; desc = Atom I.empty; cache }
 
   let atom img =
     { w = I.width img; sw = 0;
       h = I.height img; sh = 0;
-      focus = Focus.void;
+      focus = Focus.empty;
       desc = Atom img; cache }
 
   let mouse_area f t =
     { t with desc = Mouse_handler (t, f) }
 
-  let keyboard_area ?handle f t =
-    let focus = match handle with
+  let keyboard_area ?focus f t =
+    let focus = match focus with
       | None -> t.focus
       | Some focus -> Focus.merge focus t.focus
     in
@@ -262,10 +240,10 @@ struct
     let o_z = incr last_z; !last_z in
     fun o_n ->
       let desc = Overlay { o_n; o_x; o_y; o_h; o_z; o_origin; o_direction } in
-      { w = 0; sw = 0; h = 0; sh = 0; desc; focus = Focus.void; cache }
+      { w = 0; sw = 0; h = 0; sh = 0; desc; focus = Focus.empty; cache }
 
-  let event_filter ?handle f t =
-    let focus = match handle with
+  let event_filter ?focus f t =
+    let focus = match focus with
       | None -> t.focus
       | Some focus -> focus
     in
@@ -345,44 +323,52 @@ struct
 
   type size = int * int
 
+  type grab_function = (x:int -> y:int -> unit) * (x:int -> y:int -> unit)
   type t = {
     mutable size : size;
     mutable view : ui;
-    mutable mouse_grab :
-      (int * int * ((x:int -> y:int -> unit) * (x:int -> y:int -> unit))) option;
-    focus_var : Focus.handle Lwd.var;
+    mutable mouse_grab : (int * int * grab_function) option;
+    focus_var : Focus.status Lwd.var;
     focus_root : Focus.request Lwd.root;
-    focus : Focus.root;
-    focused_var: bool Lwd.t Lwd.var;
-    focused_root: bool Lwd.root;
+    mutable last_request : Focus.request;
   }
 
+  let default_request = (0, Lwd.var false)
+  let default = Lwd.pure default_request
+
   let make () =
-    let focus_var = Lwd.var Focus.void in
+    let focus_var = Lwd.var Focus.empty in
     let focus_root =
-      Lwd.observe (Lwd.bind (Lwd.get focus_var) Focus.get_request)
+      Lwd.observe (Lwd.bind (Lwd.get focus_var) (function
+          | Focus.Empty -> default
+          | Focus.Request (_, request) -> request
+        ))
     in
-    let focused_var = Lwd.var (Lwd.pure false) in
-    let focused_root = Lwd.observe (Lwd.join (Lwd.get focused_var)) in
     {
       mouse_grab = None;
-      focus = Focus.root ();
       size = (0, 0);
       view = Ui.empty;
       focus_var;
       focus_root;
-      focused_var;
-      focused_root;
+      last_request = default_request;
     }
 
   let size t = t.size
 
+  let update_focus t ui =
+    Lwd.set t.focus_var ui.focus;
+    let (_last_time, last_var) = t.last_request in
+    let (new_time, new_var as new_request) = Lwd.sample t.focus_root in
+    t.last_request <- new_request;
+    if (last_var != new_var) && Lwd.peek last_var then
+      Lwd.set last_var false;
+    if new_time > 0 && not (Lwd.peek new_var) then
+      Lwd.set new_var true
+
   let update t size ui =
     t.size <- size;
     t.view <- ui;
-    Lwd.set t.focus_var ui.focus;
-    Lwd.set t.focused_var (Focus.has_focus ui.focus);
-    Focus.update t.focus (Lwd.sample t.focus_root)
+    update_focus t ui
 
   let sort_overlays o = List.sort
       (fun o1 o2 -> - compare o1.o_z o2.o_z) o
@@ -620,11 +606,10 @@ struct
     match t.desc with
     | Atom _ | Overlay _ -> acc
     | X (a, b) | Y (a, b) | Z (a, b) ->
-      begin match Focus.peek_focus a.focus with
-        | None -> assert false
-        | Some true -> dispatch_key_branch acc a
-        | Some false -> dispatch_key_branch acc b
-      end
+      if Focus.has_focus a.focus then
+        dispatch_key_branch acc a
+      else
+        dispatch_key_branch acc b
     | Focus_area (t, f) -> dispatch_key_branch (f :: acc) t
     | Mouse_handler (t, _) | Size_sensor (t, _)
     | Scroll_area (t, _, _) | Resize (t, _, _) ->
@@ -633,7 +618,7 @@ struct
       (fun key -> f (`Key key)) :: dispatch_key_branch acc t
 
   let dispatch_key st key =
-    if Lwd.sample st.focused_root then
+    if Focus.has_focus st.view.focus then
       let branch = dispatch_key_branch [] st.view in
       let rec iter = function
         | f :: fs ->
