@@ -69,8 +69,8 @@ let vscroll_area ~state ~change t =
   let focus_handler state = function
     (*| `Arrow `Left , _ -> scroll (-scroll_step) 0*)
     (*| `Arrow `Right, _ -> scroll (+scroll_step) 0*)
-    | `Arrow `Up   , _ -> scroll state (-scroll_step)
-    | `Arrow `Down , _ -> scroll state (+scroll_step)
+    | `Arrow `Up   , [] -> scroll state (-scroll_step)
+    | `Arrow `Down , [] -> scroll state (+scroll_step)
     | _ -> `Unhandled
   in
   let scroll_handler state ~x:_ ~y:_ = function
@@ -110,10 +110,10 @@ let scroll_area ?(offset=0,0) t =
     `Handled
   in
   let focus_handler = function
-    | `Arrow `Left , _ -> scroll (-scroll_step) 0
-    | `Arrow `Right, _ -> scroll (+scroll_step) 0
-    | `Arrow `Up   , _ -> scroll 0 (-scroll_step)
-    | `Arrow `Down , _ -> scroll 0 (+scroll_step)
+    | `Arrow `Left , [] -> scroll (-scroll_step) 0
+    | `Arrow `Right, [] -> scroll (+scroll_step) 0
+    | `Arrow `Up   , [] -> scroll 0 (-scroll_step)
+    | `Arrow `Down , [] -> scroll 0 (+scroll_step)
     | _ -> `Unhandled
   in
   let scroll_handler ~x:_ ~y:_ = function
@@ -328,14 +328,14 @@ let edit_field state ~on_change ~on_submit =
         on_change (text, pos);
         `Handled
       | `Enter, _ -> on_submit (text, pos); `Handled
-      | `Arrow `Left, _ ->
+      | `Arrow `Left, [] ->
         let pos = min (String.length text) pos in
         if pos > 0 then (
           on_change (text, pos - 1);
           `Handled
         )
         else `Unhandled
-      | `Arrow `Right, _ ->
+      | `Arrow `Right, [] ->
         let pos = pos + 1 in
         if pos <= String.length text
         then (on_change (text, pos); `Handled)

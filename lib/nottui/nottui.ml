@@ -637,7 +637,7 @@ struct
     else
       `Unhandled
 
-  let rec grab_focus t dir =
+  (*let rec grab_focus t dir =
     match t.desc with
     | Atom _ | Overlay _ -> false
     | Mouse_handler (t, _) | Size_sensor (t, _)
@@ -664,7 +664,21 @@ struct
         | _ -> grab_focus a dir || grab_focus b dir
       end
     | Z (a, b) ->
-      grab_focus b dir || grab_focus a dir
+      grab_focus b dir || grab_focus a dir*)
+
+  let grab_focus t _dir =
+    match t.focus with
+    | Focus.Empty | Focus.Request (true, _) -> false
+    | Focus.Request (false, request) ->
+      let root = Lwd.observe request in
+      try
+        let (_, handle) = Lwd.sample root in
+        Focus.request handle;
+        prerr_endline "REQUEST!";
+        Lwd.flush root;
+        true
+      with exn ->
+        Lwd.flush root; raise exn
 
   let rec dispatch_focus t dir =
     match t.desc with
@@ -686,12 +700,16 @@ struct
            | `Next | `Right -> dispatch_focus b dir
            | _ -> false
           )
-        else
+        else if Focus.has_focus b.focus then
           dispatch_focus b dir ||
           (match dir with
-           | `Prev | `Left -> dispatch_focus b dir
+           | `Prev | `Left -> dispatch_focus a dir
            | _ -> false
           )
+        else
+          match dir with
+          | `Prev | `Left | `Up -> dispatch_focus b dir || dispatch_focus a dir
+          | `Next | `Down | `Right -> dispatch_focus a dir || dispatch_focus b dir
       end
     | Y (a, b) ->
       begin if Focus.has_focus a.focus then
@@ -700,12 +718,15 @@ struct
            | `Next | `Down -> dispatch_focus b dir
            | _ -> false
           )
-        else
+        else if Focus.has_focus b.focus then
           dispatch_focus b dir ||
           (match dir with
            | `Prev | `Up -> dispatch_focus a dir
            | _ -> false
           )
+        else match dir with
+          | `Prev | `Up -> dispatch_focus b dir || dispatch_focus a dir
+          | `Next | `Left | `Down | `Right -> dispatch_focus a dir || dispatch_focus b dir
       end
     | Z (a, b) ->
       if Focus.has_focus a.focus then
@@ -716,10 +737,10 @@ struct
   let rec dispatch_key st key =
     match dispatch_raw_key st key, key with
     | `Handled, _ -> `Handled
-    | `Unhandled, (`Arrow dir, mods) ->
+    | `Unhandled, (`Arrow dir, [`Meta]) ->
       let dir : [`Down | `Left | `Right | `Up] :>
           [`Down | `Left | `Right | `Up | `Next | `Prev] = dir in
-      dispatch_key st (`Focus dir, mods)
+      dispatch_key st (`Focus dir, [`Meta])
     | `Unhandled, (`Tab, mods) ->
       let dir = if List.mem `Shift mods then `Prev else `Next in
       dispatch_key st (`Focus dir, mods)
