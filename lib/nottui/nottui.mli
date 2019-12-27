@@ -38,6 +38,22 @@ sig
       | `Grab of (x:int -> y:int -> unit) * (x:int -> y:int -> unit)
     ]
 
+  type semantic_key = [
+    (* Clipboard *)
+    | `Copy
+    | `Paste
+    (* Focus management *)
+    | `Focus of [`Next | `Prev | `Left | `Right | `Up | `Down]
+  ]
+
+  type key = [
+    | Unescape.special | `Uchar of Uchar.t | `ASCII of char | semantic_key
+  ] * Unescape.mods
+
+  type mouse = Unescape.mouse
+
+  type event = [ `Key of key | `Mouse of mouse | `Paste of Unescape.paste ]
+
   type layout_spec = { w : int; h : int; sw : int; sh : int; }
   val pp_layout_spec : Format.formatter -> layout_spec -> unit
 
@@ -48,8 +64,7 @@ sig
   val atom : image -> t
   val mouse_area : mouse_handler -> t -> t
   val has_focus : t -> bool
-  val keyboard_area : ?focus:Focus.status ->
-    (Unescape.key -> may_handle) -> t -> t
+  val keyboard_area : ?focus:Focus.status -> (key -> may_handle) -> t -> t
   val scroll_area : int -> int -> t -> t
   val size_sensor : (int -> int -> unit) -> t -> t
   val resize :
@@ -61,7 +76,7 @@ sig
     t -> t
   val event_filter :
     ?focus:Focus.status ->
-    ([`Key of Unescape.key | `Mouse of Unescape.mouse] -> may_handle) -> t -> t
+    ([`Key of key | `Mouse of mouse] -> may_handle) -> t -> t
 
   val join_x : t -> t -> t
   val join_y : t -> t -> t
@@ -87,9 +102,9 @@ sig
   val size : t -> size
   val update : t -> size -> Ui.t -> unit
   val image : t -> image
-  val dispatch_mouse : t -> Unescape.mouse -> Ui.may_handle
-  val dispatch_key   : t -> Unescape.key   -> Ui.may_handle
-  val dispatch_event : t -> Unescape.event -> Ui.may_handle
+  val dispatch_mouse : t -> Ui.mouse -> Ui.may_handle
+  val dispatch_key   : t -> Ui.key   -> Ui.may_handle
+  val dispatch_event : t -> Ui.event -> Ui.may_handle
 end
 
 module Ui_loop :

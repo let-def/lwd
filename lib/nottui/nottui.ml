@@ -5,11 +5,11 @@ let mini x y : int = if x < y then x else y
 
 module Focus :
 sig
-  type handle
+  type handle = int Lwd.var * bool Lwd.var
   val make : unit -> handle
   val request : handle -> unit
 
-  type request = int * bool Lwd.var
+  type request = int * handle
   type status =
     | Empty
     | Request of bool * request Lwd.t
@@ -24,7 +24,7 @@ end = struct
   type handle = int Lwd.var * bool Lwd.var
   let make () = (Lwd.var 0, Lwd.var false)
 
-  type request = int * bool Lwd.var
+  type request = int * handle
 
   type status =
     | Empty
@@ -32,10 +32,8 @@ end = struct
 
   let empty : status = Empty
 
-  (*let is_empty = function Empty -> true | Request _ -> false*)
-
-  let status (vi, vb : handle) =
-    let rq = Lwd.pair (Lwd.get vi) (Lwd.pure vb) in
+  let status (vi, vb as handle : handle) =
+    let rq = Lwd.pair (Lwd.get vi) (Lwd.pure handle) in
     Lwd.map (fun b -> Request (b, rq)) (Lwd.get vb)
 
   let has_focus = function
@@ -55,14 +53,6 @@ end = struct
     | Empty, x | x, Empty -> x
     | Request (b1, l1), Request (b2, l2) ->
       Request (b1 || b2, Lwd.map2 merge_request l1 l2)
-
-  (*let update root (new_time, new_focus) =
-    let last_focus = root.last in
-    root.last <- new_focus;
-    if (last_focus != new_focus) && Lwd.peek last_focus then
-      Lwd.set last_focus false;
-    if new_time > 0 && not (Lwd.peek new_focus) then
-      Lwd.set new_focus true*)
 end
 
 module Gravity :
@@ -143,6 +133,22 @@ struct
       | `Grab of (x:int -> y:int -> unit) * (x:int -> y:int -> unit)
     ]
 
+  type semantic_key = [
+    (* Clipboard *)
+    | `Copy
+    | `Paste
+    (* Focus management *)
+    | `Focus of [`Next | `Prev | `Left | `Right | `Up | `Down]
+  ]
+
+  type key = [
+    | Unescape.special | `Uchar of Uchar.t | `ASCII of char | semantic_key
+  ] * Unescape.mods
+
+  type mouse = Unescape.mouse
+
+  type event = [ `Key of key | `Mouse of mouse | `Paste of Unescape.paste ]
+
   type layout_spec = { w : int; h : int; sw : int; sh : int }
 
   let pp_layout_spec ppf { w; h; sw; sh } =
@@ -153,11 +159,9 @@ struct
     | Size_sensor of 'a * (int -> int -> unit)
     | Resize of 'a * Gravity.t2 * A.t
     | Mouse_handler of 'a * mouse_handler
-    | Focus_area of 'a * (Unescape.key -> may_handle)
+    | Focus_area of 'a * (key -> may_handle)
     | Scroll_area of 'a * int * int
-    | Event_filter of 'a *
-                      ([`Key of Unescape.key | `Mouse of Unescape.mouse] ->
-                       may_handle)
+    | Event_filter of 'a * ([`Key of key | `Mouse of mouse] -> may_handle)
     | Overlay of 'a overlay
     | X of 'a * 'a
     | Y of 'a * 'a
@@ -333,7 +337,7 @@ struct
     mutable last_request : Focus.request;
   }
 
-  let default_request = (0, Lwd.var false)
+  let default_request = (0, (Lwd.var 0, Lwd.var false))
   let default = Lwd.pure default_request
 
   let make () =
@@ -357,8 +361,8 @@ struct
 
   let update_focus t ui =
     Lwd.set t.focus_var ui.focus;
-    let (_last_time, last_var) = t.last_request in
-    let (new_time, new_var as new_request) = Lwd.sample t.focus_root in
+    let (_last_time, (_, last_var)) = t.last_request in
+    let (new_time, (_, new_var) as new_request) = Lwd.sample t.focus_root in
     t.last_request <- new_request;
     if (last_var != new_var) && Lwd.peek last_var then
       Lwd.set last_var false;
@@ -368,6 +372,7 @@ struct
   let update t size ui =
     t.size <- size;
     t.view <- ui;
+    (* FIXME: focus invalidation should trigger an update of the UI *)
     update_focus t ui
 
   let sort_overlays o = List.sort
@@ -617,7 +622,7 @@ struct
     | Event_filter (t, f) ->
       (fun key -> f (`Key key)) :: dispatch_key_branch acc t
 
-  let dispatch_key st key =
+  let dispatch_raw_key st key =
     if Focus.has_focus st.view.focus then
       let branch = dispatch_key_branch [] st.view in
       let rec iter = function
@@ -631,6 +636,96 @@ struct
       iter branch
     else
       `Unhandled
+
+  let rec grab_focus t dir =
+    match t.desc with
+    | Atom _ | Overlay _ -> false
+    | Mouse_handler (t, _) | Size_sensor (t, _)
+    | Scroll_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
+      grab_focus t dir
+    | Focus_area (t', _) ->
+      grab_focus t' dir || (
+        match t.focus with
+        | Focus.Empty | Focus.Request (true, _) -> false
+        | Focus.Request (false, request) ->
+          let root = Lwd.observe request in
+          try
+            let (_, handle) = Lwd.sample root in
+            Focus.request handle;
+            prerr_endline "REQUEST!";
+            Lwd.flush root;
+            true
+          with exn ->
+            Lwd.flush root; raise exn
+      )
+    | X (a, b) | Y (a, b) ->
+      begin match dir with
+        | `Prev | `Left | `Up -> grab_focus b dir || grab_focus a dir
+        | _ -> grab_focus a dir || grab_focus b dir
+      end
+    | Z (a, b) ->
+      grab_focus b dir || grab_focus a dir
+
+  let rec dispatch_focus t dir =
+    match t.desc with
+    | Atom _ | Overlay _ -> false
+    | Mouse_handler (t, _) | Size_sensor (t, _)
+    | Scroll_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
+      dispatch_focus t dir
+    | Focus_area (t', _) ->
+      if Focus.has_focus t'.focus then
+        dispatch_focus t' dir || grab_focus t dir
+      else if Focus.has_focus t.focus then
+        false
+      else
+        grab_focus t dir
+    | X (a, b) ->
+      begin if Focus.has_focus a.focus then
+          dispatch_focus a dir ||
+          (match dir with
+           | `Next | `Right -> dispatch_focus b dir
+           | _ -> false
+          )
+        else
+          dispatch_focus b dir ||
+          (match dir with
+           | `Prev | `Left -> dispatch_focus b dir
+           | _ -> false
+          )
+      end
+    | Y (a, b) ->
+      begin if Focus.has_focus a.focus then
+          dispatch_focus a dir ||
+          (match dir with
+           | `Next | `Down -> dispatch_focus b dir
+           | _ -> false
+          )
+        else
+          dispatch_focus b dir ||
+          (match dir with
+           | `Prev | `Up -> dispatch_focus a dir
+           | _ -> false
+          )
+      end
+    | Z (a, b) ->
+      if Focus.has_focus a.focus then
+        dispatch_focus a dir
+      else
+        dispatch_focus b dir || dispatch_focus a dir
+
+  let rec dispatch_key st key =
+    match dispatch_raw_key st key, key with
+    | `Handled, _ -> `Handled
+    | `Unhandled, (`Arrow dir, mods) ->
+      let dir : [`Down | `Left | `Right | `Up] :>
+          [`Down | `Left | `Right | `Up | `Next | `Prev] = dir in
+      dispatch_key st (`Focus dir, mods)
+    | `Unhandled, (`Tab, mods) ->
+      let dir = if List.mem `Shift mods then `Prev else `Next in
+      dispatch_key st (`Focus dir, mods)
+    | `Unhandled, (`Focus dir, _) ->
+      if dispatch_focus st.view dir then `Handled else `Unhandled
+    | `Unhandled, _ -> `Unhandled
 
   let dispatch_event t = function
     | `Key key -> dispatch_key t key
@@ -672,6 +767,7 @@ struct
         | `End -> ()
         | `Resize _ -> ()
         | #Unescape.event as event ->
+          let event = (event : Unescape.event :> Ui.event) in
           ignore (Renderer.dispatch_event renderer event : [`Handled | `Unhandled])
 
   let run_with_term term ?tick_period ?(tick=ignore) ~renderer quit t =
