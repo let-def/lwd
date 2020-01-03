@@ -5,14 +5,14 @@ let mini x y : int = if x < y then x else y
 
 module Focus :
 sig
-  type handle = int Lwd.var * bool Lwd.var
+  type handle = int Lwd.var
   val make : unit -> handle
   val request : handle -> unit
 
-  type request = int * handle
   type status =
     | Empty
-    | Request of bool * request Lwd.t
+    | Handle of int * handle
+    | Conflict of int
 
   val empty : status
   (*val is_empty : status -> bool*)
@@ -21,38 +21,39 @@ sig
   val merge : status -> status -> status
 end = struct
 
-  type handle = int Lwd.var * bool Lwd.var
-  let make () = (Lwd.var 0, Lwd.var false)
-
-  type request = int * handle
-
+  type handle = int Lwd.var
   type status =
     | Empty
-    | Request of bool * request Lwd.t
+    | Handle of int * handle
+    | Conflict of int
+
+  let make () = Lwd.var 0
 
   let empty : status = Empty
 
-  let status (vi, vb as handle : handle) =
-    let rq = Lwd.pair (Lwd.get vi) (Lwd.pure handle) in
-    Lwd.map (fun b -> Request (b, rq)) (Lwd.get vb)
+  let status (h : handle) : status Lwd.t =
+    Lwd.map (fun i -> Handle (i, h)) (Lwd.get h)
 
   let has_focus = function
     | Empty -> false
-    | Request (b, _) -> b
+    | Handle (i, _) | Conflict i -> i > 0
 
   let clock = ref 0
 
-  let request (r, _ : handle) =
+  let request (r : handle) =
     incr clock;
     Lwd.set r !clock
 
-  let merge_request (i1, _ as r1) (i2, _ as r2) : request =
-    if i1 < i2 then r2 else r1
-
   let merge s1 s2 : status = match s1, s2 with
     | Empty, x | x, Empty -> x
-    | Request (b1, l1), Request (b2, l2) ->
-      Request (b1 || b2, Lwd.map2 merge_request l1 l2)
+    | _, Handle (0, _) -> s1
+    | Handle (0, _), _ -> s2
+    | Handle (i1, _), Handle (i2, _) when i1 = i2 -> s1
+    | (Handle (i1, _) | Conflict i1), Conflict i2 when i1 < i2 -> s2
+    | (Handle (i1, _) | Conflict i1), Handle (i2, _) when i1 < i2 ->
+      Conflict i2
+    | Conflict _, (Handle (_, _) | Conflict _) -> s1
+    | Handle (i1, _), (Handle (_, _) | Conflict _) -> Conflict i1
 end
 
 module Gravity :
@@ -318,6 +319,12 @@ struct
         field "o_direction" (fun r -> r.o_direction) Gravity.pp;
       ]) ppf
 
+  let iter f ui = match ui.desc with
+    | Atom _ -> ()
+    | Size_sensor (u, _) | Resize (u, _, _) | Mouse_handler (u, _)
+    | Focus_area (u, _) | Scroll_area (u, _, _) | Event_filter (u, _)
+    | Overlay {o_n = u; _} -> f u
+    | X (u1, u2) | Y (u1, u2) | Z (u1, u2) -> f u1; f u2
 end
 type ui = Ui.t
 
@@ -332,48 +339,35 @@ struct
     mutable size : size;
     mutable view : ui;
     mutable mouse_grab : (int * int * grab_function) option;
-    focus_var : Focus.status Lwd.var;
-    focus_root : Focus.request Lwd.root;
-    mutable last_request : Focus.request;
   }
 
-  let default_request = (0, (Lwd.var 0, Lwd.var false))
-  let default = Lwd.pure default_request
-
-  let make () =
-    let focus_var = Lwd.var Focus.empty in
-    let focus_root =
-      Lwd.observe (Lwd.bind (Lwd.get focus_var) (function
-          | Focus.Empty -> default
-          | Focus.Request (_, request) -> request
-        ))
-    in
-    {
-      mouse_grab = None;
-      size = (0, 0);
-      view = Ui.empty;
-      focus_var;
-      focus_root;
-      last_request = default_request;
-    }
+  let make () = {
+    mouse_grab = None;
+    size = (0, 0);
+    view = Ui.empty;
+  }
 
   let size t = t.size
 
-  let update_focus t ui =
-    Lwd.set t.focus_var ui.focus;
-    let (_last_time, (_, last_var)) = t.last_request in
-    let (new_time, (_, new_var) as new_request) = Lwd.sample t.focus_root in
-    t.last_request <- new_request;
-    if (last_var != new_var) && Lwd.peek last_var then
-      Lwd.set last_var false;
-    if new_time > 0 && not (Lwd.peek new_var) then
-      Lwd.set new_var true
+  let solve_focus ui i =
+    let rec aux ui =
+      match ui.focus with
+      | Focus.Empty | Focus.Handle (0, _) -> ()
+      | Focus.Handle (i', _) when i = i' -> ()
+      | Focus.Handle (_, h) -> Lwd.set h 0
+      | Focus.Conflict _ -> Ui.iter aux ui
+    in
+    aux ui
+
+  let update_focus ui =
+    match ui.focus with
+    | Focus.Empty | Focus.Handle _ -> ()
+    | Focus.Conflict i -> solve_focus ui i
 
   let update t size ui =
     t.size <- size;
     t.view <- ui;
-    (* FIXME: focus invalidation should trigger an update of the UI *)
-    update_focus t ui
+    update_focus ui
 
   let sort_overlays o = List.sort
       (fun o1 o2 -> - compare o1.o_z o2.o_z) o
@@ -666,19 +660,16 @@ struct
     | Z (a, b) ->
       grab_focus b dir || grab_focus a dir*)
 
-  let grab_focus t _dir =
-    match t.focus with
-    | Focus.Empty | Focus.Request (true, _) -> false
-    | Focus.Request (false, request) ->
-      let root = Lwd.observe request in
-      try
-        let (_, handle) = Lwd.sample root in
-        Focus.request handle;
-        prerr_endline "REQUEST!";
-        Lwd.flush root;
-        true
-      with exn ->
-        Lwd.flush root; raise exn
+  exception Acquired_focus
+
+  let grab_focus ui =
+    let rec aux ui =
+      match ui.focus with
+      | Focus.Empty -> ()
+      | Focus.Handle (_, h) -> Focus.request h; raise Acquired_focus
+      | Focus.Conflict _ -> iter aux ui
+    in
+    try aux ui; false with Acquired_focus -> true
 
   let rec dispatch_focus t dir =
     match t.desc with
@@ -688,11 +679,11 @@ struct
       dispatch_focus t dir
     | Focus_area (t', _) ->
       if Focus.has_focus t'.focus then
-        dispatch_focus t' dir || grab_focus t dir
+        dispatch_focus t' dir || grab_focus t
       else if Focus.has_focus t.focus then
         false
       else
-        grab_focus t dir
+        grab_focus t
     | X (a, b) ->
       begin if Focus.has_focus a.focus then
           dispatch_focus a dir ||
