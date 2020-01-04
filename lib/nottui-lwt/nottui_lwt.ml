@@ -9,15 +9,17 @@ type event = [
   | `Resize of int * int
 ]
 
-let copy_until quit input =
+let copy_until quit ~f input =
   let quit = Lwt.map (fun () -> None) quit in
   let stream, push = Lwt_stream.create () in
   let rec aux () =
     Lwt.bind (Lwt.choose [quit; Lwt_stream.peek input]) @@ fun result ->
-    push result;
     match result with
-    | None -> Lwt.return_unit
-    | Some _ ->
+    | None ->
+      push None;
+      Lwt.return_unit
+    | Some x ->
+      push (Some (f x));
       Lwt.bind (Lwt_stream.junk input) aux
   in
   Lwt.async aux;
@@ -36,7 +38,9 @@ let render ?quit ~size events doc =
     | Some quit -> quit, None
     | None -> let t, u = Lwt.wait () in t, Some u
   in
-  let events = copy_until quit events in
+  let events = copy_until quit events ~f:(fun e ->
+      (e : [`Resize of _ | Unescape.event] :> [`Resize of _ | Ui.event]))
+  in
   let size = ref size in
   let result, push = Lwt_stream.create () in
   let refresh () =
@@ -51,7 +55,7 @@ let render ?quit ~size events doc =
         | Some u -> Lwt.wakeup u ()
         | None -> ignore (Renderer.dispatch_event renderer event)
       end
-    | #Unescape.event as event ->
+    | #Ui.event as event ->
       ignore (Renderer.dispatch_event renderer event)
     | `Resize size' ->
       size := size';
