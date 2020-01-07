@@ -191,23 +191,15 @@ let v_pane left right =
   let split = ref 0.5 in
   let splitter = Lwd.var empty_lwd in
   let splitter_bg = Lwd.var Ui.empty in
-  let left_bg = Lwd.var Ui.empty in
-  let right_bg = Lwd.var Ui.empty in
   let left_pane = Lwd.var empty_lwd in
   let right_pane = Lwd.var empty_lwd in
-  let left_content = Lwd_utils.pack Ui.pack_z [Lwd.get left_bg; left] in
-  let right_content = Lwd_utils.pack Ui.pack_z [Lwd.get right_bg; right] in
   let node = Lwd_utils.pack Ui.pack_y [!$left_pane; !$splitter; !$right_pane] in
   let render () =
     let split = int_of_float (!split *. float !h) in
     let split = min (!h - 1) (max split 0) in
-    left_bg $= Ui.atom
-      (I.char A.(bg lightblue) ' ' !w split);
-    right_bg $= Ui.atom
-      (I.char A.(bg lightblue) ' ' !w (!h - split - 1));
-    left_pane $= Lwd.map' left_content
+    left_pane $= Lwd.map' left
       (fun t -> Ui.resize ~w:!w ~h:split t);
-    right_pane $= Lwd.map' right_content
+    right_pane $= Lwd.map' right
       (fun t -> Ui.resize ~w:!w ~h:(!h - split - 1) t);
     splitter_bg $= Ui.atom (I.char A.(bg lightyellow) ' ' !w 1);
   in
@@ -238,21 +230,15 @@ let h_pane top bottom =
   let split = ref 0.5 in
   let splitter = Lwd.var empty_lwd in
   let splitter_bg = Lwd.var Ui.empty in
-  let left_bg = Lwd.var Ui.empty in
-  let right_bg = Lwd.var Ui.empty in
-  let left_pane = Lwd.var empty_lwd in
-  let right_pane = Lwd.var empty_lwd in
-  let left_content = Lwd_utils.pack Ui.pack_z [Lwd.get left_bg; top] in
-  let right_content = Lwd_utils.pack Ui.pack_z [Lwd.get right_bg; bottom] in
-  let node = Lwd_utils.pack Ui.pack_x [!$left_pane; !$splitter; !$right_pane] in
+  let top_pane = Lwd.var empty_lwd in
+  let bot_pane = Lwd.var empty_lwd in
+  let node = Lwd_utils.pack Ui.pack_x [!$top_pane; !$splitter; !$bot_pane] in
   let render () =
     let split = int_of_float (!split *. float !w) in
     let split = min (!w - 1) (max split 0) in
-    left_bg $= Ui.atom (Notty.I.char Notty.A.(bg lightblue) ' ' split !h);
-    right_bg $= Ui.atom (Notty.I.char Notty.A.(bg lightblue) ' ' (!w - split - 1) !h);
-    left_pane $= Lwd.map' left_content
+    top_pane $= Lwd.map' top
       (fun t -> Ui.resize ~w:split ~h:!h t);
-    right_pane $= Lwd.map' right_content
+    bot_pane $= Lwd.map' bottom
       (fun t -> Ui.resize ~w:(!w - split - 1) ~h:!h t);
     splitter_bg $= Ui.atom (Notty.I.char Notty.A.(bg lightyellow) ' ' 1 !h);
   in
