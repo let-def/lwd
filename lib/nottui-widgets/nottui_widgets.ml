@@ -1,6 +1,6 @@
+open Lwd_infix
 open Notty
 open Nottui
-open Lwd.Infix
 
 let (!$) x = Lwd.join (Lwd.get x)
 let empty_lwd = Lwd.return Ui.empty

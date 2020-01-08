@@ -517,9 +517,6 @@ let rec iter f = function
   | Root t ->
     iter f t.child
 
-module Infix = struct
-  let ($<-) = set
-end
 let rec left_most : 'a row -> 'a row option = function
   | Root _ -> assert false
   | Leaf -> None

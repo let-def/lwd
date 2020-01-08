@@ -33,11 +33,3 @@ val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 val sample : 'a root -> 'a
 val is_damaged : 'a root -> bool
 val release : 'a root -> unit
-
-(*val unsafe_peek : 'a t -> 'a option*)
-
-module Infix : sig
-  val (let$) : 'a t -> ('a -> 'b t) -> 'b t
-  val (and$) : 'a t -> 'b t -> ('a * 'b) t
-  val ($=) : 'a var -> 'a -> unit
-end

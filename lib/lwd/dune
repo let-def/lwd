@@ -1,5 +1,18 @@
 (library 
   (name lwd) 
   (public_name lwd)
-  (modules lwd lwd_table lwd_utils) 
+  (modules lwd lwd_table lwd_infix lwd_utils) 
   (wrapped false))
+
+(rule
+ (targets lwd_infix.ml lwd_infix.mli)
+ (deps lwd_infix_compat.ml lwd_infix_compat.mli 
+       lwd_infix_letop.ml lwd_infix_letop.mli)
+ (action
+  (progn
+   (with-stdout-to lwd_infix.mli (run ./select_version.exe intf))
+   (with-stdout-to lwd_infix.ml (run ./select_version.exe impl)))))
+
+(executable
+ (modules select_version)
+ (name select_version))

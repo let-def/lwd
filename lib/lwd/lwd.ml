@@ -458,14 +458,3 @@ let set_on_invalidate x f =
   match x with
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t -> t.on_invalidate <- f
-
-(*let unsafe_peek = function
-  | Pure x -> Some x
-  | Operator t -> t.value
-  | Root t -> t.value*)
-
-module Infix = struct
-  let (let$) = bind
-  let (and$) = pair
-  let ($=) = set
-end
