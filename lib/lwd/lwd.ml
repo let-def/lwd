@@ -1,6 +1,7 @@
 type 'a t =
   | Pure of 'a
-  | Impure : {
+  | Impure of 'a
+  | Operator : {
       mutable value : 'a option;
       mutable trace : trace;
       mutable trace_idx : trace_idx;
@@ -43,18 +44,39 @@ and trace_idx =
 let return x = Pure x
 let pure x = Pure x
 
+let impure = function
+  | Pure x -> Impure x
+  | other -> other
+
 let dummy = Pure (Obj.repr ())
 
-let impure desc =
-  Impure { value = None; trace = T0; desc; trace_idx = I0 }
+let operator desc =
+  Operator { value = None; trace = T0; desc; trace_idx = I0 }
 
-let map f x = impure (Map (x, f))
-let map2 f x y = impure (Map2 (x, y, f))
-let map' x f = impure (Map (x, f))
-let map2' x y f = impure (Map2 (x, y, f))
-let pair x y = impure (Pair (x, y))
-let app f x = impure (App (f, x))
-let join child = impure (Join { child; intermediate = None })
+let map f x = match x with
+  | Pure vx -> Pure (f vx)
+  | x -> operator (Map (x, f))
+
+let map2 f x y =
+  match x, y with
+  | Pure vx, Pure vy -> Pure (f vx vy)
+  | _ -> operator (Map2 (x, y, f))
+
+let map' x f = map f x
+let map2' x y f = map2 f x y
+
+let pair x y = match x, y with
+  | Pure vx, Pure vy -> Pure (vx, vy)
+  | _ -> operator (Pair (x, y))
+
+let app f x = match f, x with
+  | Pure vf, Pure vx -> Pure (vf vx)
+  | _ -> operator (App (f, x))
+
+let join child = match child with
+  | Pure v -> v
+  | _ -> operator (Join { child; intermediate = None })
+
 let bind x f = join (map f x)
 
 (* Management of trace indices *)
@@ -63,9 +85,9 @@ external t_equal : _ t -> _ t -> bool = "%eq"
 external obj_t : 'a t -> Obj.t t = "%identity"
 
 let add_idx obj idx = function
-  | Pure _ -> assert false
+  | Pure _ | Impure _ -> assert false
   | Root t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
-  | Impure t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
+  | Operator t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
 
 let rec rem_idx obj = function
   | I0 -> assert false
@@ -78,11 +100,11 @@ let rec rem_idx obj = function
       (idx, self)
 
 let rem_idx obj = function
-  | Pure _ -> assert false
+  | Pure _ | Impure _ -> assert false
   | Root t' ->
     let idx, trace_idx = rem_idx obj t'.trace_idx in
     t'.trace_idx <- trace_idx; idx
-  | Impure t' ->
+  | Operator t' ->
     let idx, trace_idx = rem_idx obj t'.trace_idx in
     t'.trace_idx <- trace_idx; idx
 
@@ -94,9 +116,9 @@ let rec mov_idx obj oldidx newidx = function
     else mov_idx obj oldidx newidx t.next
 
 let mov_idx obj oldidx newidx = function
-  | Pure _ -> assert false
+  | Pure _ | Impure _ -> assert false
   | Root t' -> mov_idx obj oldidx newidx t'.trace_idx
-  | Impure t' -> mov_idx obj oldidx newidx t'.trace_idx
+  | Operator t' -> mov_idx obj oldidx newidx t'.trace_idx
 
 let rec get_idx obj = function
   | I0 -> assert false
@@ -106,18 +128,18 @@ let rec get_idx obj = function
     else get_idx obj t.next
 
 let get_idx obj = function
-  | Pure _ -> assert false
+  | Pure _ | Impure _ -> assert false
   | Root t' -> get_idx obj t'.trace_idx
-  | Impure t' -> get_idx obj t'.trace_idx
+  | Operator t' -> get_idx obj t'.trace_idx
 
 (* Propagating invalidation *)
 let rec invalidate_node : type a . a t -> unit = function
-  | Pure _ -> assert false
+  | Pure _ | Impure _ -> assert false
   | Root { value = None; _ } -> ()
   | Root ({ value = Some x; _ } as t) ->
     t.value <- None;
     t.on_invalidate x
-  | Impure t ->
+  | Operator t ->
     begin match t.value with
       | None -> ()
       | Some _ ->
@@ -149,28 +171,28 @@ and invalidate_trace = function
 
 (* Variables *)
 type 'a var = 'a t
-let var x = impure (Var {binding = x})
+let var x = operator (Var {binding = x})
 let get x = x
 
 let set vx x =
   match vx with
-  | Impure ({desc = Var v; _}) ->
+  | Operator ({desc = Var v; _}) ->
     invalidate_node vx;
     v.binding <- x
   | _ -> assert false
 
 let peek = function
-  | Impure ({desc = Var v; _}) -> v.binding
+  | Operator ({desc = Var v; _}) -> v.binding
   | _ -> assert false
 
 (* Primitives *)
 type 'a prim = 'a t
 let prim ~acquire ~release =
-  impure (Prim { acquire; release })
+  operator (Prim { acquire; release })
 let get_prim x = x
 
 let invalidate = function
-  | Impure ({ desc = Prim p; _ } as t) ->
+  | Operator ({ desc = Prim p; _ } as t) ->
     let value = t.value in
     t.value <- None;
     invalidate_trace t.trace;
@@ -189,8 +211,8 @@ let rec sub_release
   : type a b . release_failure list -> a t -> b t -> release_failure list
   = fun failures origin -> function
     | Root _ -> assert false
-    | Pure _ -> failures
-    | Impure t as self ->
+    | Pure _ | Impure _ -> failures
+    | Operator t as self ->
       let trace = match t.trace with
         | T0 -> assert false
         | T1 x -> assert (t_equal x origin); T0
@@ -276,8 +298,8 @@ let rec sub_release
 let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
   function
   | Root _ -> assert false
-  | Pure _ -> ()
-  | Impure t as self ->
+  | Pure _ | Impure _ -> ()
+  | Operator t as self ->
     let acquire = match t.trace with T0 -> true | _ -> false in
     let trace = match t.trace with
       | T0 -> T1 origin
@@ -351,8 +373,8 @@ let activate_tracing self origin = function
 let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
   function
   | Root _ -> assert false
-  | Pure x -> x
-  | Impure t as self ->
+  | Pure x | Impure x -> x
+  | Operator t as self ->
     match t.value with
     | Some value -> value
     | None ->
@@ -403,7 +425,7 @@ let observe ?(on_invalidate=ignore) child =
   root
 
 let sample = function
-  | Pure _ | Impure _ -> assert false
+  | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
     match t.value with
     | Some value -> value
@@ -417,12 +439,12 @@ let sample = function
       value
 
 let is_damaged = function
-  | Pure _ | Impure _ -> assert false
+  | Pure _ | Impure _ | Operator _ -> assert false
   | Root { value = None ; _ } -> true
   | Root { value = Some _ ; _ } -> false
 
 let release = function
-  | Pure _ | Impure _ -> assert false
+  | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
     if t.acquired then (
       t.value <- None;
@@ -434,12 +456,12 @@ let release = function
 
 let set_on_invalidate x f =
   match x with
-  | Pure _ | Impure _ -> assert false
+  | Pure _ | Impure _ | Operator _ -> assert false
   | Root t -> t.on_invalidate <- f
 
 (*let unsafe_peek = function
   | Pure x -> Some x
-  | Impure t -> t.value
+  | Operator t -> t.value
   | Root t -> t.value*)
 
 module Infix = struct

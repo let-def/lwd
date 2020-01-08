@@ -10,6 +10,8 @@ val bind : 'a t -> ('a -> 'b t) -> 'b t
 val app : ('a -> 'b) t -> 'a t -> 'b t
 val pair : 'a t -> 'b t -> ('a * 'b) t
 
+val impure : 'a t -> 'a t
+
 type 'a var
 val var : 'a -> 'a var
 val get : 'a var -> 'a t
