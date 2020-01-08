@@ -631,35 +631,6 @@ struct
     else
       `Unhandled
 
-  (*let rec grab_focus t dir =
-    match t.desc with
-    | Atom _ | Overlay _ -> false
-    | Mouse_handler (t, _) | Size_sensor (t, _)
-    | Scroll_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
-      grab_focus t dir
-    | Focus_area (t', _) ->
-      grab_focus t' dir || (
-        match t.focus with
-        | Focus.Empty | Focus.Request (true, _) -> false
-        | Focus.Request (false, request) ->
-          let root = Lwd.observe request in
-          try
-            let (_, handle) = Lwd.sample root in
-            Focus.request handle;
-            prerr_endline "REQUEST!";
-            Lwd.flush root;
-            true
-          with exn ->
-            Lwd.flush root; raise exn
-      )
-    | X (a, b) | Y (a, b) ->
-      begin match dir with
-        | `Prev | `Left | `Up -> grab_focus b dir || grab_focus a dir
-        | _ -> grab_focus a dir || grab_focus b dir
-      end
-    | Z (a, b) ->
-      grab_focus b dir || grab_focus a dir*)
-
   exception Acquired_focus
 
   let grab_focus ui =
@@ -794,8 +765,8 @@ struct
       )
     in
     loop ();
-    Lwd.flush root;
-    Lwd.flush quit
+    Lwd.release root;
+    Lwd.release quit
 
   let run ?tick_period ?tick ?term ?(renderer=Renderer.make ())
           ?quit t =

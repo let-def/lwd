@@ -421,7 +421,7 @@ let is_damaged = function
   | Root { value = None ; _ } -> true
   | Root { value = Some _ ; _ } -> false
 
-let flush = function
+let release = function
   | Pure _ | Impure _ -> assert false
   | Root t as self ->
     if t.acquired then (

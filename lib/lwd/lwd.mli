@@ -30,7 +30,7 @@ val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 
 val sample : 'a root -> 'a
 val is_damaged : 'a root -> bool
-val flush : 'a root -> unit
+val release : 'a root -> unit
 
 (*val unsafe_peek : 'a t -> 'a option*)
 
