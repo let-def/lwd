@@ -520,3 +520,62 @@ let rec iter f = function
 module Infix = struct
   let ($<-) = set
 end
+let rec left_most : 'a row -> 'a row option = function
+  | Root _ -> assert false
+  | Leaf -> None
+  | Node n as self ->
+    match left_most n.left with
+    | Some _ as x -> x
+    | None -> Some self
+
+let rec right_most : 'a row -> 'a row option = function
+  | Root _ -> assert false
+  | Leaf -> None
+  | Node n as self ->
+    match right_most n.right with
+    | Some _ as x -> x
+    | None -> Some self
+
+let first : 'a t -> 'a row option = function
+  | Leaf | Node _ -> assert false
+  | Root root -> left_most root.child
+
+let last : 'a t -> 'a row option = function
+  | Leaf | Node _ -> assert false
+  | Root root -> right_most root.child
+
+let next : 'a row -> 'a row option = function
+  | Root _ -> assert false
+  | Leaf -> None
+  | Node n as self ->
+    match left_most n.right with
+    | Some _ as x -> x
+    | None ->
+      let rec walk_root self = function
+        | Leaf -> assert false
+        | Root _ -> None
+        | Node n' as parent ->
+          if n'.left == self then Some parent else (
+            assert (n'.right == self);
+            walk_root parent n'.parent
+          )
+      in
+      walk_root self n.parent
+
+let prev : 'a row -> 'a row option = function
+  | Root _ -> assert false
+  | Leaf -> None
+  | Node n as self ->
+    match right_most n.left with
+    | Some _ as x -> x
+    | None ->
+      let rec walk_root self = function
+        | Leaf -> assert false
+        | Root _ -> None
+        | Node n' as parent ->
+          if n'.right == self then Some parent else (
+            assert (n'.left == self);
+            walk_root parent n'.parent
+          )
+      in
+      walk_root self n.parent

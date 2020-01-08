@@ -11,6 +11,11 @@ val append' : 'a t -> 'a -> unit
 val before : ?set:'a -> 'a row -> 'a row
 val after : ?set:'a -> 'a row -> 'a row
 
+val first : 'a t -> 'a row option
+val last : 'a t -> 'a row option
+val next : 'a row -> 'a row option
+val prev : 'a row -> 'a row option
+
 val get : 'a row -> 'a option
 val set : 'a row -> 'a -> unit
 val unset : 'a row -> unit
