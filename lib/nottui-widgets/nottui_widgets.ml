@@ -33,6 +33,12 @@ let printf ?attr fmt =
 let fmt ?attr fmt =
   Format.kasprintf (string ?attr) fmt
 
+let kprintf k ?attr fmt =
+  Printf.ksprintf (fun str -> k (string ?attr str)) fmt
+
+let kfmt k ?attr fmt =
+  Format.kasprintf (fun str -> k (string ?attr str)) fmt
+
 let attr_menu_main = A.(bg green ++ fg black)
 let attr_menu_sub = A.(bg lightgreen ++ fg black)
 
