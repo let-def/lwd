@@ -90,8 +90,6 @@ let top = Lwd.var (Lwd.return Ui.empty)
 
 let bot = Lwd.var (Lwd.return Ui.empty)
 
-let quit = Lwd.var false
-
 let root =
   Lwd_utils.pack Ui.pack_y [ Lwd.join (Lwd.get top); Lwd.join (Lwd.get bot) ]
 
@@ -113,7 +111,7 @@ let () =
                          Lwd.return @@ sub_entry "B" ignore;
                          Lwd.return @@ sub_entry "CD" ignore;
                        ]);
-                 Lwd.return @@ sub_entry "Quit" (fun () -> quit $= true);
+                 Lwd.return @@ sub_entry "Quit" (fun () -> raise Exit);
                ]);
          main_menu_item "View" (fun _ ->
              bot $= Lwd.return (string "<View>");
@@ -129,4 +127,5 @@ let () =
          v_pane (strict_table ()) (Lwd.return @@ string "B");
          h_pane (Lwd.return (string "A")) (Lwd.return (string "B"));
        ];
-  Ui_loop.run ~tick_period:0.2 ~quit:(Lwd.get quit) root
+  try Ui_loop.run ~tick_period:0.2 root
+  with Exit -> ()
