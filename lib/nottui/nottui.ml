@@ -5,13 +5,15 @@ let mini x y : int = if x < y then x else y
 
 module Focus :
 sig
-  type handle = int Lwd.var
+  type var = int Lwd.var
+  type handle
   val make : unit -> handle
   val request : handle -> unit
+  val request_var : var -> unit
 
   type status =
     | Empty
-    | Handle of int * handle
+    | Handle of int * var
     | Conflict of int
 
   val empty : status
@@ -21,18 +23,22 @@ sig
   val merge : status -> status -> status
 end = struct
 
-  type handle = int Lwd.var
+  type var = int Lwd.var
+
   type status =
     | Empty
-    | Handle of int * handle
+    | Handle of int * var
     | Conflict of int
 
-  let make () = Lwd.var 0
+  type handle = var * status Lwd.t
+
+  let make () =
+    let v = Lwd.var 0 in
+    (v, Lwd.map (fun i -> Handle (i, v)) (Lwd.get v))
 
   let empty : status = Empty
 
-  let status (h : handle) : status Lwd.t =
-    Lwd.map (fun i -> Handle (i, h)) (Lwd.get h)
+  let status (h : handle) : status Lwd.t = snd h
 
   let has_focus = function
     | Empty -> false
@@ -40,9 +46,11 @@ end = struct
 
   let clock = ref 0
 
-  let request (r : handle) =
+  let request_var (v : var) =
     incr clock;
-    Lwd.set r !clock
+    Lwd.set v !clock
+
+  let request (v, _ : handle) = request_var v
 
   let merge s1 s2 : status = match s1, s2 with
     | Empty, x | x, Empty -> x
@@ -354,7 +362,7 @@ struct
       match ui.focus with
       | Focus.Empty | Focus.Handle (0, _) -> ()
       | Focus.Handle (i', _) when i = i' -> ()
-      | Focus.Handle (_, h) -> Lwd.set h 0
+      | Focus.Handle (_, v) -> Lwd.set v 0
       | Focus.Conflict _ -> Ui.iter aux ui
     in
     aux ui
@@ -634,7 +642,7 @@ struct
     let rec aux ui =
       match ui.focus with
       | Focus.Empty -> ()
-      | Focus.Handle (_, h) -> Focus.request h; raise Acquired_focus
+      | Focus.Handle (_, v) -> Focus.request_var v; raise Acquired_focus
       | Focus.Conflict _ -> iter aux ui
     in
     try aux ui; false with Acquired_focus -> true
