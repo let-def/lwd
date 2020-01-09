@@ -157,16 +157,17 @@ graph TD;
     R[Released]
     S[Sampled]
     D[Damaged]
-    s((call to sample))
-    i(graph input change, call <tt>on_invalidate</tt>)
-    r((call to release))
-    R---s
+    s{{call to sample}}
+    i{{graph input change, call <tt>on_invalidate</tt>}}
+    r{{call to release}}
+    R-->s
     s-->S
-    D---s
-    S---i
+    D-->s
+    S-->i
     i-->D
-    S---r
-    D---r
+    S-->r
+    D-->r
+    r-->R
 ```
 
 ## Relation to HTML, DOM, and reactive UI libraries
