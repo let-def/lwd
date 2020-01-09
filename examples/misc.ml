@@ -1,5 +1,5 @@
 open Nottui
-open Lwd.Infix
+open Lwd_infix
 open Nottui_widgets
 
 (* App-specific widgets *)

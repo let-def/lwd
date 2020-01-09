@@ -1,6 +1,6 @@
 open Nottui
 open Nottui_widgets
-open Lwd.Infix
+open Lwd_infix
 
 let is_double_click =
   let k = ref 0 in
