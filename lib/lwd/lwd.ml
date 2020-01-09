@@ -11,12 +11,14 @@ type 'a t =
   | Pure of 'a
   | Impure of 'a (* NOTE: is this really used anywhere? *)
   | Operator : {
+      mutable damaged : bool;
       mutable value : 'a option; (* cached value *)
       mutable trace : trace; (* list of parents this can invalidate *)
       mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
       desc: 'a desc;
     } -> 'a t
   | Root : {
+      mutable damaged : bool;
       mutable value : 'a option; (* cached value *)
       mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
       mutable on_invalidate : 'a -> unit;
@@ -62,7 +64,7 @@ let impure = function
 let dummy = Pure (Any.any ())
 
 let operator desc =
-  Operator { value = None; trace = T0; desc; trace_idx = I0 }
+  Operator { damaged = true; value = None; trace = T0; desc; trace_idx = I0 }
 
 let map f x = match x with
   | Pure vx -> Pure (f vx)
@@ -152,17 +154,23 @@ let get_idx obj = function
    and only if it has [t.value = Some _]. *)
 let rec invalidate_node : type a . a t -> unit = function
   | Pure _ | Impure _ -> assert false
-  | Root { value = None; _ } -> ()
-  | Root ({ value = Some x; _ } as t) ->
-    t.value <- None;
-    t.on_invalidate x (* user callback that {i observes} this root. *)
-  | Operator t ->
-    begin match t.value with
+  | Root ({ value; _ } as t) ->
+    t.damaged <- true;
+    begin match value with
       | None -> ()
-      | Some _ ->
+      | Some x ->
         t.value <- None;
-        invalidate_trace t.trace; (* invalidate parents recursively *)
+        t.on_invalidate x (* user callback that {i observes} this root. *)
     end
+  | Operator t ->
+    let damaged = match t.value with
+      | None -> true
+      | Some _ -> t.value <- None; false
+    in
+    if not (damaged && t.damaged) then (
+      t.damaged <- true;
+      invalidate_trace t.trace; (* invalidate parents recursively *)
+    )
 
 (* invalidate recursively documents in the given trace *)
 and invalidate_trace = function
@@ -419,10 +427,11 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
   | Pure x | Impure x -> x
   | Operator t as self ->
     (* try to use cached value, if present *)
-    match t.value with
-    | Some value -> value
-    | None ->
-      let value : b = match t.desc with
+    match t.value, t.damaged with
+    | Some value, false -> value
+    | _ ->
+      t.damaged <- false;
+      let result : b = match t.desc with
         | Map  (x, f) -> f (sub_sample self x)
         | Map2 (x, y, f) -> f (sub_sample self x) (sub_sample self y)
         | Pair (x, y) -> (sub_sample self x, sub_sample self y)
@@ -454,18 +463,19 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
         | Var  x -> x.binding
         | Prim t -> t.acquire ()
       in
-      t.value <- Some value;
+      t.value <- Some result;
       (* [self] just became active, so it may invalidate [origin] in case its
          value changes because of [t.desc], like if it's a variable and gets
          mutated, or if it's a primitive that gets invalidated.
          We need to put [origin] into [self.trace] in case it isn't there yet. *)
       activate_tracing self origin t.trace;
-      value
+      result
 
 type 'a root = 'a t
 
 let observe ?(on_invalidate=ignore) child : _ root =
   let root = Root {
+      damaged = true;
       child = child;
       value = None;
       on_invalidate;
@@ -477,22 +487,22 @@ let observe ?(on_invalidate=ignore) child : _ root =
 let sample = function
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
-    match t.value with
-    | Some value -> value
-    | None ->
+    match t.value, t.damaged with
+    | Some value, false -> value
+    | _ ->
       (* no cached value, compute it now *)
       if not t.acquired then (
         t.acquired <- true;
         sub_acquire self t.child;
       );
+      t.damaged <- false;
       let value = sub_sample self t.child in
       t.value <- Some value; (* cache value *)
       value
 
 let is_damaged = function
   | Pure _ | Impure _ | Operator _ -> assert false
-  | Root { value = None ; _ } -> true
-  | Root { value = Some _ ; _ } -> false
+  | Root t -> t.damaged || (match t.value with None -> true | Some _ -> false)
 
 let release = function
   | Pure _ | Impure _ | Operator _ -> assert false
