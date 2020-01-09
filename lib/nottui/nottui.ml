@@ -605,10 +605,10 @@ struct
     match t.desc with
     | Atom _ | Overlay _ -> acc
     | X (a, b) | Y (a, b) | Z (a, b) ->
-      if Focus.has_focus a.focus then
-        dispatch_key_branch acc a
-      else
-        dispatch_key_branch acc b
+      (* Default to left/top-most branch if there is no focus *)
+      if Focus.has_focus b.focus
+      then dispatch_key_branch acc b
+      else dispatch_key_branch acc a
     | Focus_area (t, f) -> dispatch_key_branch (f :: acc) t
     | Mouse_handler (t, _) | Size_sensor (t, _)
     | Scroll_area (t, _, _) | Resize (t, _, _) ->
@@ -617,19 +617,16 @@ struct
       (fun key -> f (`Key key)) :: dispatch_key_branch acc t
 
   let dispatch_raw_key st key =
-    if Focus.has_focus st.view.focus then
-      let branch = dispatch_key_branch [] st.view in
-      let rec iter = function
-        | f :: fs ->
-          begin match f key with
-            | `Unhandled -> iter fs
-            | `Handled -> `Handled
-          end
-        | [] -> `Unhandled
-      in
-      iter branch
-    else
-      `Unhandled
+    let branch = dispatch_key_branch [] st.view in
+    let rec iter = function
+      | f :: fs ->
+        begin match f key with
+          | `Unhandled -> iter fs
+          | `Handled -> `Handled
+        end
+      | [] -> `Unhandled
+    in
+    iter branch
 
   exception Acquired_focus
 
