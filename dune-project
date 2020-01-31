@@ -11,7 +11,7 @@
  (name lwd)
  (synopsis "Lightweight reactive documents")
  (description "TODO")
- (depends dune))
+ (depends dune seq (ocaml (>= "4.03"))))
 
 (package
  (name nottui)
