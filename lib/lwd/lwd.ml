@@ -1,15 +1,24 @@
+(** Create-only version of [Obj.t] *)
+module Any : sig
+  type t
+  val any : 'a -> t
+end = struct
+  type t = Obj.t
+  let any = Obj.repr
+end
+
 type 'a t =
   | Pure of 'a
-  | Impure of 'a
+  | Impure of 'a (* NOTE: is this really used anywhere? *)
   | Operator : {
-      mutable value : 'a option;
-      mutable trace : trace;
-      mutable trace_idx : trace_idx;
+      mutable value : 'a option; (* cached value *)
+      mutable trace : trace; (* list of parents this can invalidate *)
+      mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
       desc: 'a desc;
     } -> 'a t
   | Root : {
-      mutable value : 'a option;
-      mutable trace_idx : trace_idx;
+      mutable value : 'a option; (* cached value *)
+      mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
       mutable on_invalidate : 'a -> unit;
       mutable acquired : bool;
       child : 'a t;
@@ -25,6 +34,7 @@ and _ desc =
   | Prim : { acquire : unit -> 'a;
              release : 'a -> unit } -> 'a desc
 
+(* a set of (active) parents for a ['a t], used during invalidation *)
 and trace =
   | T0
   | T1 : _ t -> trace
@@ -32,8 +42,9 @@ and trace =
   | T3 : _ t * _ t * _ t -> trace
   | T4 : _ t * _ t * _ t * _ t -> trace
   | Tn : { mutable active : int; mutable count : int;
-           mutable entries : Obj.t t array } -> trace
+           mutable entries : Any.t t array } -> trace
 
+(* a set of direct children for a composite document *)
 and trace_idx =
   | I0
   | I1 : { mutable idx : int ;
@@ -48,7 +59,7 @@ let impure = function
   | Pure x -> Impure x
   | other -> other
 
-let dummy = Pure (Obj.repr ())
+let dummy = Pure (Any.any ())
 
 let operator desc =
   Operator { value = None; trace = T0; desc; trace_idx = I0 }
@@ -82,71 +93,78 @@ let bind x f = join (map f x)
 (* Management of trace indices *)
 
 external t_equal : _ t -> _ t -> bool = "%eq"
-external obj_t : 'a t -> Obj.t t = "%identity"
+external obj_t : 'a t -> Any.t t = "%identity"
 
 let add_idx obj idx = function
   | Pure _ | Impure _ -> assert false
   | Root t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
   | Operator t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
 
-let rec rem_idx obj = function
+let rec rem_idx_rec obj = function
   | I0 -> assert false
   | I1 t as self ->
     if t_equal t.obj obj
     then (t.idx, t.next)
-    else
-      let idx, result = rem_idx obj t.next in
+    else (
+      let idx, result = rem_idx_rec obj t.next in
       t.next <- result;
       (idx, self)
+    )
 
+(* remove [obj] from the lwd's trace. *)
 let rem_idx obj = function
   | Pure _ | Impure _ -> assert false
   | Root t' ->
-    let idx, trace_idx = rem_idx obj t'.trace_idx in
+    let idx, trace_idx = rem_idx_rec obj t'.trace_idx in
     t'.trace_idx <- trace_idx; idx
   | Operator t' ->
-    let idx, trace_idx = rem_idx obj t'.trace_idx in
+    let idx, trace_idx = rem_idx_rec obj t'.trace_idx in
     t'.trace_idx <- trace_idx; idx
 
-let rec mov_idx obj oldidx newidx = function
+(* move [obj] from old index to new index. *)
+let rec mov_idx_rec obj oldidx newidx = function
   | I0 -> assert false
   | I1 t ->
     if t.idx = oldidx && t_equal t.obj obj
     then t.idx <- newidx
-    else mov_idx obj oldidx newidx t.next
+    else mov_idx_rec obj oldidx newidx t.next
 
 let mov_idx obj oldidx newidx = function
   | Pure _ | Impure _ -> assert false
-  | Root t' -> mov_idx obj oldidx newidx t'.trace_idx
-  | Operator t' -> mov_idx obj oldidx newidx t'.trace_idx
+  | Root t' -> mov_idx_rec obj oldidx newidx t'.trace_idx
+  | Operator t' -> mov_idx_rec obj oldidx newidx t'.trace_idx
 
-let rec get_idx obj = function
+let rec get_idx_rec obj = function
   | I0 -> assert false
   | I1 t ->
     if t_equal t.obj obj
     then t.idx
-    else get_idx obj t.next
+    else get_idx_rec obj t.next
 
+(* find index of [obj] in the given lwd *)
 let get_idx obj = function
   | Pure _ | Impure _ -> assert false
-  | Root t' -> get_idx obj t'.trace_idx
-  | Operator t' -> get_idx obj t'.trace_idx
+  | Root t' -> get_idx_rec obj t'.trace_idx
+  | Operator t' -> get_idx_rec obj t'.trace_idx
 
-(* Propagating invalidation *)
+(* Propagating invalidation recursively.
+   Each document is invalidated at most once,
+   and only if it has [t.value = Some _]. *)
 let rec invalidate_node : type a . a t -> unit = function
   | Pure _ | Impure _ -> assert false
   | Root { value = None; _ } -> ()
   | Root ({ value = Some x; _ } as t) ->
     t.value <- None;
-    t.on_invalidate x
+    t.on_invalidate x (* user callback that {i observes} this root. *)
   | Operator t ->
     begin match t.value with
       | None -> ()
       | Some _ ->
         t.value <- None;
-        invalidate_trace t.trace
+        invalidate_trace t.trace; (* invalidate parents recursively *)
     end
 
+(* invalidate recursively documents in the given trace *)
 and invalidate_trace = function
   | T0 -> ()
   | T1 x -> invalidate_node x
@@ -174,9 +192,10 @@ type 'a var = 'a t
 let var x = operator (Var {binding = x})
 let get x = x
 
-let set vx x =
+let set (vx:_ var) x : unit =
   match vx with
   | Operator ({desc = Var v; _}) ->
+    (* set the variable, and invalidate all observers *)
     invalidate_node vx;
     v.binding <- x
   | _ -> assert false
@@ -195,6 +214,7 @@ let invalidate = function
   | Operator ({ desc = Prim p; _ } as t) ->
     let value = t.value in
     t.value <- None;
+    (* the value is invalidated, be sure to invalidate all parents as well *)
     invalidate_trace t.trace;
     begin match value with
       | None -> ()
@@ -205,7 +225,11 @@ let invalidate = function
 type release_failure = exn * Printexc.raw_backtrace
 exception Release_failure of release_failure list
 
-(* [sub_release] cannot raise.
+(* [sub_release [] origin self] is called when [origin] is released,
+   where [origin] is reachable from [self]'s trace.
+   We're going to remove [origin] from that trace as [origin] is now dead.
+
+   [sub_release] cannot raise.
    If a primitive raises, the exception is caught and a warning is emitted. *)
 let rec sub_release
   : type a b . release_failure list -> a t -> b t -> release_failure list
@@ -213,6 +237,7 @@ let rec sub_release
     | Root _ -> assert false
     | Pure _ | Impure _ -> failures
     | Operator t as self ->
+      (* compute [t.trace \ {origin}] *)
       let trace = match t.trace with
         | T0 -> assert false
         | T1 x -> assert (t_equal x origin); T0
@@ -243,6 +268,7 @@ let rec sub_release
           tn.entries.(count) <- dummy;
           if tn.active > count then tn.active <- count;
           if count = 4 then (
+            (* downgrade to [T4] to save space *)
             let a = tn.entries.(0) and b = tn.entries.(1) in
             let c = tn.entries.(2) and d = tn.entries.(3) in
             ignore (rem_idx self a : int);
@@ -250,17 +276,21 @@ let rec sub_release
             ignore (rem_idx self c : int);
             ignore (rem_idx self d : int);
             T4 (a, b, c, d)
-          ) else
+          ) else (
             let len = Array.length tn.entries in
             if count <= len lsr 2 then
               Tn { active = tn.active; count = tn.count;
                    entries = Array.sub tn.entries 0 (len lsr 1) }
             else
               trace
+          )
       in
       t.trace <- trace;
       match trace with
       | T0 ->
+        (* [self] is not active anymore, since it's not reachable
+           from any root. We can release its cached value and
+           recursively release its subtree. *)
         let value = t.value in
         t.value <- None;
         begin match t.desc with
@@ -300,6 +330,8 @@ let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
   | Root _ -> assert false
   | Pure _ | Impure _ -> ()
   | Operator t as self ->
+    (* [acquire] is true if this is the first time this operator
+       is used, in which case we need to acquire its children *)
     let acquire = match t.trace with T0 -> true | _ -> false in
     let trace = match t.trace with
       | T0 -> T1 origin
@@ -307,15 +339,16 @@ let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
       | T2 (x, y) -> T3 (origin, x, y)
       | T3 (x, y, z) -> T4 (origin, x, y, z)
       | T4 (x, y, z, w) ->
-        let obj = obj_t origin in
+        let obj_origin = obj_t origin in
         let entries =
-          [| obj_t x; obj_t y; obj_t z; obj_t w; obj; dummy; dummy; dummy |]
+          [| obj_t x; obj_t y; obj_t z; obj_t w; obj_origin; dummy; dummy; dummy |]
         in
         for i = 0 to 4 do add_idx self i entries.(i) done;
         Tn { active = 5; count = 5; entries }
       | Tn tn as trace ->
         let index = tn.count in
         let entries, trace =
+          (* possibly resize array [entries] *)
           if index < Array.length tn.entries then (
             tn.count <- tn.count + 1;
             (tn.entries, trace)
@@ -325,13 +358,14 @@ let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
             (entries, Tn { active = tn.active; count = index + 1; entries })
           )
         in
-        let obj = obj_t origin in
-        entries.(index) <- obj;
-        add_idx self index obj;
+        let obj_origin = obj_t origin in
+        entries.(index) <- obj_origin;
+        add_idx self index obj_origin;
         trace
     in
     t.trace <- trace;
-    if acquire then
+    if acquire then (
+      (* acquire immediate children, and so on recursively *)
       match t.desc with
       | Map  (x, _) -> sub_acquire self x
       | Map2 (x, y, _) ->
@@ -347,18 +381,25 @@ let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
         sub_acquire self child;
         begin match intermediate with
           | None -> ()
-          | Some _ -> assert false
+          | Some _ ->
+            assert false (* this can't initialized already, first-time acquire *)
         end
       | Var  _ -> ()
       | Prim _ -> ()
+    )
 
+(* make sure that [origin] is in [self.trace], passed as last arg. *)
 let activate_tracing self origin = function
   | Tn tn ->
-    let idx = get_idx self origin in
+    let idx = get_idx self origin in (* index of [self] in [origin.trace_idx] *)
     let active = tn.active in
-    if idx >= active then
+    (* [idx < active] means [self] is already traced by [origin].
+       We only have to add [self] to the entries if [idx >= active]. *)
+    if idx >= active then (
       tn.active <- active + 1;
+    );
     if idx > active then (
+      (* swap with last entry in [tn.entries] *)
       let old = tn.entries.(active) in
       tn.entries.(idx) <- old;
       tn.entries.(active) <- obj_t origin;
@@ -367,7 +408,9 @@ let activate_tracing self origin = function
     )
   | _ -> ()
 
-(* [sub_sample] raise if any user-provided computation raises.
+(* [sub_sample origin self] computes a value for [self].
+
+   [sub_sample] raise if any user-provided computation raises.
    Graph will be left in a coherent state but exception will be propagated
    to the observer. *)
 let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
@@ -375,6 +418,7 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
   | Root _ -> assert false
   | Pure x | Impure x -> x
   | Operator t as self ->
+    (* try to use cached value, if present *)
     match t.value with
     | Some value -> value
     | None ->
@@ -396,6 +440,8 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
           begin match old_intermediate with
             | None -> result
             | Some x' ->
+              (* NOTE: if [intermediate==x'], should we stop there? *)
+              (* release old value [x'], catching potential exceptions *)
               match sub_release [] self x' with
               | [] -> result
               | failures ->
@@ -409,12 +455,16 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
         | Prim t -> t.acquire ()
       in
       t.value <- Some value;
+      (* [self] just became active, so it may invalidate [origin] in case its
+         value changes because of [t.desc], like if it's a variable and gets
+         mutated, or if it's a primitive that gets invalidated.
+         We need to put [origin] into [self.trace] in case it isn't there yet. *)
       activate_tracing self origin t.trace;
       value
 
 type 'a root = 'a t
 
-let observe ?(on_invalidate=ignore) child =
+let observe ?(on_invalidate=ignore) child : _ root =
   let root = Root {
       child = child;
       value = None;
@@ -430,12 +480,13 @@ let sample = function
     match t.value with
     | Some value -> value
     | None ->
+      (* no cached value, compute it now *)
       if not t.acquired then (
         t.acquired <- true;
         sub_acquire self t.child;
       );
       let value = sub_sample self t.child in
-      t.value <- Some value;
+      t.value <- Some value; (* cache value *)
       value
 
 let is_damaged = function
@@ -447,6 +498,7 @@ let release = function
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
     if t.acquired then (
+      (* release subtree, remove cached value *)
       t.value <- None;
       t.acquired <- false;
       match sub_release [] self t.child with
