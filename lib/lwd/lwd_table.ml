@@ -22,8 +22,8 @@ type 'a tree =
 type 'a t = 'a tree
 type 'a row = 'a tree
 
-let not_origin = ref ()
-let origin = ref ()
+let not_origin = ref () (* not {!origin} *)
+let origin = ref () (* not {!not_origin} *)
 
 let make () =
   Root { child = Leaf; generation = origin; version = 0; on_invalidate = [] }
