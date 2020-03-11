@@ -783,7 +783,7 @@ struct
     in
     let t =
       t |> Lwd.map (Ui.event_filter (function
-            | `Key (`Escape, _) -> Lwd.set quit true; `Handled
+            | `Key (`ASCII 'Q', [`Ctrl]) -> Lwd.set quit true; `Handled
             | _ -> `Unhandled
         ))
     in
