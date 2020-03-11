@@ -384,7 +384,11 @@ let unfoldable summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
       let spec_sum = Ui.layout_spec summary in
       let spec_fold = Ui.layout_spec fold in
       (* TODO: somehow, probe for available width here? *)
-      if spec_fold.Ui.h > 1 || (spec_sum.Ui.w + spec_fold.Ui.w) > 60
+      let too_big =
+        spec_fold.Ui.h > 1 ||
+        (spec_fold.Ui.h>0 && spec_sum.Ui.w + spec_fold.Ui.w > 60)
+      in
+      if too_big
       then Ui.join_y summary (Ui.join_x (string " ") fold)
       else Ui.join_x summary fold)
     mouse (Lwd.join @@ Lwd.get v)
