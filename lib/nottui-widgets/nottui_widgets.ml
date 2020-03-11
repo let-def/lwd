@@ -393,6 +393,10 @@ let unfoldable summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
       else Ui.join_x summary fold)
     mouse (Lwd.join @@ Lwd.get v)
 
+let hbox l = Lwd_utils.pack Ui.pack_x l
+let vbox l = Lwd_utils.pack Ui.pack_y l
+let zbox l = Lwd_utils.pack Ui.pack_z l
+
 let vlist (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
   l
   |> List.map (fun ui -> Lwd.map (Ui.join_x (string "- ")) ui)
