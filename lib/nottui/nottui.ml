@@ -613,32 +613,37 @@ struct
     let cache = render_node 0 0 w h w h st.view in
     process (cache.image, cache.overlays)
 
-  let rec dispatch_key_branch acc t =
-    match t.desc with
-    | Atom _ | Overlay _ -> acc
-    | X (a, b) | Y (a, b) | Z (a, b) ->
-      (* Try left/top most branch first *)
-      if Focus.has_focus b.focus
-      then dispatch_key_branch acc b
-      else dispatch_key_branch (dispatch_key_branch acc b) a
-    | Focus_area (t, f) -> dispatch_key_branch (f :: acc) t
-    | Mouse_handler (t, _) | Size_sensor (t, _)
-    | Scroll_area (t, _, _) | Resize (t, _, _) ->
-      dispatch_key_branch acc t
-    | Event_filter (t, f) ->
-      (fun key -> f (`Key key)) :: dispatch_key_branch acc t
-
   let dispatch_raw_key st key =
-    let branch = dispatch_key_branch [] st.view in
-    let rec iter = function
-      | f :: fs ->
-        begin match f key with
-          | `Unhandled -> iter fs
-          | `Handled -> `Handled
-        end
+    let rec iter (st: ui list) : [> `Unhandled] =
+      match st with
       | [] -> `Unhandled
+      | ui :: tl ->
+        begin match ui.desc with
+          | Atom _ | Overlay _ -> iter tl
+          | X (a, b) | Y (a, b) | Z (a, b) ->
+            (* Try left/top most branch first *)
+            let st' =
+              if Focus.has_focus b.focus
+              then b :: tl
+              else a :: b :: tl
+            in
+            iter st'
+          | Focus_area (t, f) ->
+            begin match f key with
+              | `Handled -> `Handled
+              | `Unhandled -> iter (t :: tl)
+            end
+          | Mouse_handler (t, _) | Size_sensor (t, _)
+          | Scroll_area (t, _, _) | Resize (t, _, _) ->
+            iter (t :: tl)
+          | Event_filter (t, f) ->
+            begin match f (`Key key) with
+              | `Unhandled -> iter (t :: tl)
+              | `Handled -> `Handled
+            end
+        end
     in
-    iter branch
+    iter [st.view]
 
   exception Acquired_focus
 
