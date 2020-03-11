@@ -379,10 +379,12 @@ let unfoldable summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
   in
   Lwd.map2
     (fun summary fold ->
-      (* optionally, newline+indent of 2? or maybe only if the size
-         of [inner] is big, or if it's multiline *)
-      let spec = Ui.layout_spec fold in
-      if spec.Ui.h > 1 || spec.Ui.w > 30
+      (* TODO: make this configurable/optional *)
+      (* newline if it's too big to fit on one line nicely *)
+      let spec_sum = Ui.layout_spec summary in
+      let spec_fold = Ui.layout_spec fold in
+      (* TODO: somehow, probe for available width here? *)
+      if spec_fold.Ui.h > 1 || (spec_sum.Ui.w + spec_fold.Ui.w) > 60
       then Ui.join_y summary (Ui.join_x (string " ") fold)
       else Ui.join_x summary fold)
     mouse (Lwd.join @@ Lwd.get v)
