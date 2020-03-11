@@ -294,6 +294,8 @@ let edit_field state ~on_change ~on_submit =
         [I.string A.empty (if text = "" then " " else text)]
     in
     let handler = function
+      | `ASCII 'U', [`Ctrl] -> on_change ("", 0); `Handled (* clear *)
+      | `Escape, [] -> Focus.release focus; `Handled
       | `ASCII k, _ ->
         let text =
           if pos < String.length text then (
