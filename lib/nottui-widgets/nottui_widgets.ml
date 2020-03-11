@@ -77,6 +77,8 @@ let vscroll_area ~state ~change t =
     (*| `Arrow `Right, _ -> scroll (+scroll_step) 0*)
     | `Arrow `Up   , [] -> scroll state (-scroll_step)
     | `Arrow `Down , [] -> scroll state (+scroll_step)
+    | `Page `Up, [] -> scroll state ((-scroll_step) * 8)
+    | `Page `Down, [] -> scroll state ((+scroll_step) * 8)
     | _ -> `Unhandled
   in
   let scroll_handler state ~x:_ ~y:_ = function
@@ -120,6 +122,8 @@ let scroll_area ?(offset=0,0) t =
     | `Arrow `Right, [] -> scroll (+scroll_step) 0
     | `Arrow `Up   , [] -> scroll 0 (-scroll_step)
     | `Arrow `Down , [] -> scroll 0 (+scroll_step)
+    | `Page `Up, [] -> scroll 0 ((-scroll_step) * 8)
+    | `Page `Down, [] -> scroll 0 ((+scroll_step) * 8)
     | _ -> `Unhandled
   in
   let scroll_handler ~x:_ ~y:_ = function
