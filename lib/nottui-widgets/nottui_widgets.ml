@@ -353,34 +353,27 @@ let edit_field state ~on_change ~on_submit =
 (** Prints the summary, but calls [f()] to compute a sub-widget
     when clicked on. Useful for displaying deep trees. *)
 let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
-  let fold_content = Lwd.var empty_lwd in
-  let compute_inner () =
-    (* call [f] and pad a bit *)
-    let inner =
-      f()
-      |> Lwd.map
-        (fun x ->
-           let arrow = string ~attr:A.(bg blue) "> " in
-           Ui.join_x arrow x)
-    in
-    Lwd.set fold_content inner
+  let open Lwd.Infix in
+  let opened = Lwd.var (not folded_by_default) in
+  let fold_content =
+    Lwd.get opened >>= function
+    | true ->
+      (* call [f] and pad a bit *)
+      f() |> Lwd.map (Ui.join_x (string " "))
+    | false -> empty_lwd
   in
-  let opened = ref (not folded_by_default) in
-  if !opened then compute_inner();
+  (* pad summary with a "> " when it's opened *)
+  let summary =
+    Lwd.get opened >>= function
+    | true -> Lwd.map (Ui.join_x (string ~attr:A.(bg blue) "> ")) summary
+    | false -> summary
+  in
   let cursor ~x:_ ~y:_ = function
-     | `Left when !opened ->
-       opened := false;
-       Lwd.set fold_content empty_lwd;
-       `Handled
-     | `Left ->
-       opened := true;
-       compute_inner ();
-       `Handled
+     | `Left when Lwd.peek opened -> Lwd.set opened false; `Handled
+     | `Left -> Lwd.set opened true; `Handled
      | _ -> `Unhandled
   in
-  let mouse =
-    Lwd.map (fun m -> Ui.mouse_area cursor m) summary
-  in
+  let mouse = Lwd.map (fun m -> Ui.mouse_area cursor m) summary in
   Lwd.map2
     (fun summary fold ->
       (* TODO: make this configurable/optional *)
@@ -395,7 +388,7 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
       if too_big
       then Ui.join_y summary (Ui.join_x (string " ") fold)
       else Ui.join_x summary fold)
-    mouse (Lwd.join @@ Lwd.get fold_content)
+    mouse fold_content
 
 let hbox l = Lwd_utils.pack Ui.pack_x l
 let vbox l = Lwd_utils.pack Ui.pack_y l
