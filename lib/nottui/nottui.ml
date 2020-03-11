@@ -759,7 +759,7 @@ struct
           ignore (Renderer.dispatch_event renderer event : [`Handled | `Unhandled])
 
   let run_with_term term ?tick_period ?(tick=ignore) ~renderer quit t =
-    let quit = Lwd.observe quit in
+    let quit = Lwd.observe (Lwd.get quit) in
     let root = Lwd.observe t in
     let rec loop () =
       let quit = Lwd.sample quit in
@@ -775,16 +775,15 @@ struct
 
   let run ?tick_period ?tick ?term ?(renderer=Renderer.make ())
           ?quit t =
-    let quit, t = match quit with
-      | Some quit -> quit, t
-      | None ->
-        let quit = Lwd.var false in
-        let t = t |> Lwd.map (Ui.event_filter (function
+    let quit = match quit with
+      | Some quit -> quit
+      | None -> Lwd.var false
+    in
+    let t =
+      t |> Lwd.map (Ui.event_filter (function
             | `Key (`Escape, _) -> Lwd.set quit true; `Handled
             | _ -> `Unhandled
-          ))
-        in
-        Lwd.get quit, t
+        ))
     in
     match term with
     | Some term -> run_with_term term ?tick_period ?tick ~renderer quit t
