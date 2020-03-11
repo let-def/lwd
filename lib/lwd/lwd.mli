@@ -33,3 +33,9 @@ val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 val sample : 'a root -> 'a
 val is_damaged : 'a root -> bool
 val release : 'a root -> unit
+
+module Infix : sig
+  val (>|=) : 'a t -> ('a -> 'b) -> 'b t
+  val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
+  val (<*>) : ('a -> 'b) t -> 'a t -> 'b t
+end

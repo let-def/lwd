@@ -458,3 +458,9 @@ let set_on_invalidate x f =
   match x with
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t -> t.on_invalidate <- f
+
+module Infix = struct
+  let (>>=) = bind
+  let (>|=) = map'
+  let (<*>) = app
+end
