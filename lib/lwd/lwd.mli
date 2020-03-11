@@ -112,3 +112,9 @@ val is_damaged : 'a root -> bool
 val release : 'a root -> unit
 (** Forget about this root and release sub-values no longer reachable from
     any root. *)
+
+module Infix : sig
+  val (>|=) : 'a t -> ('a -> 'b) -> 'b t
+  val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
+  val (<*>) : ('a -> 'b) t -> 'a t -> 'b t
+end
