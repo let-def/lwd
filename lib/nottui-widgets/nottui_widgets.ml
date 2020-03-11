@@ -349,3 +349,39 @@ let edit_field state ~on_change ~on_submit =
   in
   Lwd.map2' state node @@ fun state content ->
   Ui.mouse_area (mouse_grab state) content
+
+(** Prints the summary, but calls [f()] to compute a sub-widget
+    when clicked on. Useful for displaying deep trees. *)
+let unfoldable summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
+  let opened = ref false in
+  let v = Lwd.var empty_lwd in
+  let cursor ~x:_ ~y:_ = function
+     | `Left when !opened ->
+       opened := false;
+       Lwd.set v empty_lwd;
+       `Handled
+     | `Left ->
+       opened := true;
+       (* call [f] and pad a bit *)
+       (* TODO: optionally, newline+indent of 2? or maybe only if the size
+          of [inner] is big, or if it's multiline *)
+       let inner =
+         f() |> Lwd.map (fun x -> Ui.join_x (string ~attr:A.(bg blue) "> ") x)
+       in
+       Lwd.set v @@ inner;
+       `Handled
+     | _ -> `Unhandled
+  in
+  let mouse =
+    Lwd.map (fun m -> Ui.mouse_area cursor m) summary
+  in
+  Lwd_utils.pack Ui.pack_x [mouse; Lwd.join @@ Lwd.get v]
+
+let vlist (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
+  l
+  |> List.map (fun ui -> Lwd.map (Ui.join_x (string "- ")) ui)
+  |> Lwd_utils.pack Ui.pack_y
+
+let button ?attr s f =
+  Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) (string ?attr s)
+
