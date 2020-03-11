@@ -615,10 +615,10 @@ struct
     match t.desc with
     | Atom _ | Overlay _ -> acc
     | X (a, b) | Y (a, b) | Z (a, b) ->
-      (* Default to left/top-most branch if there is no focus *)
+      (* Try left/top most branch first *)
       if Focus.has_focus b.focus
       then dispatch_key_branch acc b
-      else dispatch_key_branch acc a
+      else dispatch_key_branch (dispatch_key_branch acc b) a
     | Focus_area (t, f) -> dispatch_key_branch (f :: acc) t
     | Mouse_handler (t, _) | Size_sensor (t, _)
     | Scroll_area (t, _, _) | Resize (t, _, _) ->
