@@ -352,25 +352,29 @@ let edit_field state ~on_change ~on_submit =
 
 (** Prints the summary, but calls [f()] to compute a sub-widget
     when clicked on. Useful for displaying deep trees. *)
-let unfoldable summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
-  let opened = ref false in
-  let v = Lwd.var empty_lwd in
+let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
+  let fold_content = Lwd.var empty_lwd in
+  let compute_inner () =
+    (* call [f] and pad a bit *)
+    let inner =
+      f()
+      |> Lwd.map
+        (fun x ->
+           let arrow = string ~attr:A.(bg blue) "> " in
+           Ui.join_x arrow x)
+    in
+    Lwd.set fold_content inner
+  in
+  let opened = ref (not folded_by_default) in
+  if !opened then compute_inner();
   let cursor ~x:_ ~y:_ = function
      | `Left when !opened ->
        opened := false;
-       Lwd.set v empty_lwd;
+       Lwd.set fold_content empty_lwd;
        `Handled
      | `Left ->
        opened := true;
-       (* call [f] and pad a bit *)
-       let inner =
-         f()
-         |> Lwd.map
-           (fun x ->
-              let arrow = string ~attr:A.(bg blue) "> " in
-              Ui.join_x arrow x)
-       in
-       Lwd.set v @@ inner;
+       compute_inner ();
        `Handled
      | _ -> `Unhandled
   in
@@ -391,7 +395,7 @@ let unfoldable summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
       if too_big
       then Ui.join_y summary (Ui.join_x (string " ") fold)
       else Ui.join_x summary fold)
-    mouse (Lwd.join @@ Lwd.get v)
+    mouse (Lwd.join @@ Lwd.get fold_content)
 
 let hbox l = Lwd_utils.pack Ui.pack_x l
 let vbox l = Lwd_utils.pack Ui.pack_y l
