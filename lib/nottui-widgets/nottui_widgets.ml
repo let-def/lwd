@@ -363,10 +363,12 @@ let unfoldable summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
      | `Left ->
        opened := true;
        (* call [f] and pad a bit *)
-       (* TODO: optionally, newline+indent of 2? or maybe only if the size
-          of [inner] is big, or if it's multiline *)
        let inner =
-         f() |> Lwd.map (fun x -> Ui.join_x (string ~attr:A.(bg blue) "> ") x)
+         f()
+         |> Lwd.map
+           (fun x ->
+              let arrow = string ~attr:A.(bg blue) "> " in
+              Ui.join_x arrow x)
        in
        Lwd.set v @@ inner;
        `Handled
@@ -375,7 +377,15 @@ let unfoldable summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
   let mouse =
     Lwd.map (fun m -> Ui.mouse_area cursor m) summary
   in
-  Lwd_utils.pack Ui.pack_x [mouse; Lwd.join @@ Lwd.get v]
+  Lwd.map2
+    (fun summary fold ->
+      (* optionally, newline+indent of 2? or maybe only if the size
+         of [inner] is big, or if it's multiline *)
+      let spec = Ui.layout_spec fold in
+      if spec.Ui.h > 1 || spec.Ui.w > 30
+      then Ui.join_y summary (Ui.join_x (string " ") fold)
+      else Ui.join_x summary fold)
+    mouse (Lwd.join @@ Lwd.get v)
 
 let vlist (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
   l
