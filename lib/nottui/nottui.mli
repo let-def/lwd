@@ -115,5 +115,5 @@ sig
   val run :
     ?tick_period:float -> ?tick:(unit -> unit) ->
     ?term:Term.t -> ?renderer:Renderer.t ->
-    ?quit:bool Lwd.t -> ui Lwd.t -> unit
+    ?quit:bool Lwd.var -> ui Lwd.t -> unit
 end
