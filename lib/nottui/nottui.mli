@@ -5,6 +5,7 @@ sig
   type handle
   val make : unit -> handle
   val request : handle -> unit
+  val release : handle -> unit
 
   type status
   val empty : status

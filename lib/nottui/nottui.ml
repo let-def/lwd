@@ -10,6 +10,7 @@ sig
   val make : unit -> handle
   val request : handle -> unit
   val request_var : var -> unit
+  val release : handle -> unit
 
   type status =
     | Empty
@@ -51,6 +52,7 @@ end = struct
     Lwd.set v !clock
 
   let request (v, _ : handle) = request_var v
+  let release (v, _ : handle) = incr clock; Lwd.set v 0
 
   let merge s1 s2 : status = match s1, s2 with
     | Empty, x | x, Empty -> x

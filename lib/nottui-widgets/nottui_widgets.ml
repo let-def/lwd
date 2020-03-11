@@ -275,7 +275,7 @@ let sub' str p l =
   else String.sub str p l
 
 let edit_field state ~on_change ~on_submit =
-  let update focus (text, pos) =
+  let update focus_h focus (text, pos) =
     let pos = min (max 0 pos) (String.length text) in
     let content =
       Ui.atom @@ I.hcat @@
@@ -295,7 +295,7 @@ let edit_field state ~on_change ~on_submit =
     in
     let handler = function
       | `ASCII 'U', [`Ctrl] -> on_change ("", 0); `Handled (* clear *)
-      | `Escape, [] -> Focus.release focus; `Handled
+      | `Escape, [] -> Focus.release focus_h; `Handled
       | `ASCII k, _ ->
         let text =
           if pos < String.length text then (
@@ -340,7 +340,7 @@ let edit_field state ~on_change ~on_submit =
   in
   let focus = Focus.make () in
   let node =
-    Lwd.map2 update (Nottui.Focus.status focus) state
+    Lwd.map2 (update focus) (Focus.status focus) state
   in
   let mouse_grab (text, pos) ~x ~y:_ = function
     | `Left ->
