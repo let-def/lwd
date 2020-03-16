@@ -19,7 +19,8 @@ let ui_of_cbor (c:C.t) =
     | `Array [] -> Lwd.return (W.string "[]")
     | `Array l ->
       if fold then (
-        let summary = Lwd.return @@ W.printf ~attr:A.(fg yellow) "<array(%d)>" (List.length l) in
+        let summary =
+          Lwd.return @@ W.printf ~attr:A.(fg yellow) "<array(%d)>" (List.length l) in
         W.unfoldable summary
           (fun () ->
              let l = List.map (traverse ~fold:true) l in
@@ -29,8 +30,7 @@ let ui_of_cbor (c:C.t) =
         Lwd_utils.pack Ui.Ui.pack_y l
       )
     | `Map [] -> Lwd.return (W.string "{}")
-    | `Map [x,y] ->
-      W.unfoldable (traverse x) (fun () -> traverse ~fold:false y)
+    | `Map [x,y] -> mk_k_v x y
     | `Map l ->
       let summary = Lwd.return @@ W.printf ~attr:A.(fg yellow) "<map(%d)>" (List.length l) in
       W.unfoldable summary
@@ -38,10 +38,18 @@ let ui_of_cbor (c:C.t) =
            let tbl = Lwd_table.make () in
            List.iter (fun (x,y) ->
                let row = Lwd_table.append tbl in
-               let kv = W.unfoldable (traverse x) (fun () -> traverse ~fold:false y) in
+               let kv = mk_k_v x y in
                Lwd_table.set row kv)
              l;
            Lwd.join @@ Lwd_table.reduce (Lwd_utils.lift_monoid Ui.Ui.pack_y) tbl)
+  and mk_k_v x y =
+    let tr_x = traverse x in
+    let summary = match y with
+      | `Array _ | `Map _ ->
+        W.hbox [tr_x; Lwd.return (W.string ~attr:A.(bg @@ gray 15) "/")]
+      | _ -> tr_x
+    in
+    W.unfoldable summary (fun () -> traverse ~fold:false y)
   in
   let w =
     Lwd.map2 Ui.Ui.join_y w_q
