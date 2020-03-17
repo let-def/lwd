@@ -77,6 +77,8 @@ let vscroll_area ~state ~change t =
     (*| `Arrow `Right, _ -> scroll (+scroll_step) 0*)
     | `Arrow `Up   , [] -> scroll state (-scroll_step)
     | `Arrow `Down , [] -> scroll state (+scroll_step)
+    | `Page `Up, [] -> scroll state ((-scroll_step) * 8)
+    | `Page `Down, [] -> scroll state ((+scroll_step) * 8)
     | _ -> `Unhandled
   in
   let scroll_handler state ~x:_ ~y:_ = function
@@ -120,6 +122,8 @@ let scroll_area ?(offset=0,0) t =
     | `Arrow `Right, [] -> scroll (+scroll_step) 0
     | `Arrow `Up   , [] -> scroll 0 (-scroll_step)
     | `Arrow `Down , [] -> scroll 0 (+scroll_step)
+    | `Page `Up, [] -> scroll 0 ((-scroll_step) * 8)
+    | `Page `Down, [] -> scroll 0 ((+scroll_step) * 8)
     | _ -> `Unhandled
   in
   let scroll_handler ~x:_ ~y:_ = function
@@ -275,7 +279,7 @@ let sub' str p l =
   else String.sub str p l
 
 let edit_field state ~on_change ~on_submit =
-  let update focus (text, pos) =
+  let update focus_h focus (text, pos) =
     let pos = min (max 0 pos) (String.length text) in
     let content =
       Ui.atom @@ I.hcat @@
@@ -294,6 +298,8 @@ let edit_field state ~on_change ~on_submit =
         [I.string A.empty (if text = "" then " " else text)]
     in
     let handler = function
+      | `ASCII 'U', [`Ctrl] -> on_change ("", 0); `Handled (* clear *)
+      | `Escape, [] -> Focus.release focus_h; `Handled
       | `ASCII k, _ ->
         let text =
           if pos < String.length text then (
@@ -338,7 +344,7 @@ let edit_field state ~on_change ~on_submit =
   in
   let focus = Focus.make () in
   let node =
-    Lwd.map2 update (Nottui.Focus.status focus) state
+    Lwd.map2 (update focus) (Focus.status focus) state
   in
   let mouse_grab (text, pos) ~x ~y:_ = function
     | `Left ->
@@ -349,3 +355,78 @@ let edit_field state ~on_change ~on_submit =
   in
   Lwd.map2' state node @@ fun state content ->
   Ui.mouse_area (mouse_grab state) content
+
+(** Prints the summary, but calls [f()] to compute a sub-widget
+    when clicked on. Useful for displaying deep trees. *)
+let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
+  let open Lwd.Infix in
+  let opened = Lwd.var (not folded_by_default) in
+  let fold_content =
+    Lwd.get opened >>= function
+    | true ->
+      (* call [f] and pad a bit *)
+      f() |> Lwd.map (Ui.join_x (string " "))
+    | false -> empty_lwd
+  in
+  (* pad summary with a "> " when it's opened *)
+  let summary =
+    Lwd.get opened >>= function
+    | true -> Lwd.map (Ui.join_x (string ~attr:A.(bg blue) "> ")) summary
+    | false -> summary
+  in
+  let cursor ~x:_ ~y:_ = function
+     | `Left when Lwd.peek opened -> Lwd.set opened false; `Handled
+     | `Left -> Lwd.set opened true; `Handled
+     | _ -> `Unhandled
+  in
+  let mouse = Lwd.map (fun m -> Ui.mouse_area cursor m) summary in
+  Lwd.map2
+    (fun summary fold ->
+      (* TODO: make this configurable/optional *)
+      (* newline if it's too big to fit on one line nicely *)
+      let spec_sum = Ui.layout_spec summary in
+      let spec_fold = Ui.layout_spec fold in
+      (* TODO: somehow, probe for available width here? *)
+      let too_big =
+        spec_fold.Ui.h > 1 ||
+        (spec_fold.Ui.h>0 && spec_sum.Ui.w + spec_fold.Ui.w > 60)
+      in
+      if too_big
+      then Ui.join_y summary (Ui.join_x (string " ") fold)
+      else Ui.join_x summary fold)
+    mouse fold_content
+
+let hbox l = Lwd_utils.pack Ui.pack_x l
+let vbox l = Lwd_utils.pack Ui.pack_y l
+let zbox l = Lwd_utils.pack Ui.pack_z l
+
+let vlist (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
+  l
+  |> List.map (fun ui -> Lwd.map (Ui.join_x (string "- ")) ui)
+  |> Lwd_utils.pack Ui.pack_y
+
+(** A list of items with a dynamic filter on the items *)
+let vlist_with
+    ?(filter=Lwd.return (fun _ -> true))
+    (f:'a -> Ui.t Lwd.t)
+    (l:'a list Lwd.t) : Ui.t Lwd.t =
+  let open Lwd.Infix in
+  let rec filter_map_ acc f l =
+    match l with
+    | [] -> List.rev acc
+    | x::l' ->
+      let acc' = match f x with | None -> acc | Some y -> y::acc in
+      filter_map_ acc' f l'
+  in
+  let l = l >|= List.map (fun x -> x, Lwd.map (Ui.join_x (string "- ")) @@ f x) in
+  let l_filter : _ list Lwd.t =
+    filter >>= fun filter ->
+    l >|=
+    filter_map_ []
+      (fun (x,ui) -> if filter x then Some ui else None)
+  in
+  l_filter >>= Lwd_utils.pack Ui.pack_y
+
+let button ?attr s f =
+  Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) (string ?attr s)
+

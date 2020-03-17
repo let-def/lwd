@@ -21,10 +21,7 @@ let rec fs_to_cbor ~path (f:string) : C.t =
       with _e ->
         `Text "<read error>"
       in
-    `Map [
-      `Text f,
-      `Array [content]
-    ]
+    `Map [ `Text f, content ]
   )
 
 let () =

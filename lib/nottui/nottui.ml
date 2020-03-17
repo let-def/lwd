@@ -10,6 +10,7 @@ sig
   val make : unit -> handle
   val request : handle -> unit
   val request_var : var -> unit
+  val release : handle -> unit
 
   type status =
     | Empty
@@ -51,6 +52,7 @@ end = struct
     Lwd.set v !clock
 
   let request (v, _ : handle) = request_var v
+  let release (v, _ : handle) = incr clock; Lwd.set v 0
 
   let merge s1 s2 : status = match s1, s2 with
     | Empty, x | x, Empty -> x
@@ -611,32 +613,37 @@ struct
     let cache = render_node 0 0 w h w h st.view in
     process (cache.image, cache.overlays)
 
-  let rec dispatch_key_branch acc t =
-    match t.desc with
-    | Atom _ | Overlay _ -> acc
-    | X (a, b) | Y (a, b) | Z (a, b) ->
-      (* Default to left/top-most branch if there is no focus *)
-      if Focus.has_focus b.focus
-      then dispatch_key_branch acc b
-      else dispatch_key_branch acc a
-    | Focus_area (t, f) -> dispatch_key_branch (f :: acc) t
-    | Mouse_handler (t, _) | Size_sensor (t, _)
-    | Scroll_area (t, _, _) | Resize (t, _, _) ->
-      dispatch_key_branch acc t
-    | Event_filter (t, f) ->
-      (fun key -> f (`Key key)) :: dispatch_key_branch acc t
-
   let dispatch_raw_key st key =
-    let branch = dispatch_key_branch [] st.view in
-    let rec iter = function
-      | f :: fs ->
-        begin match f key with
-          | `Unhandled -> iter fs
-          | `Handled -> `Handled
-        end
+    let rec iter (st: ui list) : [> `Unhandled] =
+      match st with
       | [] -> `Unhandled
+      | ui :: tl ->
+        begin match ui.desc with
+          | Atom _ | Overlay _ -> iter tl
+          | X (a, b) | Y (a, b) | Z (a, b) ->
+            (* Try left/top most branch first *)
+            let st' =
+              if Focus.has_focus b.focus
+              then b :: tl
+              else a :: b :: tl
+            in
+            iter st'
+          | Focus_area (t, f) ->
+            begin match f key with
+              | `Handled -> `Handled
+              | `Unhandled -> iter (t :: tl)
+            end
+          | Mouse_handler (t, _) | Size_sensor (t, _)
+          | Scroll_area (t, _, _) | Resize (t, _, _) ->
+            iter (t :: tl)
+          | Event_filter (t, f) ->
+            begin match f (`Key key) with
+              | `Unhandled -> iter (t :: tl)
+              | `Handled -> `Handled
+            end
+        end
     in
-    iter branch
+    iter [st.view]
 
   exception Acquired_focus
 
@@ -761,7 +768,7 @@ struct
           ignore (Renderer.dispatch_event renderer event : [`Handled | `Unhandled])
 
   let run_with_term term ?tick_period ?(tick=ignore) ~renderer quit t =
-    let quit = Lwd.observe quit in
+    let quit = Lwd.observe (Lwd.get quit) in
     let root = Lwd.observe t in
     let rec loop () =
       let quit = Lwd.sample quit in
@@ -777,16 +784,15 @@ struct
 
   let run ?tick_period ?tick ?term ?(renderer=Renderer.make ())
           ?quit t =
-    let quit, t = match quit with
-      | Some quit -> quit, t
-      | None ->
-        let quit = Lwd.var false in
-        let t = t |> Lwd.map (Ui.event_filter (function
-            | `Key (`Escape, _) -> Lwd.set quit true; `Handled
+    let quit = match quit with
+      | Some quit -> quit
+      | None -> Lwd.var false
+    in
+    let t =
+      t |> Lwd.map (Ui.event_filter (function
+            | `Key (`ASCII 'Q', [`Ctrl]) -> Lwd.set quit true; `Handled
             | _ -> `Unhandled
-          ))
-        in
-        Lwd.get quit, t
+        ))
     in
     match term with
     | Some term -> run_with_term term ?tick_period ?tick ~renderer quit t
