@@ -205,36 +205,37 @@ struct
   let layout_spec t : layout_spec =
     { w = t.w; h = t.h; sw = t.sw; sh = t.sh }
 
-  let cache = { vx1 = 0; vy1 = 0; vx2 = 0; vy2 = 0;
-                image = I.empty; overlays = [] }
+  let cache : cache =
+    { vx1 = 0; vy1 = 0; vx2 = 0; vy2 = 0;
+      image = I.empty; overlays = [] }
 
-  let empty =
+  let empty : t =
     { w = 0; sw = 0; h = 0; sh = 0;
       focus = Focus.empty; desc = Atom I.empty; cache }
 
-  let atom img =
+  let atom img : t =
     { w = I.width img; sw = 0;
       h = I.height img; sh = 0;
       focus = Focus.empty;
       desc = Atom img; cache }
 
-  let mouse_area f t =
+  let mouse_area f t : t =
     { t with desc = Mouse_handler (t, f) }
 
-  let keyboard_area ?focus f t =
+  let keyboard_area ?focus f t : t =
     let focus = match focus with
       | None -> t.focus
       | Some focus -> Focus.merge focus t.focus
     in
     { t with desc = Focus_area (t, f); focus }
 
-  let scroll_area x y t =
+  let scroll_area x y t : t =
     { t with desc = Scroll_area (t, x, y) }
 
-  let size_sensor handler t =
+  let size_sensor handler t : t =
     { t with desc = Size_sensor (t, handler) }
 
-  let resize ?w ?h ?sw ?sh ?fill ?crop ?(bg=A.empty) t =
+  let resize ?w ?h ?sw ?sh ?fill ?crop ?(bg=A.empty) t : t =
     let g = match fill, crop with
       | None, None -> Gravity.(pair default default)
       | Some g, None | None, Some g -> Gravity.(pair g g)
@@ -245,6 +246,7 @@ struct
       (Some sw, _ | None, sw), (Some sh, _ | None, sh) ->
       {t with w; h; sw; sh; desc = Resize (t, g, bg)}
 
+  (* TODO: dangerous in a bind? use [Lwd_utils.local_state] instead? *)
   let last_z = ref 0
 
   let overlay ?dx:(o_x=0) ?dy:(o_y=0)
@@ -257,7 +259,7 @@ struct
       let desc = Overlay { o_n; o_x; o_y; o_h; o_z; o_origin; o_direction } in
       { w = 0; sw = 0; h = 0; sh = 0; desc; focus = Focus.empty; cache }
 
-  let event_filter ?focus f t =
+  let event_filter ?focus f t : t =
     let focus = match focus with
       | None -> t.focus
       | Some focus -> focus
