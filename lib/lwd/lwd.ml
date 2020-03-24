@@ -7,19 +7,22 @@ end = struct
   let any = Obj.repr
 end
 
+type 'a eval =
+  | Eval_none
+  | Eval_progress
+  | Eval_some of 'a
+
 type 'a t =
   | Pure of 'a
   | Impure of 'a (* NOTE: is this really used anywhere? *)
   | Operator : {
-      mutable damaged : bool;
-      mutable value : 'a option; (* cached value *)
+      mutable value : 'a eval; (* cached value *)
       mutable trace : trace; (* list of parents this can invalidate *)
       mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
       desc: 'a desc;
     } -> 'a t
   | Root : {
-      mutable damaged : bool;
-      mutable value : 'a option; (* cached value *)
+      mutable value : 'a eval; (* cached value *)
       mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
       mutable on_invalidate : 'a -> unit;
       mutable acquired : bool;
@@ -64,7 +67,7 @@ let impure = function
 let dummy = Pure (Any.any ())
 
 let operator desc =
-  Operator { damaged = true; value = None; trace = T0; desc; trace_idx = I0 }
+  Operator { value = Eval_none; trace = T0; desc; trace_idx = I0 }
 
 let map f x = match x with
   | Pure vx -> Pure (f vx)
@@ -155,22 +158,16 @@ let get_idx obj = function
 let rec invalidate_node : type a . a t -> unit = function
   | Pure _ | Impure _ -> assert false
   | Root ({ value; _ } as t) ->
-    t.damaged <- true;
+    t.value <- Eval_none;
     begin match value with
-      | None -> ()
-      | Some x ->
-        t.value <- None;
+      | Eval_none | Eval_progress -> ()
+      | Eval_some x ->
         t.on_invalidate x (* user callback that {i observes} this root. *)
     end
+  | Operator { value = Eval_none; _ } -> ()
   | Operator t ->
-    let damaged = match t.value with
-      | None -> true
-      | Some _ -> t.value <- None; false
-    in
-    if not (damaged && t.damaged) then (
-      t.damaged <- true;
-      invalidate_trace t.trace; (* invalidate parents recursively *)
-    )
+    t.value <- Eval_none;
+    invalidate_trace t.trace; (* invalidate parents recursively *)
 
 (* invalidate recursively documents in the given trace *)
 and invalidate_trace = function
@@ -221,12 +218,12 @@ let get_prim x = x
 let invalidate = function
   | Operator ({ desc = Prim p; _ } as t) ->
     let value = t.value in
-    t.value <- None;
+    t.value <- Eval_none;
     (* the value is invalidated, be sure to invalidate all parents as well *)
     invalidate_trace t.trace;
     begin match value with
-      | None -> ()
-      | Some v -> p.release v
+      | Eval_none | Eval_progress -> ()
+      | Eval_some v -> p.release v
     end
   | _ -> assert false
 
@@ -300,7 +297,7 @@ let rec sub_release
            from any root. We can release its cached value and
            recursively release its subtree. *)
         let value = t.value in
-        t.value <- None;
+        t.value <- Eval_progress;
         begin match t.desc with
           | Map  (x, _) -> sub_release failures self x
           | Map2 (x, y, _) ->
@@ -320,8 +317,8 @@ let rec sub_release
           | Var  _ -> failures
           | Prim t ->
             begin match value with
-              | None -> failures
-              | Some x ->
+              | Eval_none  | Eval_progress -> failures
+              | Eval_some x ->
                 begin match t.release x with
                   | () -> failures
                   | exception exn ->
@@ -427,10 +424,10 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
   | Pure x | Impure x -> x
   | Operator t as self ->
     (* try to use cached value, if present *)
-    match t.value, t.damaged with
-    | Some value, false -> value
+    match t.value with
+    | Eval_some value -> value
     | _ ->
-      t.damaged <- false;
+      t.value <- Eval_progress;
       let result : b = match t.desc with
         | Map  (x, f) -> f (sub_sample self x)
         | Map2 (x, y, f) -> f (sub_sample self x) (sub_sample self y)
@@ -455,7 +452,10 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
               | [] -> result
               | failures ->
                 (* Commit result, just like normal continuation *)
-                t.value <- Some result;
+                begin match t.value with
+                  | Eval_progress -> t.value <- Eval_some result
+                  | Eval_none | Eval_some _ -> ()
+                end;
                 activate_tracing self origin t.trace;
                 (* Raise release exception *)
                 raise (Release_failure failures)
@@ -463,7 +463,10 @@ let rec sub_sample : type a b . a t -> b t -> b = fun origin ->
         | Var  x -> x.binding
         | Prim t -> t.acquire ()
       in
-      t.value <- Some result;
+      begin match t.value with
+        | Eval_progress -> t.value <- Eval_some result;
+        | Eval_none | Eval_some _ -> ()
+      end;
       (* [self] just became active, so it may invalidate [origin] in case its
          value changes because of [t.desc], like if it's a variable and gets
          mutated, or if it's a primitive that gets invalidated.
@@ -475,9 +478,8 @@ type 'a root = 'a t
 
 let observe ?(on_invalidate=ignore) child : _ root =
   let root = Root {
-      damaged = true;
       child = child;
-      value = None;
+      value = Eval_none;
       on_invalidate;
       trace_idx = I0;
       acquired = false;
@@ -487,29 +489,33 @@ let observe ?(on_invalidate=ignore) child : _ root =
 let sample = function
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
-    match t.value, t.damaged with
-    | Some value, false -> value
+    match t.value with
+    | Eval_some value -> value
     | _ ->
       (* no cached value, compute it now *)
       if not t.acquired then (
         t.acquired <- true;
         sub_acquire self t.child;
       );
-      t.damaged <- false;
+      t.value <- Eval_progress;
       let value = sub_sample self t.child in
-      t.value <- Some value; (* cache value *)
+      begin match t.value with
+        | Eval_progress -> t.value <- Eval_some value; (* cache value *)
+        | Eval_none | Eval_some _ -> ()
+      end;
       value
 
 let is_damaged = function
   | Pure _ | Impure _ | Operator _ -> assert false
-  | Root t -> t.damaged || (match t.value with None -> true | Some _ -> false)
+  | Root {value = Eval_some _; _} -> false
+  | Root {value = Eval_none | Eval_progress; _} -> true
 
 let release = function
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
     if t.acquired then (
       (* release subtree, remove cached value *)
-      t.value <- None;
+      t.value <- Eval_none;
       t.acquired <- false;
       match sub_release [] self t.child with
       | [] -> ()
