@@ -84,8 +84,14 @@ val prim : acquire:(unit -> 'a) -> release:('a -> unit) -> 'a prim
 val get_prim : 'a prim -> 'a t
 val invalidate : 'a prim -> unit
 
+(** Releasing unused graphs *)
 type release_failure = exn * Printexc.raw_backtrace
-exception Release_failure of release_failure list
+
+exception Release_failure of exn option * release_failure list
+
+type release_queue
+val make_release_queue : unit -> release_queue
+val flush_release_queue : release_queue -> release_failure list
 
 type 'a root
 (** A root of computation, whose value(s) over time we're interested in. *)
@@ -100,7 +106,7 @@ val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 (** Change the callback for the root.
     @see observe for more details. *)
 
-val sample : 'a root -> 'a
+val sample : ?release_queue:release_queue -> 'a root -> 'a
 (** Force the computation of the value for this root.
     The value is cached, so this is idempotent, until the next invalidation. *)
 
@@ -109,7 +115,7 @@ val is_damaged : 'a root -> bool
     cache. This can be the case if the value was never computed, or
     if it was computed and then invalidated. *)
 
-val release : 'a root -> unit
+val release : ?release_queue:release_queue -> 'a root -> unit
 (** Forget about this root and release sub-values no longer reachable from
     any root. *)
 
