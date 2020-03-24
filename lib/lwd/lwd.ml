@@ -506,26 +506,7 @@ let flush_release_queue queue =
   queue := Release_done;
   raw_flush_release_queue queue'
 
-let flush_or_fail main_exn queue =
-  match raw_flush_release_queue queue with
-  | [] -> ()
-  | failures -> raise (Release_failure (main_exn, failures))
-
-let start_sub_sample queue self child =
-  let queue, internal_queue = match queue with
-    | None -> (ref Release_done, true)
-    | Some queue -> (queue, false)
-  in
-  match sub_sample queue self child with
-  | result ->
-    if internal_queue then
-      flush_or_fail None !queue;
-    result
-  | exception exn when internal_queue ->
-    flush_or_fail (Some exn) !queue;
-    raise exn
-
-let sample ?release_queue = function
+let sample queue = function
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
     match t.value with
@@ -537,7 +518,7 @@ let sample ?release_queue = function
         sub_acquire self t.child;
       );
       t.value <- Eval_progress;
-      let value = start_sub_sample release_queue self t.child in
+      let value = sub_sample queue self t.child in
       begin match t.value with
         | Eval_progress -> t.value <- Eval_some value; (* cache value *)
         | Eval_none | Eval_some _ -> ()
@@ -549,28 +530,36 @@ let is_damaged = function
   | Root {value = Eval_some _; _} -> false
   | Root {value = Eval_none | Eval_progress; _} -> true
 
-let release ?release_queue = function
+let release queue = function
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
     if t.acquired then (
       (* release subtree, remove cached value *)
       t.value <- Eval_none;
       t.acquired <- false;
-      begin match release_queue with
-        | Some batch ->
-          batch :=
-            Release_more { origin = self; element = t.child; next = !batch }
-        | None ->
-          match sub_release [] self t.child with
-          | [] -> ()
-          | failures -> raise (Release_failure (None, failures))
-      end
+      queue := Release_more { origin = self; element = t.child; next = !queue }
     )
 
 let set_on_invalidate x f =
   match x with
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t -> t.on_invalidate <- f
+
+let flush_or_fail main_exn queue =
+  match flush_release_queue queue with
+  | [] -> ()
+  | failures -> raise (Release_failure (main_exn, failures))
+
+let quick_sample root =
+  let queue = ref Release_done in
+  match sample queue root with
+  | result -> flush_or_fail None queue; result
+  | exception exn -> flush_or_fail (Some exn) queue; raise exn
+
+let quick_release root =
+  let queue = ref Release_done in
+  release queue root;
+  flush_or_fail None queue
 
 module Infix = struct
   let (>>=) = bind

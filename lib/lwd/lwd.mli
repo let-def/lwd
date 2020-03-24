@@ -106,7 +106,7 @@ val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 (** Change the callback for the root.
     @see observe for more details. *)
 
-val sample : ?release_queue:release_queue -> 'a root -> 'a
+val sample : release_queue -> 'a root -> 'a
 (** Force the computation of the value for this root.
     The value is cached, so this is idempotent, until the next invalidation. *)
 
@@ -115,9 +115,13 @@ val is_damaged : 'a root -> bool
     cache. This can be the case if the value was never computed, or
     if it was computed and then invalidated. *)
 
-val release : ?release_queue:release_queue -> 'a root -> unit
+val release : release_queue -> 'a root -> unit
 (** Forget about this root and release sub-values no longer reachable from
     any root. *)
+
+val quick_sample : 'a root -> 'a
+
+val quick_release : 'a root -> unit
 
 module Infix : sig
   val (>|=) : 'a t -> ('a -> 'b) -> 'b t

@@ -44,7 +44,8 @@ let render ?quit ~size events doc =
   let size = ref size in
   let result, push = Lwt_stream.create () in
   let refresh () =
-    let ui = Lwd.sample root in
+    (* FIXME This should use [Lwd.sample] with proper release management. *)
+    let ui = Lwd.quick_sample root in
     Renderer.update renderer !size ui;
     push (Some (Renderer.image renderer))
   in

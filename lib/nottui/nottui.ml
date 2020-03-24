@@ -734,11 +734,14 @@ module Ui_loop =
 struct
   open Notty_unix
 
+  (* FIXME Uses of [quick_sample] and [quick_release] should be replaced by
+           [sample] and [release] with the appropriate release management. *)
+
   let step ?(process_event=true) ?(timeout=(-1.0)) ~renderer term root =
     let size = Term.size term in
     let image =
       let rec stabilize () =
-        let tree = Lwd.sample root in
+        let tree = Lwd.quick_sample root in
         Renderer.update renderer size tree;
         let image = Renderer.image renderer in
         if Lwd.is_damaged root
@@ -771,7 +774,7 @@ struct
     let quit = Lwd.observe (Lwd.get quit) in
     let root = Lwd.observe t in
     let rec loop () =
-      let quit = Lwd.sample quit in
+      let quit = Lwd.quick_sample quit in
       if not quit then (
         step ~process_event:true ?timeout:tick_period ~renderer term root;
         tick ();
@@ -779,8 +782,8 @@ struct
       )
     in
     loop ();
-    Lwd.release root;
-    Lwd.release quit
+    ignore (Lwd.quick_release root);
+    ignore (Lwd.quick_release quit)
 
   let run ?tick_period ?tick ?term ?(renderer=Renderer.make ())
           ?quit t =
