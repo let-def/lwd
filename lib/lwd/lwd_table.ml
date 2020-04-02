@@ -87,7 +87,7 @@ let before ?set = function
   | Node { parent = Leaf ; _ } | Leaf -> Leaf
   | Node n as parent ->
     raw_invalidate parent;
-    let node = make_node ?set ~left:Leaf ~right:n.left ~parent in
+    let node = make_node ?set ~left:n.left ~right:Leaf ~parent in
     n.left <- node;
     node
   | Root _ -> assert false
@@ -96,7 +96,7 @@ let after ?set = function
   | Node { parent = Leaf ; _ } | Leaf -> Leaf
   | Node n as parent ->
     raw_invalidate parent;
-    let node = make_node ?set ~left:n.right ~right:Leaf ~parent in
+    let node = make_node ?set ~left:Leaf ~right:n.right ~parent in
     n.right <- node;
     node
   | Root _ -> assert false
