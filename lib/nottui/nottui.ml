@@ -629,9 +629,12 @@ struct
             in
             iter st'
           | Focus_area (t, f) ->
-            begin match f key with
+            begin match iter [t] with
               | `Handled -> `Handled
-              | `Unhandled -> iter (t :: tl)
+              | `Unhandled ->
+                match f key with
+                | `Handled -> `Handled
+                | `Unhandled -> iter tl
             end
           | Mouse_handler (t, _) | Size_sensor (t, _)
           | Scroll_area (t, _, _) | Resize (t, _, _) ->
