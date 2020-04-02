@@ -266,6 +266,7 @@ let rec sub_release
           if t_equal x origin then T3 (y, z, w)
           else if t_equal y origin then T3 (x, z, w)
           else if t_equal z origin then T3 (x, y, w)
+          else if t_equal w origin then T3 (x, y, z)
           else assert false
         | Tn tn as trace ->
           let revidx = rem_idx self origin in
