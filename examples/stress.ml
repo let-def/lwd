@@ -37,5 +37,5 @@ let () =
     Ui_loop.step ~timeout:0.0 ~process_event:true ~renderer term root;
     Array.iter (Array.iter walk) cells
   done;
-  Lwd.release root;
+  Lwd.quick_release root;
   Notty_unix.Term.release term
