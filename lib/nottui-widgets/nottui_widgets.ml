@@ -400,13 +400,14 @@ let hbox l = Lwd_utils.pack Ui.pack_x l
 let vbox l = Lwd_utils.pack Ui.pack_y l
 let zbox l = Lwd_utils.pack Ui.pack_z l
 
-let vlist (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
+let vlist ?(bullet="- ") (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
   l
-  |> List.map (fun ui -> Lwd.map (Ui.join_x (string "- ")) ui)
+  |> List.map (fun ui -> Lwd.map (Ui.join_x (string bullet)) ui)
   |> Lwd_utils.pack Ui.pack_y
 
 (** A list of items with a dynamic filter on the items *)
 let vlist_with
+    ?(bullet="- ")
     ?(filter=Lwd.return (fun _ -> true))
     (f:'a -> Ui.t Lwd.t)
     (l:'a list Lwd.t) : Ui.t Lwd.t =
@@ -418,7 +419,7 @@ let vlist_with
       let acc' = match f x with | None -> acc | Some y -> y::acc in
       filter_map_ acc' f l'
   in
-  let l = l >|= List.map (fun x -> x, Lwd.map (Ui.join_x (string "- ")) @@ f x) in
+  let l = l >|= List.map (fun x -> x, Lwd.map (Ui.join_x (string bullet)) @@ f x) in
   let l_filter : _ list Lwd.t =
     filter >>= fun filter ->
     l >|=
