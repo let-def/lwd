@@ -28,6 +28,10 @@ let string ?(attr=A.empty) str =
   in
   Ui.atom (I.vcat (split str 0))
 
+let int ?attr x = string ?attr (string_of_int x)
+let bool ?attr x = string ?attr (string_of_bool x)
+let float ?attr x = string ?attr (string_of_float x)
+
 let printf ?attr fmt =
   Printf.ksprintf (string ?attr) fmt
 
