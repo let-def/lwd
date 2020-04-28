@@ -279,7 +279,7 @@ let sub' str p l =
   then str
   else String.sub str p l
 
-let edit_field state ~on_change ~on_submit =
+let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
   let update focus_h focus (text, pos) =
     let pos = min (max 0 pos) (String.length text) in
     let content =
@@ -343,7 +343,6 @@ let edit_field state ~on_change ~on_submit =
     in
     Ui.keyboard_area ~focus handler content
   in
-  let focus = Focus.make () in
   let node =
     Lwd.map2 (update focus) (Focus.status focus) state
   in
