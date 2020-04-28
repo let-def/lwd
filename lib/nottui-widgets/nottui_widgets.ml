@@ -1,4 +1,5 @@
 open Lwd_infix
+open Lwd.Infix
 open Notty
 open Nottui
 
@@ -418,7 +419,7 @@ let vlist_with
     | x::l' ->
       let acc' = match f x with | None -> acc | Some y -> y::acc in
       filter_map_ acc' f l'
-  n
+  in
   let l = l >|= List.map (fun x -> x, Lwd.map (Ui.join_x (string bullet)) @@ f x) in
   let l_filter : _ list Lwd.t =
     filter >>= fun filter ->
@@ -431,14 +432,18 @@ let vlist_with
 (** A table layout.
     @param sep if true, insert a separator between cells TODO
     TODO: per-cell padding
+    TODO: align left/right in cells
     TODO: headers *)
-let table ?(sep=true) ?headers:(_:_) (rows: Ui.t Lwd.t list list) : Ui.t Lwd.t =
+let table ?sep:(_=true) ?headers:(_:_) (rows: Ui.t Lwd.t list list) : Ui.t Lwd.t =
+  (* build a [ui list list Lwd.t] *)
+  begin
+    Lwd_utils.map_l (fun r -> Lwd_utils.flatten_l r) rows
+  end >>= fun (rows:Ui.t list list) ->
   (* determine width of each column and height of each row *)
-  let n_rows = List.length rows in
   let n_cols = List.fold_left (fun n r -> max n (List.length r)) 0 rows in
   let col_widths = Array.make n_cols 1 in
   List.iter
-    (fun row_i row ->
+    (fun row ->
        List.iteri
          (fun col_j cell ->
            let w = (Ui.layout_spec cell).Ui.w in
@@ -447,26 +452,27 @@ let table ?(sep=true) ?headers:(_:_) (rows: Ui.t Lwd.t list list) : Ui.t Lwd.t =
     rows;
   (* now render, with some padding *)
   let rows =
-    List.mapi
-      (fun i row ->
-         let row_h = List.fold_left (fun c -> (Ui.layout_spec c).Ui.h) 0 row in
+    List.map
+      (fun row ->
+         let row_h =
+           List.fold_left (fun n c -> max n (Ui.layout_spec c).Ui.h) 0 row in
          let row =
            List.mapi
              (fun i c ->
-                let pad_x = col_widths.(i) - (Ui.layout_spec c).Ui.w in
-                let pad_y = row_h - (Ui.layout_spec c).Ui.h in
+                let w_pad = col_widths.(i) - (Ui.layout_spec c).Ui.w in
+                let _h_pad = row_h - (Ui.layout_spec c).Ui.h in
                 (* pad the cell *)
-                c >>= fun c ->
-                Ui.vcat (W.string (String.make pad_x ' ')
-
+                (* TODO: vpad *)
+                Ui.join_x c (string @@ String.make w_pad ' ')
              )
              row
          in
-         Lwd_utils.pack Ui.pack_x row)
+         Lwd_utils.pure_pack Ui.pack_x row)
       rows
   in
   (* TODO: mouse and keyboard handling *)
-  Lwd_utils.pack Ui.pack_y rows
+  let ui = Lwd_utils.pure_pack Ui.pack_y rows in
+  Lwd.return ui
 
 let button ?attr s f =
   Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) (string ?attr s)
