@@ -429,12 +429,29 @@ let vlist_with
   in
   l_filter >>= Lwd_utils.pack Ui.pack_y
 
-(** A table layout.
+let rec iterate n f x =
+  if n=0 then x else iterate (n-1) f (f x)
+
+(** A grid layout, with alignment in all rows/columns.
+    @param max_h maximum height of a cell
+    @param max_w maximum width of a cell
+    @param bg attribute for controlling background style
     @param sep if true, insert a separator between cells TODO
-    TODO: per-cell padding
-    TODO: align left/right in cells
+    @param fill used to control filling of cells
+    @param crop used to control cropping of cells
+    TODO: control padding/alignment, vertically and horizontally
+    TODO: control align left/right in cells
+    TODO: horizontal rule below headers
     TODO: headers *)
-let table ?sep:(_=true) ?headers:(_:_) (rows: Ui.t Lwd.t list list) : Ui.t Lwd.t =
+let grid
+    ?max_h ?max_w
+    ?fill ?crop ?bg
+    ?sep:(_=true) ?(headers:Ui.t Lwd.t list option)
+    (rows: Ui.t Lwd.t list list) : Ui.t Lwd.t =
+  let rows = match headers with
+    | None -> rows
+    | Some r -> r :: rows
+  in
   (* build a [ui list list Lwd.t] *)
   begin
     Lwd_utils.map_l (fun r -> Lwd_utils.flatten_l r) rows
@@ -450,21 +467,27 @@ let table ?sep:(_=true) ?headers:(_:_) (rows: Ui.t Lwd.t list list) : Ui.t Lwd.t
            col_widths.(col_j) <- max col_widths.(col_j) w)
          row)
     rows;
+  begin match max_w with
+    | None -> ()
+    | Some max_w ->
+      (* limit width *)
+      Array.iteri (fun i x -> col_widths.(i) <- min x max_w) col_widths
+  end;
   (* now render, with some padding *)
   let rows =
     List.map
       (fun row ->
          let row_h =
-           List.fold_left (fun n c -> max n (Ui.layout_spec c).Ui.h) 0 row in
+           List.fold_left (fun n c -> max n (Ui.layout_spec c).Ui.h) 0 row
+         in
+         let row_h = match max_h with
+           | None -> row_h
+           | Some max_h -> min row_h max_h
+         in
          let row =
            List.mapi
              (fun i c ->
-                let w_pad = col_widths.(i) - (Ui.layout_spec c).Ui.w in
-                let _h_pad = row_h - (Ui.layout_spec c).Ui.h in
-                (* pad the cell *)
-                (* TODO: vpad *)
-                Ui.join_x c (string @@ String.make w_pad ' ')
-             )
+                Ui.resize ~w:col_widths.(i) ~h:row_h ?crop ?fill ?bg c)
              row
          in
          Lwd_utils.pure_pack Ui.pack_x row)
