@@ -6,3 +6,7 @@ val pack_seq : 'a monoid -> 'a Lwd.t Seq.t -> 'a Lwd.t
 val pure_pack : 'a monoid -> 'a list -> 'a
 
 val local_state : ('a Lwd.t -> ('a -> unit) -> 'a * 'b) -> 'b
+
+val map_l : ('a -> 'b Lwd.t) -> 'a list -> 'b list Lwd.t
+
+val flatten_l : 'a Lwd.t list -> 'a list Lwd.t

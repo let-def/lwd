@@ -1,3 +1,4 @@
+
 type 'a monoid = 'a * ('a -> 'a -> 'a)
 
 let lift_monoid (zero, plus) =
@@ -47,3 +48,11 @@ let local_state f =
   let v, result = f (Lwd.get_prim prim) update in
   r := Some v;
   result
+
+let rec map_l (f:'a -> 'b Lwd.t) (l:'a list) : 'b list Lwd.t =
+  match l with
+  | [] -> Lwd.return []
+  | x :: tl -> Lwd.map2 List.cons (f x) (map_l f tl)
+
+let flatten_l (l:'a Lwd.t list) : 'a list Lwd.t =
+  map_l (fun x->x) l
