@@ -30,7 +30,7 @@ let string ?(attr=A.empty) str =
 
 let int ?attr x = string ?attr (string_of_int x)
 let bool ?attr x = string ?attr (string_of_bool x)
-let float ?attr x = string ?attr (string_of_float x)
+let float_ ?attr x = string ?attr (string_of_float x)
 
 let printf ?attr fmt =
   Printf.ksprintf (string ?attr) fmt
