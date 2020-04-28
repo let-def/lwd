@@ -377,6 +377,32 @@ let tabs (tabs: (string * (unit -> Ui.t Lwd.t)) list) : Ui.t Lwd.t =
     in
     f() >|= Ui.join_y tab_bar
 
+(** Horizontal/vertical box. We fill lines until there is no room,
+    and then go to the next ligne. All widgets in a line are considered to
+    have the same height. *)
+let flex_box (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
+  (* try to adapt to the surrouding size *)
+  let cur_w = Lwd.var 50 in
+  Lwd_utils.flatten_l l >>= fun l ->
+  Lwd.get cur_w >|= fun w_limit ->
+  let rec box_render (acc:Ui.t) (i:int) l : Ui.t =
+    match l with
+    | [] -> acc
+    | ui0 :: tl ->
+      let w0 = (Ui.layout_spec ui0).Ui.w in
+      if i + w0 >= w_limit then (
+        (* newline starting with ui0 *)
+        Ui.join_y acc (box_render ui0 w0 tl)
+      ) else (
+        (* same line *)
+        box_render (Ui.join_x acc ui0) (i+w0) tl
+      )
+  in
+  Ui.size_sensor
+    (fun w _h ->  if Lwd.peek cur_w <> w then Lwd.set cur_w w)
+    (box_render Ui.empty 0 l)
+
+
 (** Prints the summary, but calls [f()] to compute a sub-widget
     when clicked on. Useful for displaying deep trees. *)
 let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
