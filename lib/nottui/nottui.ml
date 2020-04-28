@@ -219,6 +219,8 @@ struct
       focus = Focus.empty;
       desc = Atom img; cache }
 
+  let void x y = atom (I.void x y)
+
   let mouse_area f t : t =
     { t with desc = Mouse_handler (t, f) }
 

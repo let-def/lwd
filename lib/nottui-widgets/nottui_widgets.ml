@@ -436,7 +436,8 @@ let rec iterate n f x =
     @param max_h maximum height of a cell
     @param max_w maximum width of a cell
     @param bg attribute for controlling background style
-    @param sep if true, insert a separator between cells TODO
+    @param h_space horizontal space between each cell in a row
+    @param v_space vertical space between each row
     @param fill used to control filling of cells
     @param crop used to control cropping of cells
     TODO: control padding/alignment, vertically and horizontally
@@ -446,7 +447,9 @@ let rec iterate n f x =
 let grid
     ?max_h ?max_w
     ?fill ?crop ?bg
-    ?sep:(_=true) ?(headers:Ui.t Lwd.t list option)
+    ?(h_space=0)
+    ?(v_space=0)
+    ?(headers:Ui.t Lwd.t list option)
     (rows: Ui.t Lwd.t list list) : Ui.t Lwd.t =
   let rows = match headers with
     | None -> rows
@@ -474,6 +477,13 @@ let grid
       Array.iteri (fun i x -> col_widths.(i) <- min x max_w) col_widths
   end;
   (* now render, with some padding *)
+  let pack_pad_x =
+    if h_space<=0 then (Ui.empty, Ui.join_x)
+    else (Ui.empty, (fun x y -> Ui.hcat [x; Ui.void h_space 0; y]))
+  and pack_pad_y =
+    if v_space =0 then (Ui.empty, Ui.join_y)
+    else (Ui.empty, (fun x y -> Ui.vcat [x; Ui.void v_space 0; y]))
+  in
   let rows =
     List.map
       (fun row ->
@@ -490,11 +500,11 @@ let grid
                 Ui.resize ~w:col_widths.(i) ~h:row_h ?crop ?fill ?bg c)
              row
          in
-         Lwd_utils.pure_pack Ui.pack_x row)
+         Lwd_utils.pure_pack pack_pad_x row)
       rows
   in
   (* TODO: mouse and keyboard handling *)
-  let ui = Lwd_utils.pure_pack Ui.pack_y rows in
+  let ui = Lwd_utils.pure_pack pack_pad_y rows in
   Lwd.return ui
 
 let button ?attr s f =
