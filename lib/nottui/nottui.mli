@@ -89,6 +89,10 @@ sig
   val vcat : t list -> t
   val zcat : t list -> t
 
+  val void : int -> int -> t
+  (** Void space of dimensions [x,y]. Useful for padding and interstitial
+      space. *)
+
   val layout_spec : t -> layout_spec
 end
 
