@@ -356,6 +356,27 @@ let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
   Lwd.map2' state node @@ fun state content ->
   Ui.mouse_area (mouse_grab state) content
 
+(** Tab view, where exactly one element of [l] is shown at a time. *)
+let tabs (tabs: (string * (unit -> Ui.t Lwd.t)) list) : Ui.t Lwd.t =
+  match tabs with
+  | [] -> Lwd.return Ui.empty
+  | _ ->
+    let cur = Lwd.var 0 in
+    Lwd.get cur >>= fun idx_sel ->
+    let _, f = List.nth tabs idx_sel in
+    let tab_bar =
+      tabs
+      |> List.mapi
+        (fun i (s,_) ->
+           let attr = if i = idx_sel then A.(bg magenta) else A.empty in
+           let tab_annot = printf ~attr "[%s]" s in
+           Ui.mouse_area
+             (fun ~x:_ ~y:_ l -> if l=`Left then (Lwd.set cur i; `Handled) else `Unhandled)
+             tab_annot)
+      |> Ui.hcat
+    in
+    f() >|= Ui.join_y tab_bar
+
 (** Prints the summary, but calls [f()] to compute a sub-widget
     when clicked on. Useful for displaying deep trees. *)
 let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t Lwd.t =
