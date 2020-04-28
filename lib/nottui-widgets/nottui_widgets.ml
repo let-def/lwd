@@ -379,12 +379,12 @@ let tabs (tabs: (string * (unit -> Ui.t Lwd.t)) list) : Ui.t Lwd.t =
 
 (** Horizontal/vertical box. We fill lines until there is no room,
     and then go to the next ligne. All widgets in a line are considered to
-    have the same height. *)
-let flex_box (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
-  (* try to adapt to the surrouding size *)
-  let cur_w = Lwd.var 50 in
+    have the same height.
+    @param width dynamic width  (default 80)
+*)
+let flex_box ?(w=Lwd.return 80) (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
   Lwd_utils.flatten_l l >>= fun l ->
-  Lwd.get cur_w >|= fun w_limit ->
+  w >|= fun w_limit ->
   let rec box_render (acc:Ui.t) (i:int) l : Ui.t =
     match l with
     | [] -> acc
@@ -398,9 +398,7 @@ let flex_box (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
         box_render (Ui.join_x acc ui0) (i+w0) tl
       )
   in
-  Ui.size_sensor
-    (fun w _h ->  if Lwd.peek cur_w <> w then Lwd.set cur_w w)
-    (box_render Ui.empty 0 l)
+  box_render Ui.empty 0 l
 
 
 (** Prints the summary, but calls [f()] to compute a sub-widget
