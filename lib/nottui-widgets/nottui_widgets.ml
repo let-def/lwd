@@ -295,7 +295,7 @@ let edit_field state ~on_change ~on_submit =
             I.string attr (sub' text (pos + 1) (len - pos - 1))]
          else [I.string A.(bg lightred) " "]);
       ) else
-        [I.string A.empty (if text = "" then " " else text)]
+        [I.string A.(st underline) (if text = "" then " " else text)]
     in
     let handler = function
       | `ASCII 'U', [`Ctrl] -> on_change ("", 0); `Handled (* clear *)
@@ -418,7 +418,7 @@ let vlist_with
     | x::l' ->
       let acc' = match f x with | None -> acc | Some y -> y::acc in
       filter_map_ acc' f l'
-  in
+  n
   let l = l >|= List.map (fun x -> x, Lwd.map (Ui.join_x (string bullet)) @@ f x) in
   let l_filter : _ list Lwd.t =
     filter >>= fun filter ->
@@ -427,6 +427,46 @@ let vlist_with
       (fun (x,ui) -> if filter x then Some ui else None)
   in
   l_filter >>= Lwd_utils.pack Ui.pack_y
+
+(** A table layout.
+    @param sep if true, insert a separator between cells TODO
+    TODO: per-cell padding
+    TODO: headers *)
+let table ?(sep=true) ?headers:(_:_) (rows: Ui.t Lwd.t list list) : Ui.t Lwd.t =
+  (* determine width of each column and height of each row *)
+  let n_rows = List.length rows in
+  let n_cols = List.fold_left (fun n r -> max n (List.length r)) 0 rows in
+  let col_widths = Array.make n_cols 1 in
+  List.iter
+    (fun row_i row ->
+       List.iteri
+         (fun col_j cell ->
+           let w = (Ui.layout_spec cell).Ui.w in
+           col_widths.(col_j) <- max col_widths.(col_j) w)
+         row)
+    rows;
+  (* now render, with some padding *)
+  let rows =
+    List.mapi
+      (fun i row ->
+         let row_h = List.fold_left (fun c -> (Ui.layout_spec c).Ui.h) 0 row in
+         let row =
+           List.mapi
+             (fun i c ->
+                let pad_x = col_widths.(i) - (Ui.layout_spec c).Ui.w in
+                let pad_y = row_h - (Ui.layout_spec c).Ui.h in
+                (* pad the cell *)
+                c >>= fun c ->
+                Ui.vcat (W.string (String.make pad_x ' ')
+
+             )
+             row
+         in
+         Lwd_utils.pack Ui.pack_x row)
+      rows
+  in
+  (* TODO: mouse and keyboard handling *)
+  Lwd_utils.pack Ui.pack_y rows
 
 let button ?attr s f =
   Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) (string ?attr s)
