@@ -372,7 +372,7 @@ let tabs (tabs: (string * (unit -> Ui.t Lwd.t)) list) : Ui.t Lwd.t =
       tabs
       |> List.mapi
         (fun i (s,_) ->
-           let attr = if i = idx_sel then A.(bg magenta) else A.empty in
+           let attr = if i = idx_sel then A.(st underline) else A.empty in
            let tab_annot = printf ~attr "[%s]" s in
            Ui.mouse_area
              (fun ~x:_ ~y:_ l -> if l=`Left then (Lwd.set cur i; `Handled) else `Unhandled)
