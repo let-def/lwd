@@ -11,7 +11,9 @@
  (name lwd)
  (synopsis "Lightweight reactive documents")
  (description "TODO")
- (depends dune seq (ocaml (>= "4.03"))))
+ (depends dune seq (ocaml (>= "4.03"))
+          (qtest :with-test)
+          (qcheck :with-test)))
 
 (package
  (name nottui)
