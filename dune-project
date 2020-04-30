@@ -19,7 +19,7 @@
  (name nottui)
  (synopsis "UI toolkit for the terminal built on top of Notty")
  (description "TODO")
- (depends dune lwd notty fmt))
+ (depends dune lwd notty))
 
 (package
  (name nottui-lwt)

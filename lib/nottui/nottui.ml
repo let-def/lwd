@@ -322,16 +322,11 @@ struct
     | Y (a, b) -> Format.fprintf ppf "Y (@[%a,@ %a@])" pp a pp b
     | Z (a, b) -> Format.fprintf ppf "Z (@[%a,@ %a@])" pp a pp b
 
-  and pp_overlay ppf =
-    Fmt.(record [
-        field "o_n" (fun r -> r.o_n) pp;
-        field "o_h" (fun r -> r.o_h) (const string "_");
-        field "o_x" (fun r -> r.o_x) int;
-        field "o_y" (fun r -> r.o_y) int;
-        field "o_z" (fun r -> r.o_z) int;
-        field "o_origin" (fun r -> r.o_origin) Gravity.pp;
-        field "o_direction" (fun r -> r.o_direction) Gravity.pp;
-      ]) ppf
+  and pp_overlay ppf r =
+    Format.fprintf ppf
+      "{@[o_n=%a;@ o_h=%s;@ o_h=%d;@ o_x=%d;@ o_y=%d;@ \
+       o_origin=%a;@ o_direction=%a@]}" pp r.o_n "_" r.o_x r.o_y r.o_z
+      Gravity.pp r.o_origin Gravity.pp r.o_direction
 
   let iter f ui = match ui.desc with
     | Atom _ -> ()
