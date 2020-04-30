@@ -12,7 +12,7 @@ type 'a eval =
   | Eval_progress
   | Eval_some of 'a
 
-type 'a t =
+type 'a t_ =
   | Pure of 'a
   | Impure of 'a (* NOTE: is this really used anywhere? *)
   | Operator : {
@@ -20,21 +20,21 @@ type 'a t =
       mutable trace : trace; (* list of parents this can invalidate *)
       mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
       desc: 'a desc;
-    } -> 'a t
+    } -> 'a t_
   | Root : {
       mutable value : 'a eval; (* cached value *)
       mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
       mutable on_invalidate : 'a -> unit;
       mutable acquired : bool;
-      child : 'a t;
-    } -> 'a t
+      child : 'a t_;
+    } -> 'a t_
 
 and _ desc =
-  | Map  : 'a t * ('a -> 'b) -> 'b desc
-  | Map2 : 'a t * 'b t * ('a -> 'b -> 'c) -> 'c desc
-  | Pair : 'a t * 'b t -> ('a * 'b) desc
-  | App  : ('a -> 'b) t * 'a t -> 'b desc
-  | Join : { child : 'a t t; mutable intermediate : 'a t option } -> 'a desc
+  | Map  : 'a t_ * ('a -> 'b) -> 'b desc
+  | Map2 : 'a t_ * 'b t_ * ('a -> 'b -> 'c) -> 'c desc
+  | Pair : 'a t_ * 'b t_ -> ('a * 'b) desc
+  | App  : ('a -> 'b) t_ * 'a t_ -> 'b desc
+  | Join : { child : 'a t_ t_; mutable intermediate : 'a t_ option } -> 'a desc
   | Var  : { mutable binding : 'a } -> 'a desc
   | Prim : { acquire : unit -> 'a;
              release : 'a -> unit } -> 'a desc
@@ -42,63 +42,81 @@ and _ desc =
 (* a set of (active) parents for a ['a t], used during invalidation *)
 and trace =
   | T0
-  | T1 : _ t -> trace
-  | T2 : _ t * _ t -> trace
-  | T3 : _ t * _ t * _ t -> trace
-  | T4 : _ t * _ t * _ t * _ t -> trace
+  | T1 : _ t_ -> trace
+  | T2 : _ t_ * _ t_ -> trace
+  | T3 : _ t_ * _ t_ * _ t_ -> trace
+  | T4 : _ t_ * _ t_ * _ t_ * _ t_ -> trace
   | Tn : { mutable active : int; mutable count : int;
-           mutable entries : Any.t t array } -> trace
+           mutable entries : Any.t t_ array } -> trace
 
 (* a set of direct children for a composite document *)
 and trace_idx =
   | I0
   | I1 : { mutable idx : int ;
-           obj : 'a t;
+           obj : 'a t_;
            mutable next : trace_idx } -> trace_idx
 
-(* Basic combinators *)
-let return x = Pure x
-let pure x = Pure x
+(* The type system cannot see that t is covariant in its parameter.
+   Use the Force to convince it. *)
+type +'a t
+external inj : 'a t_ -> 'a t = "%identity"
+external prj : 'a t -> 'a t_ = "%identity"
+external prj2 : 'a t t -> 'a t_ t_ = "%identity"
 
-let impure = function
-  | Pure x -> Impure x
-  | other -> other
+(* Basic combinators *)
+let return x = inj (Pure x)
+let pure x = inj (Pure x)
+
+let impure x = inj (
+    match prj x with
+    | Pure x -> Impure x
+    | other -> other
+  )
 
 let dummy = Pure (Any.any ())
 
 let operator desc =
   Operator { value = Eval_none; trace = T0; desc; trace_idx = I0 }
 
-let map f x = match x with
-  | Pure vx -> Pure (f vx)
-  | x -> operator (Map (x, f))
+let map f x = inj (
+    match prj x with
+    | Pure vx -> Pure (f vx)
+    | x -> operator (Map (x, f))
+  )
 
-let map2 f x y =
-  match x, y with
-  | Pure vx, Pure vy -> Pure (f vx vy)
-  | _ -> operator (Map2 (x, y, f))
+let map2 f x y = inj (
+    match prj x, prj y with
+    | Pure vx, Pure vy -> Pure (f vx vy)
+    | x, y -> operator (Map2 (x, y, f))
+  )
 
 let map' x f = map f x
 let map2' x y f = map2 f x y
 
-let pair x y = match x, y with
-  | Pure vx, Pure vy -> Pure (vx, vy)
-  | _ -> operator (Pair (x, y))
+let pair x y = inj (
+    match prj x, prj y with
+    | Pure vx, Pure vy -> Pure (vx, vy)
+    | x, y -> operator (Pair (x, y))
+  )
 
-let app f x = match f, x with
-  | Pure vf, Pure vx -> Pure (vf vx)
-  | _ -> operator (App (f, x))
+let app f x = inj (
+    match prj f, prj x with
+    | Pure vf, Pure vx -> Pure (vf vx)
+    | f, x -> operator (App (f, x))
+  )
 
-let join child = match child with
-  | Pure v -> v
-  | _ -> operator (Join { child; intermediate = None })
+let join child = inj (
+    match prj2 child with
+    | Pure v -> v
+    | child -> operator (Join { child; intermediate = None })
+  )
 
 let bind x f = join (map f x)
 
 (* Management of trace indices *)
 
-external t_equal : _ t -> _ t -> bool = "%eq"
-external obj_t : 'a t -> Any.t t = "%identity"
+external t_equal : _ t_ -> _ t_ -> bool = "%eq"
+external obj_t : 'a t_ -> Any.t t_ = "%identity"
 
 let add_idx obj idx = function
   | Pure _ | Impure _ -> assert false
@@ -155,7 +173,7 @@ let get_idx obj = function
 (* Propagating invalidation recursively.
    Each document is invalidated at most once,
    and only if it has [t.value = Some _]. *)
-let rec invalidate_node : type a . a t -> unit = function
+let rec invalidate_node : type a . a t_ -> unit = function
   | Pure _ | Impure _ -> assert false
   | Root ({ value; _ } as t) ->
     t.value <- Eval_none;
@@ -193,9 +211,9 @@ and invalidate_trace = function
     done
 
 (* Variables *)
-type 'a var = 'a t
+type 'a var = 'a t_
 let var x = operator (Var {binding = x})
-let get x = x
+let get x = inj x
 
 let set (vx:_ var) x : unit =
   match vx with
@@ -212,10 +230,10 @@ let peek = function
 (* Primitives *)
 type 'a prim = 'a t
 let prim ~acquire ~release =
-  operator (Prim { acquire; release })
+  inj (operator (Prim { acquire; release }))
 let get_prim x = x
 
-let invalidate = function
+let invalidate x = match prj x with
   | Operator ({ desc = Prim p; _ } as t) ->
     let value = t.value in
     t.value <- Eval_none;
@@ -230,7 +248,7 @@ let invalidate = function
 type release_list =
   | Release_done
   | Release_more :
-      { origin : 'a t; element : 'b t; next : release_list } -> release_list
+      { origin : 'a t_; element : 'b t_; next : release_list } -> release_list
 
 type release_queue = release_list ref
 let make_release_queue () = ref Release_done
@@ -244,7 +262,7 @@ type release_failure = exn * Printexc.raw_backtrace
    [sub_release] cannot raise.
    If a primitive raises, the exception is caught and a warning is emitted. *)
 let rec sub_release
-  : type a b . release_failure list -> a t -> b t -> release_failure list
+  : type a b . release_failure list -> a t_ -> b t_ -> release_failure list
   = fun failures origin -> function
     | Root _ -> assert false
     | Pure _ | Impure _ -> failures
@@ -338,7 +356,7 @@ let rec sub_release
       | _ -> failures
 
 (* [sub_acquire] cannot raise *)
-let rec sub_acquire : type a b . a t -> b t -> unit = fun origin ->
+let rec sub_acquire : type a b . a t_ -> b t_ -> unit = fun origin ->
   function
   | Root _ -> assert false
   | Pure _ | Impure _ -> ()
@@ -427,7 +445,7 @@ let activate_tracing self origin = function
    Graph will be left in a coherent state but exception will be propagated
    to the observer. *)
 let sub_sample queue =
-  let rec aux : type a b . a t -> b t -> b = fun origin ->
+  let rec aux : type a b . a t_ -> b t_ -> b = fun origin ->
     function
     | Root _ -> assert false
     | Pure x | Impure x -> x
@@ -483,13 +501,13 @@ type 'a root = 'a t
 
 let observe ?(on_invalidate=ignore) child : _ root =
   let root = Root {
-      child = child;
+      child = prj child;
       value = Eval_none;
       on_invalidate;
       trace_idx = I0;
       acquired = false;
     } in
-  root
+  inj root
 
 exception Release_failure of exn option * release_failure list
 
@@ -507,7 +525,7 @@ let flush_release_queue queue =
   queue := Release_done;
   raw_flush_release_queue queue'
 
-let sample queue = function
+let sample queue x = match prj x with
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
     match t.value with
@@ -526,12 +544,12 @@ let sample queue = function
       end;
       value
 
-let is_damaged = function
+let is_damaged x = match prj x with
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root {value = Eval_some _; _} -> false
   | Root {value = Eval_none | Eval_progress; _} -> true
 
-let release queue = function
+let release queue x = match prj x with
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t as self ->
     if t.acquired then (
@@ -542,7 +560,7 @@ let release queue = function
     )
 
 let set_on_invalidate x f =
-  match x with
+  match prj x with
   | Pure _ | Impure _ | Operator _ -> assert false
   | Root t -> t.on_invalidate <- f
 

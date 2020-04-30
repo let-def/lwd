@@ -1,4 +1,4 @@
-type 'a t
+type +'a t
 (** A dynamic document of type ['a]. Documents can be produced in several
     different ways:
 
@@ -67,7 +67,7 @@ val peek : 'a var -> 'a
 (** Observe the current value of the variable, without any dependency
     tracking. *)
 
-type 'a prim
+type +'a prim
 (** A primitive document. It can correspond, for example, to
     a primitive UI element.
 
@@ -93,7 +93,7 @@ type release_queue
 val make_release_queue : unit -> release_queue
 val flush_release_queue : release_queue -> release_failure list
 
-type 'a root
+type +'a root
 (** A root of computation, whose value(s) over time we're interested in. *)
 
 val observe : ?on_invalidate:('a -> unit) -> 'a t -> 'a root
