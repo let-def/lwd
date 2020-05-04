@@ -9,9 +9,18 @@ let empty = Nil
 
 let element v = Leaf { mark = 0; v }
 
+let mask_bits = 2
+let old_mask = 1
+let new_mask = 2
+let both_mask = 3
+
+let rank = function
+  | Nil | Leaf _ -> 0
+  | Join t -> t.mark lsr mask_bits
+
 let concat a b = match a, b with
   | Nil, x | x, Nil -> x
-  | l, r -> Join { mark = 0; l; r }
+  | l, r -> Join { mark = (max (rank l) (rank r) + 1) lsl mask_bits; l; r }
 
 type ('a, 'b) view =
   | Empty
@@ -22,6 +31,65 @@ let view = function
   | Nil    -> Empty
   | Leaf t -> Element t.v
   | Join t -> Concat (t.l, t.r)
+
+module Balanced : sig
+  type 'a t = private 'a seq
+  val empty : 'a t
+  val element : 'a -> 'a t
+  val concat : 'a t -> 'a t -> 'a t
+
+  val view : 'a t -> ('a, 'a t) view
+end = struct
+  type 'a t = 'a seq
+
+  let empty = empty
+  let element = element
+
+  let check l r = abs (l - r) <= 1
+
+  let rec node_left l r =
+    let ml = rank l in
+    let mr = rank r in
+    if check ml mr then concat l r else match l with
+      | Nil | Leaf _ -> assert false
+      | Join t ->
+        if check (rank t.l) ml
+        then concat t.l (node_left t.r r)
+        else match t.r with
+          | Nil | Leaf _ -> assert false
+          | Join tr ->
+            let trr = node_left tr.r r in
+            if check (1 + max (rank t.l) (rank tr.l)) (rank trr)
+            then concat (concat t.l tr.l) trr
+            else concat t.l (concat tr.l trr)
+
+  let rec node_right l r =
+    let ml = rank l in
+    let mr = rank r in
+    if check mr ml then concat l r else match r with
+      | Nil | Leaf _ -> assert false
+      | Join t ->
+        if check (rank t.r) mr
+        then concat (node_right l t.l) t.r
+        else match t.l with
+          | Nil | Leaf _ -> assert false
+          | Join tl ->
+            let tll = node_right l tl.l in
+            if check (1 + max (rank tl.r) (rank t.r)) (rank tll)
+            then concat tll (concat tl.r t.r)
+            else concat (concat tll tl.r) t.r
+
+  let concat l r =
+    let ml = rank l in
+    let mr = rank r in
+    if check ml mr
+    then concat l r
+    else if ml <= mr
+    then node_right l r
+    else node_left l r
+
+  let view = view
+end
 
 module Reducer = struct
   type (+'a, 'b) xform =
@@ -36,23 +104,18 @@ module Reducer = struct
   }
   let mk_stats () = { marked = 0; shared = 0 }
 
-  let mask_bits = 2
-  let old_mask = 1
-  let new_mask = 2
-  let both_mask = 3
-
   let rec discard stats mask = function
     | Nil -> ()
     | Leaf t ->
       let mark = t.mark in
-      if mark <> 0 && mark land mask = 0 then (
+      if mark land both_mask <> 0 && mark land mask = 0 then (
         stats.marked <- stats.marked + 1;
         stats.shared <- stats.shared + 1;
         t.mark <- mark lor mask;
       )
     | Join t ->
       let mark = t.mark in
-      if mark <> 0 && mark land mask = 0 then (
+      if mark land both_mask <> 0 && mark land mask = 0 then (
         stats.marked <- stats.marked + 1;
         stats.shared <- stats.shared + 1;
         t.mark <- mark lor mask;
@@ -66,23 +129,19 @@ module Reducer = struct
       let mark = t.mark in
       stats.marked <- stats.marked + 1;
       if mark land mask = 0 then (
-        if mark = 0 then (
-          t.mark <- mask;
-        ) else (
+        t.mark <- mark lor mask;
+        if mark land both_mask <> 0 then
           stats.shared <- stats.shared + 1;
-          t.mark <- mark lor mask;
-        )
       )
     | Join t as node ->
       let mark = t.mark in
       if mark land mask = 0 then (
         stats.marked <- stats.marked + 1;
-        if mark = 0 then (
-          t.mark <- mask;
+        t.mark <- mark lor mask;
+        if mark land both_mask = 0 then (
           Queue.push node q
         ) else (
           stats.shared <- stats.shared + 1;
-          t.mark <- mark lor mask;
           discard stats mask t.l;
           discard stats mask t.r;
         )
@@ -91,7 +150,7 @@ module Reducer = struct
   let dequeue stats q mask =
     match Queue.pop q with
     | Join t ->
-      if t.mark = mask then (
+      if t.mark land mask <> 0 then (
         enqueue stats q mask t.l;
         enqueue stats q mask t.r;
       )
@@ -133,7 +192,7 @@ module Reducer = struct
           st.dropped.(dropped_leaf) <- b;
           st.dropped_leaf <- dropped_leaf + 1;
         );
-        t'.mark <- 0
+        t'.mark <- mark land lnot both_mask
       ) else if mark = both_mask then (
         let shared_index = st.shared_index in
         st.shared.(shared_index) <- t;
@@ -149,7 +208,7 @@ module Reducer = struct
             st.dropped.(dropped_join) <- b;
             st.dropped_join <- dropped_join;
           );
-          t'.mark <- 0
+          t'.mark <- mark land lnot both_mask
         )
         else if mark = both_mask then (
           let shared_index = st.shared_index in
@@ -164,8 +223,8 @@ module Reducer = struct
   let rec unmark_new st = function
     | Nil -> XEmpty
     | Leaf t' as t ->
-      let mark = t'.mark land both_mask in
-      if mark = new_mask then (
+      let mark = t'.mark in
+      if mark land both_mask = new_mask then (
         let shared_index = st.shared_index in
         let x = XLeaf {a = t; b = None} in
         st.shared.(shared_index) <- x;
@@ -173,12 +232,12 @@ module Reducer = struct
         t'.mark <- shared_index lsl mask_bits;
         x
       ) else (
-        assert (mark = 0);
-        st.shared.(t'.mark lsr mask_bits)
+        assert (mark land both_mask = 0);
+        st.shared.(mark lsr mask_bits)
       )
     | Join t' as t ->
-      let mask = t'.mark land both_mask in
-      if mask = new_mask then (
+      let mark = t'.mark in
+      if mark land both_mask = new_mask then (
         let shared_index = st.shared_index in
         st.shared_index <- shared_index + 1;
         let l = unmark_new st t'.l in
@@ -188,9 +247,19 @@ module Reducer = struct
         t'.mark <- shared_index lsl mask_bits;
         x
       ) else (
-        assert (mask = 0);
-        st.shared.(t'.mark lsr mask_bits)
+        assert (mark land both_mask = 0);
+        st.shared.(mark lsr mask_bits)
       )
+
+  let rec check_ranks = function
+    | Nil    -> 0
+    | Leaf t -> assert (t.mark = 0); 0
+    | Join t ->
+      let l = check_ranks t.l in
+      let r = check_ranks t.r in
+      let rank = max l r + 1 in
+      assert (t.mark = rank lsl mask_bits);
+      rank
 
   let diff get_dropped xold tnew = match xold, tnew with
     | XEmpty, Nil -> 0, [||], XEmpty
@@ -207,8 +276,7 @@ module Reducer = struct
       end;
       enqueue snew qnew new_mask tnew;
       traverse sold snew qold qnew;
-      let nb_shared = sold.shared + snew.shared in
-      let nb_dropped = sold.marked - nb_shared in
+      let nb_dropped = sold.marked - (sold.shared + snew.shared) in
       let st = {
         dropped = if get_dropped then Array.make nb_dropped None else [||];
         dropped_leaf = if get_dropped then 0 else -1;
@@ -219,13 +287,16 @@ module Reducer = struct
       unmark_old st xold;
       assert (st.dropped_leaf = st.dropped_join);
       let result = unmark_new st tnew in
-      Array.iter (function
-          | XEmpty
-          | XLeaf {a = Nil | Join _; _}
-          | XJoin {a = Nil | Leaf _; _} -> assert false
-          | XLeaf {a = Leaf t; _} -> t.mark <- 0
-          | XJoin {a = Join t; _} -> t.mark <- 0
-        ) st.shared;
+      for i = st.shared_index - 1 downto 0 do
+        match st.shared.(i) with
+        | XEmpty
+        | XLeaf {a = Nil | Join _; _}
+        | XJoin {a = Nil | Leaf _; _} -> assert false
+        | XLeaf {a = Leaf t; _} -> t.mark <- 0
+        | XJoin {a = Join t; _} ->
+            t.mark <- (max (rank t.l) (rank t.r) + 1) lsl mask_bits
+      done;
+      ignore (check_ranks tnew);
       st.dropped_leaf, st.dropped, result
 
   type ('a, 'b) map_reduce = ('a -> 'b) * ('b -> 'b -> 'b)
