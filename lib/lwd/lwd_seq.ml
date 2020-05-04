@@ -62,7 +62,17 @@ module Reducer = struct
 
   let enqueue stats q mask = function
     | Nil -> ()
-    | Leaf t -> t.mark <- t.mark lor mask
+    | Leaf t ->
+      let mark = t.mark in
+      stats.marked <- stats.marked + 1;
+      if mark land mask = 0 then (
+        if mark = 0 then (
+          t.mark <- mask;
+        ) else (
+          stats.shared <- stats.shared + 1;
+          t.mark <- mark lor mask;
+        )
+      )
     | Join t as node ->
       let mark = t.mark in
       if mark land mask = 0 then (
@@ -160,25 +170,25 @@ module Reducer = struct
         let x = XLeaf {a = t; b = None} in
         st.shared.(shared_index) <- x;
         st.shared_index <- shared_index + 1;
-        t'.mark <- shared_index lsl 2;
+        t'.mark <- shared_index lsl mask_bits;
         x
       ) else (
         assert (mark = 0);
         st.shared.(t'.mark lsr mask_bits)
       )
     | Join t' as t ->
-      let mark = t'.mark land both_mask in
-      if mark = new_mask then (
+      let mask = t'.mark land both_mask in
+      if mask = new_mask then (
         let shared_index = st.shared_index in
         st.shared_index <- shared_index + 1;
         let l = unmark_new st t'.l in
         let r = unmark_new st t'.r in
         let x = XJoin {a = t; b = None; l; r} in
         st.shared.(shared_index) <- x;
-        t'.mark <- shared_index lsl 2;
+        t'.mark <- shared_index lsl mask_bits;
         x
       ) else (
-        assert (mark = 0);
+        assert (mask = 0);
         st.shared.(t'.mark lsr mask_bits)
       )
 
