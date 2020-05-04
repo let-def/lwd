@@ -14,16 +14,14 @@ type ('a, 'b) view =
 
 val view : 'a seq -> ('a, 'a seq) view
 
-(* TODO: Balanced sequence construction
-   module Balanced : sig
-     type nonrec 'a t = private 'a seq
-     val empty : 'a t
-     val element : 'a -> 'a t
-     val concat : 'a t -> 'a t -> 'a t
+module Balanced : sig
+  type 'a t = private 'a seq
+  val empty : 'a t
+  val element : 'a -> 'a t
+  val concat : 'a t -> 'a t -> 'a t
 
-     val view : 'a t -> ('a, 'a t) view
-   end
-*)
+  val view : 'a t -> ('a, 'a t) view
+end
 
 (* Lwd interface *)
 
