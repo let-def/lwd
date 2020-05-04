@@ -1,7 +1,7 @@
 (library 
   (name lwd) 
   (public_name lwd)
-  (modules lwd lwd_table lwd_infix lwd_utils) 
+  (modules lwd lwd_seq lwd_table lwd_infix lwd_utils) 
   (libraries seq)
   (inline_tests (backend qtest.lib))
   (wrapped false))
