@@ -113,13 +113,15 @@ module Reducer = struct
     | Nil -> ()
     | Leaf t' ->
       let mark = t'.mark in
-      if mark land both_mask <> both_mask then (
+      if mark land both_mask <> both_mask && mark land both_mask <> 0
+      then (
         new_blocked stats;
         t'.mark <- mark lor both_mask
       )
     | Join t' ->
       let mark = t'.mark in
-      if mark land both_mask <> both_mask then (
+      if mark land both_mask <> both_mask && mark land both_mask <> 0
+      then (
         new_blocked stats;
         t'.mark <- mark lor both_mask;
         block stats t'.l;
@@ -275,7 +277,12 @@ module Reducer = struct
 
   let prepare_shared st =
     for i = 0 to st.shared_index - 1 do
-      match st.shared_x.(i) with
+      begin match st.shared.(i) with
+        | Nil -> ()
+        | Leaf t -> t.mark <- t.mark lor both_mask
+        | Join t -> t.mark <- t.mark lor both_mask
+      end;
+      begin match st.shared_x.(i) with
       | [] -> assert false
       | [_] -> ()
       | xs -> st.shared_x.(i) <- List.rev xs
