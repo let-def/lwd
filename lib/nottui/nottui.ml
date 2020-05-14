@@ -204,6 +204,10 @@ struct
 
   let layout_spec t : layout_spec =
     { w = t.w; h = t.h; sw = t.sw; sh = t.sh }
+  let layout_width t = t.w
+  let layout_stretch_width t = t.sw
+  let layout_height t = t.h
+  let layout_stretch_height t = t.sh
 
   let cache : cache =
     { vx1 = 0; vy1 = 0; vx2 = 0; vy2 = 0;

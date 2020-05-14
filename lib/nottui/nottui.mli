@@ -94,6 +94,10 @@ sig
       space. *)
 
   val layout_spec : t -> layout_spec
+  val layout_width : t -> int
+  val layout_stretch_width : t -> int
+  val layout_height : t -> int
+  val layout_stretch_height : t -> int
 end
 
 type ui = Ui.t
