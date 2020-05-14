@@ -339,6 +339,7 @@ module Reducer = struct
     | XEmpty, Nil -> no_dropped, XEmpty
     | (XLeaf {a; _} | XJoin {a; _}), _ when a == tnew -> no_dropped, xold
     | _ ->
+      (* Cost: 16 words *)
       let qold = Queue.create () and sold = mk_stats () in
       let qnew = Queue.create () and snew = mk_stats () in
       begin match xold with
@@ -357,10 +358,15 @@ module Reducer = struct
         shared_x = Array.make (sold.shared + snew.shared) [];
         shared_index = 0;
       } in
+      (*Printf.eprintf "sold.shared:%d sold.marked:%d sold.blocked:%d\n%!"
+        sold.shared sold.marked sold.blocked;
+      Printf.eprintf "snew.shared:%d snew.marked:%d snew.blocked:%d\n%!"
+        snew.shared snew.marked snew.blocked;*)
       unmark_old st xold;
       assert (st.dropped_leaf = st.dropped_join);
       prepare_shared st;
       let result = unmark_new st tnew in
+      (*Printf.eprintf "new_computed:%d%!\n" !new_computed;*)
       let restore_rank = function
         | Nil -> assert false
         | Leaf t -> t.mark <- 0
