@@ -282,7 +282,7 @@ module Reducer = struct
         | Leaf t -> t.mark <- t.mark lor both_mask
         | Join t -> t.mark <- t.mark lor both_mask
       end;
-      begin match st.shared_x.(i) with
+      match st.shared_x.(i) with
       | [] -> assert false
       | [_] -> ()
       | xs -> st.shared_x.(i) <- List.rev xs
