@@ -1,0 +1,3 @@
+(library (name nottui_pretty)
+ (public_name nottui-pretty)
+ (libraries nottui))
