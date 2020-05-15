@@ -15,6 +15,9 @@ run-reranger:
 run-stress:
 	dune exec examples/stress.bc
 
+run-pretty:
+	dune exec examples/pretty.bc
+
 run-stress.exe:
 	dune exec examples/stress.exe
 
