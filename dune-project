@@ -22,6 +22,12 @@
  (depends dune lwd notty))
 
 (package
+ (name nottui-pretty)
+ (synopsis "A pretty-printer based on PPrint rendering UIs")
+ (description "TODO")
+ (depends dune notty lwt nottui))
+
+(package
  (name nottui-lwt)
  (synopsis "Run Nottui UIs in Lwt")
  (description "TODO")
