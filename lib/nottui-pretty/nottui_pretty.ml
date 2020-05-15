@@ -354,33 +354,29 @@ let rec pretty (rem: int) (wid : int) = function
           prefix = s.prefix; body; suffix;
         }
     end
-  | Group t ->
-    begin match nonflat_cache t.cache rem wid with
-      | Some ui -> ui
-      | None ->
-        let flat = t.req <= rem in
-        let result =
-          if flat then
-            match pretty_flat t.doc with
-            | Flat_line ui ->
-              Nonflat_line { min_rem = t.req; max_rem = max_int; ui }
-            | Flat_span ui ->
-              Nonflat_span {
-                min_rem = t.req; max_rem = max_int;
-                min_wid = min_int; max_wid = max_int;
-                prefix = ui.prefix;
-                body = ui.body;
-                suffix = ui.suffix;
-              }
-          else
-            match pretty rem wid t.doc with
-            | Nonflat_line ui ->
-              Nonflat_line {ui with max_rem = t.req}
+  | Group t as self ->
+    begin if t.req <= rem then
+        match pretty_flat self with
+        | Flat_line ui ->
+          Nonflat_line { min_rem = t.req; max_rem = max_int; ui }
+        | Flat_span ui ->
+          Nonflat_span {
+            min_rem = t.req; max_rem = max_int;
+            min_wid = min_int; max_wid = max_int;
+            prefix = ui.prefix;
+            body = ui.body;
+            suffix = ui.suffix;
+          }
+      else match nonflat_cache t.cache rem wid with
+        | Some ui -> ui
+        | None ->
+          let result = match pretty rem wid t.doc with
+            | Nonflat_line ui -> Nonflat_line {ui with max_rem = t.req}
             | Nonflat_span ui ->
-              Nonflat_span {ui with max_rem = t.req}
-        in
-        t.cache <- Cache result;
-        result
+              Nonflat_span {ui with max_rem = mini t.req ui.max_rem}
+          in
+          t.cache <- Cache result;
+          result
     end
 
 (* -------------------------------------------------------------------------- *)

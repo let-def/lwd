@@ -17,3 +17,9 @@
  (name stress)
  (modules stress)
  (libraries notty notty.unix nottui nottui-widgets))
+
+(executable
+ (name pretty)
+ (modules pretty)
+ (libraries nottui-pretty notty notty.unix nottui nottui-widgets))
+
