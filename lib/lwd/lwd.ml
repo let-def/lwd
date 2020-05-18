@@ -488,7 +488,9 @@ let sub_sample queue =
     | Operator t as self ->
       (* try to use cached value, if present *)
       match t.value with
-      | Eval_some value -> value
+      | Eval_some value ->
+        activate_tracing self origin t.trace;
+        value
       | _ ->
         t.value <- Eval_progress;
         let result : b = match t.desc with
