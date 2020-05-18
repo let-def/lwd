@@ -128,3 +128,6 @@ module Infix : sig
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   val (<*>) : ('a -> 'b) t -> 'a t -> 'b t
 end
+
+(* For debug purposes *)
+val dump_trace : 'a t -> unit

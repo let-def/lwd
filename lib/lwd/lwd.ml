@@ -115,8 +115,44 @@ let bind x f = join (map f x)
 
 (* Management of trace indices *)
 
+let addr oc obj =
+  Printf.fprintf oc "0x%08x" (Obj.magic obj : int)
+
 external t_equal : _ t_ -> _ t_ -> bool = "%eq"
 external obj_t : 'a t_ -> Any.t t_ = "%identity"
+
+let rec dump_trace : type a. a t_ -> unit =
+  fun obj -> match obj with
+  | Pure _ -> Printf.eprintf "%a: Pure _\n%!" addr obj
+  | Impure _ -> Printf.eprintf "%a: Impure _\n%!" addr obj
+  | Operator t ->
+    Printf.eprintf "%a: Operator _ -> %a\n%!" addr obj dump_trace_aux t.trace;
+    begin match t.trace with
+      | T0 -> ()
+      | T1 a -> dump_trace a
+      | T2 (a,b) -> dump_trace a; dump_trace b
+      | T3 (a,b,c) -> dump_trace a; dump_trace b; dump_trace c
+      | T4 (a,b,c,d) -> dump_trace a; dump_trace b; dump_trace c; dump_trace d
+      | Tn t -> Array.iter dump_trace t.entries
+    end
+  | Root _ -> Printf.eprintf "%a: Root _\n%!" addr obj
+
+and dump_trace_aux oc = function
+  | T0 -> Printf.fprintf oc "T0"
+  | T1 a -> Printf.fprintf oc "T1 %a" addr a
+  | T2 (a,b) ->
+    Printf.fprintf oc "T2 (%a, %a)" addr a addr b
+  | T3 (a,b,c) ->
+    Printf.fprintf oc "T3 (%a, %a, %a)" addr a addr b addr c
+  | T4 (a,b,c,d) ->
+    Printf.fprintf oc "T4 (%a, %a, %a, %a)" addr a addr b addr c addr d
+  | Tn t ->
+    Printf.fprintf oc "Tn {active = %d; count = %d; entries = "
+      t.active t.count;
+    Array.iter (Printf.fprintf oc "(%a)" addr) t.entries;
+    Printf.fprintf oc "}"
+
+let dump_trace x = dump_trace (obj_t (prj x))
 
 let add_idx obj idx = function
   | Pure _ | Impure _ -> assert false
