@@ -330,9 +330,10 @@ let rec sub_release
           if revidx < count then (
             let obj = tn.entries.(count) in
             tn.entries.(revidx) <- obj;
+            tn.entries.(count) <- dummy;
             mov_idx self count revidx obj
-          );
-          tn.entries.(count) <- dummy;
+          ) else
+            tn.entries.(revidx) <- dummy;
           if tn.active > count then tn.active <- count;
           if count = 4 then (
             (* downgrade to [T4] to save space *)
