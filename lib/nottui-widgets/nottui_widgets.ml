@@ -556,7 +556,12 @@ let grid
   Lwd.return ui
 
 let button' w f =
-  Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) w
+  Ui.mouse_area
+    (fun ~x:_ ~y:_ ty ->
+       match ty with
+       | `Left -> f(); `Handled
+       | _ -> `Unhandled)
+    w
 
 let button ?attr s f =
   button' (string ?attr s) f
