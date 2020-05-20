@@ -555,6 +555,9 @@ let grid
   let ui = Lwd_utils.pure_pack pack_pad_y rows in
   Lwd.return ui
 
+let button' w f =
+  Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) w
+
 let button ?attr s f =
-  Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) (string ?attr s)
+  button' (string ?attr s) f
 
