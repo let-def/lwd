@@ -420,7 +420,7 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
   (* pad summary with a "> " when it's opened *)
   let summary =
     Lwd.get opened >>= function
-    | true -> Lwd.map (Ui.join_x (string "🔽")) summary
+    | true -> Lwd.map (Ui.join_x (string "🔽 ")) summary
     | false -> Lwd.map (Ui.join_x (string "▶️ ")) summary
   in
   let cursor ~x:_ ~y:_ = function
