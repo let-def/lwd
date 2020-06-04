@@ -196,9 +196,9 @@ struct
   type t = {
     w : int; sw : int;
     h : int; sh : int;
-    desc : t desc;
+    mutable desc : t desc;
     focus : Focus.status;
-    flags : flags;
+    mutable flags : flags;
     mutable cache : cache;
   }
   and cache = {
@@ -419,6 +419,7 @@ struct
 
   let rec update_sensors ox oy sw sh ui =
     if ui.flags land flag_full_sensor <> 0 then (
+      ui.flags <- ui.flags land lnot flag_full_sensor;
       match ui.desc with
       | Atom _ -> ()
       | Overlay _ -> ()
@@ -427,6 +428,7 @@ struct
         update_sensors ox oy sw sh t
       | Full_sensor (t, f) ->
         f ox oy sw sh;
+        ui.desc <- t.desc;
         update_sensors ox oy sw sh t
       | Resize (t, g, _) ->
         let open Gravity in
