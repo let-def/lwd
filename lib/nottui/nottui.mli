@@ -68,6 +68,7 @@ sig
   val keyboard_area : ?focus:Focus.status -> (key -> may_handle) -> t -> t
   val scroll_area : int -> int -> t -> t
   val size_sensor : (int -> int -> unit) -> t -> t
+  val full_sensor : (int -> int -> int -> int -> unit) -> t -> t
   val resize :
     ?w:int -> ?h:int -> ?sw:int -> ?sh:int ->
     ?fill:Gravity.t -> ?crop:Gravity.t -> ?bg:attr -> t -> t
