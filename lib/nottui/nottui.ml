@@ -508,18 +508,18 @@ struct
     let h = I.height image in
     I.pad ~l:ox ~t:oy ~r:(rw - w - ox) ~b:(rh - h - oy) image
 
-  (*let same_size w h image =
+  let same_size w h image =
     w = I.width image &&
-    h = I.height image*)
+    h = I.height image
 
   let rec render_node vx1 vy1 vx2 vy2 sw sh t : cache =
-    (*if
+    if
       let cache = t.cache in
       vx1 >= cache.vx1 && vy1 >= cache.vy1 &&
       vx2 <= cache.vx2 && vy2 <= cache.vy2 &&
       same_size sw sh cache.image
     then t.cache
-    else*) if vx2 < 0 || vy2 < 0 || sw < vx1 || sh < vy1 then
+    else if vx2 < 0 || vy2 < 0 || sw < vx1 || sh < vy1 then
       { vx1; vy1; vx2; vy2; image = I.void sw sh; overlays = [] }
     else
       let cache = match t.desc with
