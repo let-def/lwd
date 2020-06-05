@@ -168,7 +168,7 @@ struct
   type 'a desc =
     | Atom of image
     | Size_sensor of 'a * (int -> int -> unit)
-    | Full_sensor of 'a * (int -> int -> int -> int -> unit)
+    | Full_sensor of 'a * (int -> int -> int -> int -> unit) * (int -> int -> int -> int -> unit)
     | Resize of 'a * Gravity.t2 * A.t
     | Mouse_handler of 'a * mouse_handler
     | Focus_area of 'a * (key -> may_handle)
@@ -247,8 +247,9 @@ struct
   let size_sensor handler t : t =
     { t with desc = Size_sensor (t, handler) }
 
-  let full_sensor handler t =
-    { t with desc = Full_sensor (t, handler);
+  let ignore_sensor _ _ _ _ = ()
+  let full_sensor ?(before=ignore_sensor) ?(after=ignore_sensor) t =
+    { t with desc = Full_sensor (t, before, after);
              flags = t.flags lor flag_full_sensor }
 
   let resize ?w ?h ?sw ?sh ?fill ?crop ?(bg=A.empty) t : t =
@@ -323,7 +324,7 @@ struct
     | Atom _   -> Format.fprintf ppf "Atom _"
     | Size_sensor (desc, _) ->
       Format.fprintf ppf "Size_sensor (@[%a,@ _@])" pp desc
-    | Full_sensor (desc, _) ->
+    | Full_sensor (desc, _, _) ->
       Format.fprintf ppf "Full_sensor (@[%a,@ _@])" pp desc
     | Resize (desc, gravity, _bg) ->
       Format.fprintf ppf "Resize (@[%a,@ %a,@ %a@])" pp desc
@@ -350,7 +351,7 @@ struct
 
   let iter f ui = match ui.desc with
     | Atom _ -> ()
-    | Size_sensor (u, _) | Full_sensor (u, _)
+    | Size_sensor (u, _) | Full_sensor (u, _, _)
     | Resize (u, _, _) | Mouse_handler (u, _)
     | Focus_area (u, _) | Scroll_area (u, _, _) | Event_filter (u, _)
     | Overlay {o_n = u; _} -> f u
@@ -426,10 +427,11 @@ struct
       | Size_sensor (t, _) | Mouse_handler (t, _)
       | Focus_area (t, _) | Event_filter (t, _) ->
         update_sensors ox oy sw sh t
-      | Full_sensor (t, f) ->
-        f ox oy sw sh;
+      | Full_sensor (t, before, after) ->
         ui.desc <- t.desc;
-        update_sensors ox oy sw sh t
+        before ox oy sw sh;
+        update_sensors ox oy sw sh t;
+        after ox oy sw sh
       | Resize (t, g, _) ->
         let open Gravity in
         let dx, rw = pack ~fixed:t.w ~stretch:t.sw sw (h (p1 g)) (h (p2 g)) in
@@ -490,7 +492,8 @@ struct
         assert (_offsetx = 0 && _offsety = 0);
         (x - ox >= 0 && x - ox <= rw && y - oy >= 0 && y - oy <= rh) &&
         (aux ox oy sw sh t || handle ox oy f)
-      | Size_sensor (desc, _) | Full_sensor (desc, _) | Focus_area (desc, _) ->
+      | Size_sensor (desc, _) | Full_sensor (desc, _, _)
+      | Focus_area (desc, _) ->
         aux ox oy sw sh desc
       | Scroll_area (desc, sx, sy) ->
         aux (ox - sx) (oy - sy) sw sh desc
@@ -579,7 +582,7 @@ struct
         | Size_sensor (desc, handler) ->
           handler sw sh;
           render_node vx1 vy1 vx2 vy2 sw sh desc
-        | Full_sensor (desc, _) ->
+        | Full_sensor (desc, _, _) ->
           render_node vx1 vy1 vx2 vy2 sw sh desc
         | Focus_area (desc, _) | Mouse_handler (desc, _) ->
           render_node vx1 vy1 vx2 vy2 sw sh desc
@@ -688,7 +691,7 @@ struct
                 | `Handled -> `Handled
                 | `Unhandled -> iter tl
             end
-          | Mouse_handler (t, _) | Size_sensor (t, _) | Full_sensor (t, _)
+          | Mouse_handler (t, _) | Size_sensor (t, _) | Full_sensor (t, _, _)
           | Scroll_area (t, _, _) | Resize (t, _, _) ->
             iter (t :: tl)
           | Event_filter (t, f) ->
@@ -714,7 +717,7 @@ struct
   let rec dispatch_focus t dir =
     match t.desc with
     | Atom _ | Overlay _ -> false
-    | Mouse_handler (t, _) | Size_sensor (t, _) | Full_sensor (t, _)
+    | Mouse_handler (t, _) | Size_sensor (t, _) | Full_sensor (t, _, _)
     | Scroll_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
       dispatch_focus t dir
     | Focus_area (t', _) ->
