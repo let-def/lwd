@@ -558,3 +558,58 @@ let grid
 let button ?attr s f =
   Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) (string ?attr s)
 
+
+(* file explorer for selecting a file *)
+let file_select
+    ?(abs=false)
+    ?filter
+    ~(on_select:string -> unit) () : Ui.t Lwd.t =
+  let rec aux ~fold path =
+    try
+      let p_rel = if path = "" then "." else path in
+      if Sys.is_directory p_rel then (
+        let ui() =
+          let arr = Sys.readdir p_rel in
+          let l = Array.to_list arr |> List.map (Filename.concat path) in
+          (* apply potential filter *)
+          let l = match filter with None -> l | Some f -> List.filter f l in
+          let l = Lwd.return @@ List.sort String.compare l in
+          vlist_with ~bullet:"" (aux ~fold:true) l
+        in
+        if fold then (
+          unfoldable ~folded_by_default:true
+            (Lwd.return @@ string @@ path ^ "/") ui
+        ) else ui ()
+      ) else (
+        Lwd.return @@
+        button ~attr:A.(st underline) path (fun () -> on_select path)
+      )
+    with e ->
+      Lwd.return @@ Ui.vcat [
+        printf ~attr:A.(bg red) "cannot list directory %s" path;
+        string @@ Printexc.to_string e;
+      ]
+  in
+  let start = if abs then Sys.getcwd () else "" in
+  aux ~fold:false start
+
+let toggle, toggle' =
+  let toggle_ st (lbl:string Lwd.t) (f:bool -> unit) : Ui.t Lwd.t =
+    let mk_but st_v lbl_v =
+      let lbl = Printf.sprintf "[%s|%s]" lbl_v (if st_v then "✔" else "×");in
+      button lbl (fun () ->
+          let new_st = not st_v in
+          Lwd.set st new_st; f new_st)
+    in
+    Lwd.map2 mk_but (Lwd.get st) lbl
+  in
+  (** Similar to {!toggle}, except it directly reflects the state of a variable. *)
+  let toggle' (lbl:string Lwd.t) (v:bool Lwd.var) : Ui.t Lwd.t =
+    toggle_ v lbl (Lwd.set v)
+  (** a toggle, with a true/false state *)
+  and toggle ?(init=false) (lbl:string Lwd.t) (f:bool -> unit) : Ui.t Lwd.t =
+    let st = Lwd.var init in
+    toggle_ st lbl f
+  in
+  toggle, toggle'
+
