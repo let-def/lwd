@@ -419,9 +419,9 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
   in
   (* pad summary with a "> " when it's opened *)
   let summary =
-    Lwd.get opened >>= function
-    | true -> Lwd.map (Ui.join_x (string "🔽 ")) summary
-    | false -> Lwd.map (Ui.join_x (string "▶️ ")) summary
+    Lwd.get opened >>= fun op ->
+    summary >|= fun s ->
+    Ui.hcat [string ~attr:A.(bg blue) (if op then "v" else ">"); string " "; s]
   in
   let cursor ~x:_ ~y:_ = function
      | `Left when Lwd.peek opened -> Lwd.set opened false; `Handled
