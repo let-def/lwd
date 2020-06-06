@@ -213,7 +213,8 @@ let mk_pad indent body suffix =
 (* Flat renderer *)
 
 let flat_cache (Cache slot) = match slot with
-  | (Flat_line _ | Flat_span _) as ui -> Some ui
+  | Flat_line _ as ui -> Some ui
+  | Flat_span _ as ui -> Some ui
   | _ -> None
 
 let rec pretty_flat = function
