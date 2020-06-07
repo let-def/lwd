@@ -603,10 +603,10 @@ let toggle, toggle' =
     in
     Lwd.map2 mk_but (Lwd.get st) lbl
   in
-  (** Similar to {!toggle}, except it directly reflects the state of a variable. *)
+  (* Similar to {!toggle}, except it directly reflects the state of a variable. *)
   let toggle' (lbl:string Lwd.t) (v:bool Lwd.var) : Ui.t Lwd.t =
     toggle_ v lbl (Lwd.set v)
-  (** a toggle, with a true/false state *)
+  (* a toggle, with a true/false state *)
   and toggle ?(init=false) (lbl:string Lwd.t) (f:bool -> unit) : Ui.t Lwd.t =
     let st = Lwd.var init in
     toggle_ st lbl f
