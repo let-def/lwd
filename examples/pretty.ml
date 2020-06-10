@@ -60,7 +60,7 @@ let varying_width f =
     (f (Lwd.get width))
     (fun ui ->
        Nottui.Ui.size_sensor
-         (fun w _ -> if Lwd.peek width <> w then Lwd.set width w)
+         (fun ~w ~h:_ -> if Lwd.peek width <> w then Lwd.set width w)
          (Nottui.Ui.resize ~sw:1 ~sh:1 ~w:0 ui))
 
 let doc =

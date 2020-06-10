@@ -271,7 +271,6 @@ struct
   let permanent_sensor frame_sensor t =
     { t with desc = Permanent_sensor (t, frame_sensor);
              flags = t.flags lor flag_permanent_sensor }
-
   let resize ?w ?h ?sw ?sh ?fill ?crop ?(bg=A.empty) t : t =
     let g = match fill, crop with
       | None, None -> Gravity.(pair default default)
