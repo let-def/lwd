@@ -67,10 +67,14 @@ sig
   val has_focus : t -> bool
   val keyboard_area : ?focus:Focus.status -> (key -> may_handle) -> t -> t
   val scroll_area : int -> int -> t -> t
-  val size_sensor : (int -> int -> unit) -> t -> t
-  val full_sensor :
-    ?before:(int -> int -> int -> int -> unit) ->
-    ?after:(int -> int -> int -> int -> unit) -> t -> t
+
+  type size_sensor = w:int -> h:int -> unit
+  val size_sensor : size_sensor -> t -> t
+
+  type frame_sensor = x:int -> y:int -> w:int -> h:int -> unit -> unit
+  val transient_sensor : frame_sensor -> t -> t
+  val permanent_sensor : frame_sensor -> t -> t
+
   val resize :
     ?w:int -> ?h:int -> ?sw:int -> ?sh:int ->
     ?fill:Gravity.t -> ?crop:Gravity.t -> ?bg:attr -> t -> t

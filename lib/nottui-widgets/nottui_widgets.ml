@@ -98,7 +98,7 @@ let vscroll_area ~state ~change t =
   t
   |> Ui.scroll_area 0 state.position
   |> Ui.resize ~h:0 ~sh:1
-  |> Ui.size_sensor (fun _ h ->
+  |> Ui.size_sensor (fun ~w:_ ~h ->
       let tchange =
         if !total <> (Ui.layout_spec t).Ui.h
         then (total := (Ui.layout_spec t).Ui.h; true)
@@ -233,7 +233,7 @@ let v_pane left right =
   in
   splitter $= Lwd.map (Ui.mouse_area action) (Lwd.get splitter_bg);
   render ();
-  let on_resize ew eh =
+  let on_resize ~w:ew ~h:eh =
     if !w <> ew || !h <> eh then (
       w := ew; h := eh;
       render ()
@@ -272,7 +272,7 @@ let h_pane top bottom =
   in
   splitter $= Lwd.map (Ui.mouse_area action) (Lwd.get splitter_bg);
   render ();
-  let on_resize ew eh =
+  let on_resize ~w:ew ~h:eh =
     if !w <> ew || !h <> eh then (
       w := ew; h := eh;
       render ()

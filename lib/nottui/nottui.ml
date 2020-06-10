@@ -188,36 +188,41 @@ struct
   let pp_layout_spec ppf { w; h; sw; sh } =
     Format.fprintf ppf "{ w = %d; h = %d; sw = %d; sh = %d }" w h sw sh
 
-  type 'a desc =
-    | Atom of image
-    | Size_sensor of 'a * (int -> int -> unit)
-    | Full_sensor of 'a * (int -> int -> int -> int -> unit) * (int -> int -> int -> int -> unit)
-    | Resize of 'a * Gravity.t2 * A.t
-    | Mouse_handler of 'a * mouse_handler
-    | Focus_area of 'a * (key -> may_handle)
-    | Scroll_area of 'a * int * int
-    | Event_filter of 'a * ([`Key of key | `Mouse of mouse] -> may_handle)
-    | X of 'a * 'a
-    | Y of 'a * 'a
-    | Z of 'a * 'a
-
   type flags = int
   let flags_none = 0
   let flag_transient_sensor = 1
-  (*let flag_permanent_sensor = 1*)
+  let flag_permanent_sensor = 2
+
+  type size_sensor = w:int -> h:int -> unit
+  type frame_sensor = x:int -> y:int -> w:int -> h:int -> unit -> unit
 
   type t = {
     w : int; sw : int;
     h : int; sh : int;
-    mutable desc : t desc;
+    mutable desc : desc;
     focus : Focus.status;
     mutable flags : flags;
+    mutable sensor_cache : (int * int * int * int) option;
     mutable cache : cache;
   }
   and cache = {
     vx : Interval.t; vy : Interval.t;
     image : image;
   }
+  and desc =
+    | Atom of image
+    | Size_sensor of t * size_sensor
+    | Transient_sensor of t * frame_sensor
+    | Permanent_sensor of t * frame_sensor
+    | Resize of t * Gravity.t2 * A.t
+    | Mouse_handler of t * mouse_handler
+    | Focus_area of t * (key -> may_handle)
+    | Scroll_area of t * int * int
+    | Event_filter of t * ([`Key of key | `Mouse of mouse] -> may_handle)
+    | X of t * t
+    | Y of t * t
+    | Z of t * t
+
 
   let layout_spec t : layout_spec =
     { w = t.w; h = t.h; sw = t.sw; sh = t.sh }
@@ -226,17 +231,20 @@ struct
   let layout_height t = t.h
   let layout_stretch_height t = t.sh
 
-  let cache : cache = { vx = Interval.zero; vy = Interval.zero; image = I.empty }
+  let cache : cache =
+    { vx = Interval.zero; vy = Interval.zero; image = I.empty }
 
   let empty : t =
     { w = 0; sw = 0; h = 0; sh = 0; flags = flags_none;
-      focus = Focus.empty; desc = Atom I.empty; cache }
+      focus = Focus.empty; desc = Atom I.empty;
+      sensor_cache = None; cache }
 
   let atom img : t =
     { w = I.width img; sw = 0;
       h = I.height img; sh = 0;
       focus = Focus.empty; flags = flags_none;
-      desc = Atom img; cache; }
+      desc = Atom img;
+      sensor_cache = None; cache; }
 
   let void x y = atom (I.void x y)
 
@@ -256,10 +264,13 @@ struct
   let size_sensor handler t : t =
     { t with desc = Size_sensor (t, handler) }
 
-  let ignore_sensor _ _ _ _ = ()
-  let full_sensor ?(before=ignore_sensor) ?(after=ignore_sensor) t =
-    { t with desc = Full_sensor (t, before, after);
+  let transient_sensor frame_sensor t =
+    { t with desc = Transient_sensor (t, frame_sensor);
              flags = t.flags lor flag_transient_sensor }
+
+  let permanent_sensor frame_sensor t =
+    { t with desc = Permanent_sensor (t, frame_sensor);
+             flags = t.flags lor flag_permanent_sensor }
 
   let resize ?w ?h ?sw ?sh ?fill ?crop ?(bg=A.empty) t : t =
     let g = match fill, crop with
@@ -283,21 +294,24 @@ struct
     w = (a.w + b.w);   sw = (a.sw + b.sw);
     h = (maxi a.h b.h); sh = (maxi a.sh b.sh);
     flags = a.flags lor b.flags;
-    focus = Focus.merge a.focus b.focus; desc = X (a, b); cache
+    focus = Focus.merge a.focus b.focus; desc = X (a, b);
+    sensor_cache = None; cache
   }
 
   let join_y a b = {
     w = (maxi a.w b.w); sw = (maxi a.sw b.sw);
     h = (a.h + b.h);   sh = (a.sh + b.sh);
     flags = a.flags lor b.flags;
-    focus = Focus.merge a.focus b.focus; desc = Y (a, b); cache;
+    focus = Focus.merge a.focus b.focus; desc = Y (a, b);
+    sensor_cache = None; cache;
   }
 
   let join_z a b = {
     w = (maxi a.w b.w); sw = (maxi a.sw b.sw);
     h = (maxi a.h b.h); sh = (maxi a.sh b.sh);
     flags = a.flags lor b.flags;
-    focus = Focus.merge a.focus b.focus; desc = Z (a, b); cache;
+    focus = Focus.merge a.focus b.focus; desc = Z (a, b);
+    sensor_cache = None; cache;
   }
 
   let pack_x = (empty, join_x)
@@ -319,8 +333,10 @@ struct
     | Atom _   -> Format.fprintf ppf "Atom _"
     | Size_sensor (desc, _) ->
       Format.fprintf ppf "Size_sensor (@[%a,@ _@])" pp desc
-    | Full_sensor (desc, _, _) ->
-      Format.fprintf ppf "Full_sensor (@[%a,@ _@])" pp desc
+    | Transient_sensor (desc, _) ->
+      Format.fprintf ppf "Transient_sensor (@[%a,@ _@])" pp desc
+    | Permanent_sensor (desc, _) ->
+      Format.fprintf ppf "Permanent_sensor (@[%a,@ _@])" pp desc
     | Resize (desc, gravity, _bg) ->
       Format.fprintf ppf "Resize (@[%a,@ %a,@ %a@])" pp desc
         Gravity.pp (Gravity.p1 gravity)
@@ -339,7 +355,7 @@ struct
 
   let iter f ui = match ui.desc with
     | Atom _ -> ()
-    | Size_sensor (u, _) | Full_sensor (u, _, _)
+    | Size_sensor (u, _) | Transient_sensor (u, _) | Permanent_sensor (u, _)
     | Resize (u, _, _) | Mouse_handler (u, _)
     | Focus_area (u, _) | Scroll_area (u, _, _) | Event_filter (u, _)
       -> f u
@@ -403,39 +419,54 @@ struct
       | `Neutral  -> (flex / 2, fixed)
       | `Positive -> (flex, fixed)
 
+  let has_transient_sensor flags = flags land flag_transient_sensor <> 0
+  let has_permanent_sensor flags = flags land flag_permanent_sensor <> 0
+
   let rec update_sensors ox oy sw sh ui =
-    if ui.flags land flag_transient_sensor <> 0 then (
+    if has_transient_sensor ui.flags || (
+        has_permanent_sensor ui.flags &&
+        match ui.sensor_cache with
+        | None -> false
+        | Some (ox', oy', sw', sh') ->
+          ox = ox' && oy = oy' && sw = sw' && sh = sh'
+      )
+    then (
       ui.flags <- ui.flags land lnot flag_transient_sensor;
-      update_sub_sensors ox oy sw sh ui
+      if has_permanent_sensor ui.flags then
+        ui.sensor_cache <- Some (ox, oy, sw, sh);
+      match ui.desc with
+      | Atom _ -> ()
+      | Size_sensor (t, _) | Mouse_handler (t, _)
+      | Focus_area (t, _) | Event_filter (t, _) ->
+        update_sensors ox oy sw sh t
+      | Transient_sensor (t, sensor) ->
+        ui.desc <- t.desc;
+        let sensor = sensor ~x:ox ~y:oy ~w:sw ~h:sh in
+        update_sensors ox oy sw sh t;
+        sensor ()
+      | Permanent_sensor (t, sensor) ->
+        let sensor = sensor ~x:ox ~y:oy ~w:sw ~h:sh in
+        update_sensors ox oy sw sh t;
+        sensor ()
+      | Resize (t, g, _) ->
+        let open Gravity in
+        let dx, rw = pack ~fixed:t.w ~stretch:t.sw sw (h (p1 g)) (h (p2 g)) in
+        let dy, rh = pack ~fixed:t.h ~stretch:t.sh sh (v (p1 g)) (v (p2 g)) in
+        update_sensors (ox + dx) (oy + dy) rw rh t
+      | Scroll_area (t, sx, sy) ->
+        update_sensors (ox - sx) (oy - sy) sw sh t
+      | X (a, b) ->
+        let aw, bw = split ~a:a.w ~sa:a.sw ~b:b.w ~sb:b.sw sw in
+        update_sensors ox oy aw sh a;
+        update_sensors (ox + aw) oy bw sh b
+      | Y (a, b) ->
+        let ah, bh = split ~a:a.h ~sa:a.sh ~b:b.h ~sb:b.sh sh in
+        update_sensors ox oy sw ah a;
+        update_sensors ox (oy + ah) sw bh b
+      | Z (a, b) ->
+        update_sensors ox oy sw sh a;
+        update_sensors ox oy sw sh b
     )
-  and update_sub_sensors ox oy sw sh ui = match ui.desc with
-    | Atom _ -> ()
-    | Size_sensor (t, _) | Mouse_handler (t, _)
-    | Focus_area (t, _) | Event_filter (t, _) ->
-      update_sensors ox oy sw sh t
-    | Full_sensor (t, before, after) ->
-      ui.desc <- t.desc;
-      before ox oy sw sh;
-      update_sensors ox oy sw sh t;
-      after ox oy sw sh
-    | Resize (t, g, _) ->
-      let open Gravity in
-      let dx, rw = pack ~fixed:t.w ~stretch:t.sw sw (h (p1 g)) (h (p2 g)) in
-      let dy, rh = pack ~fixed:t.h ~stretch:t.sh sh (v (p1 g)) (v (p2 g)) in
-      update_sensors (ox + dx) (oy + dy) rw rh t
-    | Scroll_area (t, sx, sy) ->
-      update_sensors (ox - sx) (oy - sy) sw sh t
-    | X (a, b) ->
-      let aw, bw = split ~a:a.w ~sa:a.sw ~b:b.w ~sb:b.sw sw in
-      update_sensors ox oy aw sh a;
-      update_sensors (ox + aw) oy bw sh b
-    | Y (a, b) ->
-      let ah, bh = split ~a:a.h ~sa:a.sh ~b:b.h ~sb:b.sh sh in
-      update_sensors ox oy sw ah a;
-      update_sensors ox (oy + ah) sw bh b
-    | Z (a, b) ->
-      update_sensors ox oy sw sh a;
-      update_sensors ox oy sw sh b
 
   let update_focus ui =
     match ui.focus with
@@ -477,7 +508,8 @@ struct
         assert (_offsetx = 0 && _offsety = 0);
         (x - ox >= 0 && x - ox <= rw && y - oy >= 0 && y - oy <= rh) &&
         (aux ox oy sw sh t || handle ox oy f)
-      | Size_sensor (desc, _) | Full_sensor (desc, _, _)
+      | Size_sensor (desc, _)
+      | Transient_sensor (desc, _) | Permanent_sensor (desc, _)
       | Focus_area (desc, _) ->
         aux ox oy sw sh desc
       | Scroll_area (desc, sx, sy) ->
@@ -552,9 +584,9 @@ struct
             vy = Interval.make 0 sh;
             image = resize_canvas sw sh image }
         | Size_sensor (desc, handler) ->
-          handler sw sh;
+          handler ~w:sw ~h:sh;
           render_node vx1 vy1 vx2 vy2 sw sh desc
-        | Full_sensor (desc, _, _) ->
+        | Transient_sensor (desc, _) | Permanent_sensor (desc, _) ->
           render_node vx1 vy1 vx2 vy2 sw sh desc
         | Focus_area (desc, _) | Mouse_handler (desc, _) ->
           render_node vx1 vy1 vx2 vy2 sw sh desc
@@ -649,7 +681,8 @@ struct
                 | `Handled -> `Handled
                 | `Unhandled -> iter tl
             end
-          | Mouse_handler (t, _) | Size_sensor (t, _) | Full_sensor (t, _, _)
+          | Mouse_handler (t, _) | Size_sensor (t, _)
+          | Transient_sensor (t, _) | Permanent_sensor (t, _)
           | Scroll_area (t, _, _) | Resize (t, _, _) ->
             iter (t :: tl)
           | Event_filter (t, f) ->
@@ -675,7 +708,8 @@ struct
   let rec dispatch_focus t dir =
     match t.desc with
     | Atom _ -> false
-    | Mouse_handler (t, _) | Size_sensor (t, _) | Full_sensor (t, _, _)
+    | Mouse_handler (t, _) | Size_sensor (t, _)
+    | Transient_sensor (t, _) | Permanent_sensor (t, _)
     | Scroll_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
       dispatch_focus t dir
     | Focus_area (t', _) ->
