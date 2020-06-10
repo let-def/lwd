@@ -49,13 +49,15 @@ let attr_menu_sub = A.(bg lightgreen ++ fg black)
 let attr_clickable = A.(bg lightblue)
 
 let menu_overlay ?dx ?dy handler t =
-  let placeholder = Lwd.return (Ui.atom (I.void 1 0)) in
+  ignore (dx, dy, handler, t);
+  assert false
+  (*let placeholder = Lwd.return (Ui.atom (I.void 1 0)) in
   let body = Lwd_utils.pack Ui.pack_x [placeholder; t; placeholder] in
   let bg = Lwd.map' body @@ fun t ->
     let {Ui. w; h; _} = Ui.layout_spec t in
     Ui.atom (I.char A.(bg lightgreen) ' ' w h)
   in
-  Lwd.map (Ui.overlay ?dx ?dy ~handler) (Lwd_utils.pack Ui.pack_z [bg; body])
+  Lwd.map (Ui.overlay ?dx ?dy ~handler) (Lwd_utils.pack Ui.pack_z [bg; body])*)
 
 let scroll_step = 1
 

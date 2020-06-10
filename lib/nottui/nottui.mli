@@ -74,10 +74,6 @@ sig
   val resize :
     ?w:int -> ?h:int -> ?sw:int -> ?sh:int ->
     ?fill:Gravity.t -> ?crop:Gravity.t -> ?bg:attr -> t -> t
-  val overlay :
-    ?dx:int -> ?dy:int ->
-    ?handler:mouse_handler -> ?origin:gravity -> ?direction:gravity ->
-    t -> t
   val event_filter :
     ?focus:Focus.status ->
     ([`Key of key | `Mouse of mouse] -> may_handle) -> t -> t

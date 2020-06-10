@@ -81,9 +81,6 @@ sig
   val h : t -> direction
   val v : t -> direction
 
-  val bottom_left : t
-  val bottom_right : t
-
   type t2
   val pair : t -> t -> t2
   val p1 : t2 -> t
@@ -112,9 +109,6 @@ struct
   let h x = unpack (x lsr 2)
   let v x = unpack (x land 3)
 
-  let bottom_left = make ~h:`Negative ~v:`Positive
-  let bottom_right = make ~h:`Positive ~v:`Positive
-
   let pp_direction ppf dir =
     let text = match dir with
       | `Negative -> "`Negative"
@@ -133,6 +127,35 @@ struct
   let p2 t = t land 15
 end
 type gravity = Gravity.t
+
+module Interval : sig
+  type t = private int
+  val make : int -> int -> t
+  val shift : t -> int -> t
+  val fst : t -> int
+  val snd : t -> int
+  (*val size : t -> int*)
+  val zero : t
+end = struct
+  type t = int
+
+  let half = Sys.word_size lsr 1
+  let mask = (1 lsl half) - 1
+
+  let make x y =
+    let size = y - x in
+    (*assert (size >= 0);*)
+    (x lsl half) lor (size land mask)
+
+  let shift t d =
+    t + d lsl half
+
+  let fst t = t asr half
+  let size t = t land mask
+  let snd t = fst t + size t
+
+  let zero = 0
+end
 
 module Ui =
 struct
@@ -174,24 +197,14 @@ struct
     | Focus_area of 'a * (key -> may_handle)
     | Scroll_area of 'a * int * int
     | Event_filter of 'a * ([`Key of key | `Mouse of mouse] -> may_handle)
-    | Overlay of 'a overlay
     | X of 'a * 'a
     | Y of 'a * 'a
     | Z of 'a * 'a
 
-  and 'a overlay = {
-    o_n : 'a;
-    o_h : mouse_handler;
-    o_x : int;
-    o_y : int;
-    o_z : int;
-    o_origin : Gravity.t;
-    o_direction : Gravity.t;
-  }
-
   type flags = int
   let flags_none = 0
-  let flag_full_sensor = 1
+  let flag_transient_sensor = 1
+  (*let flag_permanent_sensor = 1*)
 
   type t = {
     w : int; sw : int;
@@ -202,10 +215,8 @@ struct
     mutable cache : cache;
   }
   and cache = {
-    vx1 : int; vy1 : int;
-    vx2 : int; vy2 : int;
+    vx : Interval.t; vy : Interval.t;
     image : image;
-    overlays: t overlay list;
   }
 
   let layout_spec t : layout_spec =
@@ -215,9 +226,7 @@ struct
   let layout_height t = t.h
   let layout_stretch_height t = t.sh
 
-  let cache : cache =
-    { vx1 = 0; vy1 = 0; vx2 = 0; vy2 = 0;
-      image = I.empty; overlays = [] }
+  let cache : cache = { vx = Interval.zero; vy = Interval.zero; image = I.empty }
 
   let empty : t =
     { w = 0; sw = 0; h = 0; sh = 0; flags = flags_none;
@@ -250,7 +259,7 @@ struct
   let ignore_sensor _ _ _ _ = ()
   let full_sensor ?(before=ignore_sensor) ?(after=ignore_sensor) t =
     { t with desc = Full_sensor (t, before, after);
-             flags = t.flags lor flag_full_sensor }
+             flags = t.flags lor flag_transient_sensor }
 
   let resize ?w ?h ?sw ?sh ?fill ?crop ?(bg=A.empty) t : t =
     let g = match fill, crop with
@@ -262,20 +271,6 @@ struct
     | (Some w, _ | None, w), (Some h, _ | None, h),
       (Some sw, _ | None, sw), (Some sh, _ | None, sh) ->
       {t with w; h; sw; sh; desc = Resize (t, g, bg)}
-
-  (* TODO: dangerous in a bind? use [Lwd_utils.local_state] instead? *)
-  let last_z = ref 0
-
-  let overlay ?dx:(o_x=0) ?dy:(o_y=0)
-      ?handler:(o_h=fun ~x:_ ~y:_ _ -> `Unhandled)
-      ?origin:(o_origin=Gravity.bottom_left)
-      ?direction:(o_direction=Gravity.bottom_right)
-    =
-    let o_z = incr last_z; !last_z in
-    fun o_n ->
-      let desc = Overlay { o_n; o_x; o_y; o_h; o_z; o_origin; o_direction } in
-      { w = 0; sw = 0; h = 0; sh = 0; desc;
-        flags = flags_none; focus = Focus.empty; cache }
 
   let event_filter ?focus f t : t =
     let focus = match focus with
@@ -338,23 +333,16 @@ struct
       Format.fprintf ppf "Scroll_area (@[%a,@ _@])" pp n
     | Event_filter (n, _) ->
       Format.fprintf ppf "Event_filter (@[%a,@ _@])" pp n
-    | Overlay o -> Format.fprintf ppf "Overlay (@[%a,@ _@])" pp_overlay o
     | X (a, b) -> Format.fprintf ppf "X (@[%a,@ %a@])" pp a pp b
     | Y (a, b) -> Format.fprintf ppf "Y (@[%a,@ %a@])" pp a pp b
     | Z (a, b) -> Format.fprintf ppf "Z (@[%a,@ %a@])" pp a pp b
-
-  and pp_overlay ppf r =
-    Format.fprintf ppf
-      "{@[o_n=%a;@ o_h=%s;@ o_h=%d;@ o_x=%d;@ o_y=%d;@ \
-       o_origin=%a;@ o_direction=%a@]}" pp r.o_n "_" r.o_x r.o_y r.o_z
-      Gravity.pp r.o_origin Gravity.pp r.o_direction
 
   let iter f ui = match ui.desc with
     | Atom _ -> ()
     | Size_sensor (u, _) | Full_sensor (u, _, _)
     | Resize (u, _, _) | Mouse_handler (u, _)
     | Focus_area (u, _) | Scroll_area (u, _, _) | Event_filter (u, _)
-    | Overlay {o_n = u; _} -> f u
+      -> f u
     | X (u1, u2) | Y (u1, u2) | Z (u1, u2) -> f u1; f u2
 end
 type ui = Ui.t
@@ -390,9 +378,6 @@ struct
     in
     aux ui
 
-  let sort_overlays o = List.sort
-      (fun o1 o2 -> - compare o1.o_z o2.o_z) o
-
   let split ~a ~sa ~b ~sb total =
     let stretch = sa + sb in
     let flex = total - a - b in
@@ -419,38 +404,38 @@ struct
       | `Positive -> (flex, fixed)
 
   let rec update_sensors ox oy sw sh ui =
-    if ui.flags land flag_full_sensor <> 0 then (
-      ui.flags <- ui.flags land lnot flag_full_sensor;
-      match ui.desc with
-      | Atom _ -> ()
-      | Overlay _ -> ()
-      | Size_sensor (t, _) | Mouse_handler (t, _)
-      | Focus_area (t, _) | Event_filter (t, _) ->
-        update_sensors ox oy sw sh t
-      | Full_sensor (t, before, after) ->
-        ui.desc <- t.desc;
-        before ox oy sw sh;
-        update_sensors ox oy sw sh t;
-        after ox oy sw sh
-      | Resize (t, g, _) ->
-        let open Gravity in
-        let dx, rw = pack ~fixed:t.w ~stretch:t.sw sw (h (p1 g)) (h (p2 g)) in
-        let dy, rh = pack ~fixed:t.h ~stretch:t.sh sh (v (p1 g)) (v (p2 g)) in
-        update_sensors (ox + dx) (oy + dy) rw rh t
-      | Scroll_area (t, sx, sy) ->
-        update_sensors (ox - sx) (oy - sy) sw sh t
-      | X (a, b) ->
-        let aw, bw = split ~a:a.w ~sa:a.sw ~b:b.w ~sb:b.sw sw in
-        update_sensors ox oy aw sh a;
-        update_sensors (ox + aw) oy bw sh b
-      | Y (a, b) ->
-        let ah, bh = split ~a:a.h ~sa:a.sh ~b:b.h ~sb:b.sh sh in
-        update_sensors ox oy sw ah a;
-        update_sensors ox (oy + ah) sw bh b
-      | Z (a, b) ->
-        update_sensors ox oy sw sh a;
-        update_sensors ox oy sw sh b;
+    if ui.flags land flag_transient_sensor <> 0 then (
+      ui.flags <- ui.flags land lnot flag_transient_sensor;
+      update_sub_sensors ox oy sw sh ui
     )
+  and update_sub_sensors ox oy sw sh ui = match ui.desc with
+    | Atom _ -> ()
+    | Size_sensor (t, _) | Mouse_handler (t, _)
+    | Focus_area (t, _) | Event_filter (t, _) ->
+      update_sensors ox oy sw sh t
+    | Full_sensor (t, before, after) ->
+      ui.desc <- t.desc;
+      before ox oy sw sh;
+      update_sensors ox oy sw sh t;
+      after ox oy sw sh
+    | Resize (t, g, _) ->
+      let open Gravity in
+      let dx, rw = pack ~fixed:t.w ~stretch:t.sw sw (h (p1 g)) (h (p2 g)) in
+      let dy, rh = pack ~fixed:t.h ~stretch:t.sh sh (v (p1 g)) (v (p2 g)) in
+      update_sensors (ox + dx) (oy + dy) rw rh t
+    | Scroll_area (t, sx, sy) ->
+      update_sensors (ox - sx) (oy - sy) sw sh t
+    | X (a, b) ->
+      let aw, bw = split ~a:a.w ~sa:a.sw ~b:b.w ~sb:b.sw sw in
+      update_sensors ox oy aw sh a;
+      update_sensors (ox + aw) oy bw sh b
+    | Y (a, b) ->
+      let ah, bh = split ~a:a.h ~sa:a.sh ~b:b.h ~sb:b.sh sh in
+      update_sensors ox oy sw ah a;
+      update_sensors ox (oy + ah) sw bh b
+    | Z (a, b) ->
+      update_sensors ox oy sw sh a;
+      update_sensors ox oy sw sh b
 
   let update_focus ui =
     match ui.focus with
@@ -502,25 +487,13 @@ struct
         let dx, rw = pack ~fixed:t.w ~stretch:t.sw sw (h (p1 g)) (h (p2 g)) in
         let dy, rh = pack ~fixed:t.h ~stretch:t.sh sh (v (p1 g)) (v (p2 g)) in
         aux (ox + dx) (oy + dy) rw rh t
-      | Overlay _ ->
-        false
       | Event_filter (n, f) ->
         begin match f (`Mouse (`Press btn, (x, y), [])) with
           | `Handled -> true
           | `Unhandled -> aux ox oy sw sh n
         end
     in
-    let rec overlays ox oy ovs =
-      List.exists (fun o ->
-          let ox = ox + o.o_x and oy = oy + o.o_y in
-          let ow = I.width o.o_n.cache.image in
-          let oh = I.height o.o_n.cache.image in
-          overlays ox oy o.o_n.cache.overlays
-          || aux ox oy (ox + ow) (oy + oh) o.o_n
-          || handle ox oy o.o_h
-        ) (sort_overlays ovs)
-    in
-    overlays 0 0 t.cache.overlays || aux 0 0 w h t
+    aux 0 0 w h t
 
   let release_grab st x y =
     match st.mouse_grab with
@@ -546,8 +519,6 @@ struct
     then `Handled
     else `Unhandled
 
-  let shift_o x y o = {o with o_x = o.o_x + x; o_y = o.o_y + y}
-
   let resize_canvas rw rh image =
     let w = I.width image in
     let h = I.height image in
@@ -567,17 +538,18 @@ struct
   let rec render_node vx1 vy1 vx2 vy2 sw sh t : cache =
     if
       let cache = t.cache in
-      vx1 >= cache.vx1 && vy1 >= cache.vy1 &&
-      vx2 <= cache.vx2 && vy2 <= cache.vy2 &&
+      vx1 >= Interval.fst cache.vx && vy1 >= Interval.fst cache.vy &&
+      vx2 <= Interval.snd cache.vx && vy2 <= Interval.snd cache.vy &&
       same_size sw sh cache.image
     then t.cache
     else if vx2 < 0 || vy2 < 0 || sw < vx1 || sh < vy1 then
-      { vx1; vy1; vx2; vy2; image = I.void sw sh; overlays = [] }
+      let vx = Interval.make vx1 vx2 and vy = Interval.make vy1 vy2 in
+      { vx; vy; image = I.void sw sh }
     else
       let cache = match t.desc with
         | Atom image ->
-          { vx1 = 0; vy1 = 0; vx2 = sw; vy2 = sh;
-            overlays = [];
+          { vx = Interval.make 0 sw;
+            vy = Interval.make 0 sh;
             image = resize_canvas sw sh image }
         | Size_sensor (desc, handler) ->
           handler sw sh;
@@ -590,45 +562,44 @@ struct
           let cache = render_node
               (vx1 + sx) (vy1 + sy) (vx2 + sx) (vy2 + sy) (sx + sw) (sy + sh) t'
           in
-          { vx1; vx2; vy1; vy2;
-            overlays = (List.map (shift_o (-sx) (-sy)) cache.overlays);
-            image = resize_canvas sw sh (I.crop ~l:sx ~t:sy cache.image) }
+          let vx = Interval.make vx1 vx2 and vy = Interval.make vy1 vy2 in
+          let image = resize_canvas sw sh (I.crop ~l:sx ~t:sy cache.image) in
+          { vx; vy; image }
         | X (a, b) ->
           let aw, bw = split ~a:a.w ~sa:a.sw ~b:b.w ~sb:b.sw sw in
           let ca = render_node vx1 vy1 vx2 vy2 aw sh a in
           let cb = render_node (vx1 - aw) vy1 (vx2 - aw) vy2 bw sh b in
-          { vx1 = maxi ca.vx1 (cb.vx1 + aw);
-            vx2 = mini ca.vx2 (cb.vx2 + aw);
-            vy1 = maxi ca.vy1 cb.vy1;
-            vy2 = mini ca.vy2 cb.vy2;
-            overlays = List.map (shift_o aw 0) cb.overlays @ ca.overlays;
-            image = resize_canvas sw sh (I.(<|>) ca.image cb.image) }
+          let vx = Interval.make
+              (maxi (Interval.fst ca.vx) (Interval.fst cb.vx + aw))
+              (mini (Interval.snd ca.vx) (Interval.snd cb.vx + aw))
+          and vy = Interval.make
+              (maxi (Interval.fst ca.vy) (Interval.fst cb.vy))
+              (mini (Interval.snd ca.vy) (Interval.snd cb.vy))
+          and image = resize_canvas sw sh (I.(<|>) ca.image cb.image) in
+          { vx; vy; image }
         | Y (a, b) ->
           let ah, bh = split ~a:a.h ~sa:a.sh ~b:b.h ~sb:b.sh sh in
           let ca = render_node vx1 vy1 vx2 vy2 sw ah a in
           let cb = render_node vx1 (vy1 - ah) vx2 (vy2 - ah) sw bh b in
-          { vx1 = maxi ca.vx1 cb.vx1;
-            vx2 = mini ca.vx2 cb.vx2;
-            vy1 = maxi ca.vy1 (cb.vy1 + ah);
-            vy2 = mini ca.vy2 (cb.vy2 + ah);
-            overlays = List.map (shift_o 0 ah) cb.overlays @ ca.overlays;
-            image = resize_canvas sw sh (I.(<->) ca.image cb.image) }
+          let vx = Interval.make
+              (maxi (Interval.fst ca.vx) (Interval.fst cb.vx))
+              (mini (Interval.snd ca.vx) (Interval.snd cb.vx))
+          and vy = Interval.make
+              (maxi (Interval.fst ca.vy) (Interval.fst cb.vy + ah))
+              (mini (Interval.snd ca.vy) (Interval.snd cb.vy + ah))
+          and image = resize_canvas sw sh (I.(<->) ca.image cb.image) in
+          { vx; vy; image }
         | Z (a, b) ->
           let ca = render_node vx1 vy1 vx2 vy2 sw sh a in
           let cb = render_node vx1 vy1 vx2 vy2 sw sh b in
-          { vx1 = maxi ca.vx1 cb.vx1;
-            vx2 = mini ca.vx2 cb.vx2;
-            vy1 = maxi ca.vy1 cb.vy1;
-            vy2 = mini ca.vy2 cb.vy2;
-            overlays = cb.overlays @ ca.overlays;
-            image = resize_canvas sw sh (I.(</>) cb.image ca.image) }
-        | Overlay overlay ->
-          let ow = overlay.o_n.w and oh = overlay.o_n.h in
-          let c = render_node 0 0 ow oh ow oh overlay.o_n in
-          { vx1; vx2; vy1; vy2;
-            overlays = overlay ::
-                       List.map (shift_o overlay.o_x overlay.o_y) c.overlays;
-            image = resize_canvas sw sh I.empty }
+          let vx = Interval.make
+              (maxi (Interval.fst ca.vx) (Interval.fst cb.vx))
+              (mini (Interval.snd ca.vx) (Interval.snd cb.vx))
+          and vy = Interval.make
+              (maxi (Interval.fst ca.vy) (Interval.fst cb.vy))
+              (mini (Interval.snd ca.vy) (Interval.snd cb.vy))
+          and image = resize_canvas sw sh (I.(</>) cb.image ca.image) in
+          { vx; vy; image }
         | Resize (t, g, bg) ->
           let open Gravity in
           let dx, rw = pack ~fixed:t.w ~stretch:t.sw sw (h (p1 g)) (h (p2 g)) in
@@ -643,30 +614,17 @@ struct
             else
               image
           in
-          { vx1 = c.vx1 + dx; vx2 = c.vx2 + dx;
-            vy1 = c.vy1 + dy; vy2 = c.vy2 + dy;
-            overlays = List.map (shift_o dx dy) c.overlays;
-            image
-          }
+          let vx = Interval.shift c.vx dx in
+          let vy = Interval.shift c.vy dy in
+          { vx; vy; image }
         | Event_filter (t, _f) ->
           render_node vx1 vy1 vx2 vy2 sw sh t
       in
       t.cache <- cache;
       cache
 
-  let image st =
-    let flatten (im,todo) o =
-      let todo = List.map (shift_o o.o_x o.o_y) o.o_n.cache.overlays @ todo in
-      let ovi = I.pad ~l:o.o_x ~t:o.o_y o.o_n.cache.image in
-      (I.(</>) ovi im, todo)
-    in
-    let rec process = function
-      | (im, []) -> im
-      | (im, ovs) -> process (List.fold_left flatten (im, []) ovs)
-    in
-    let (w, h) = st.size in
-    let cache = render_node 0 0 w h w h st.view in
-    process (cache.image, cache.overlays)
+  let image {size = (w, h); view; _}  =
+    (render_node 0 0 w h w h view).image
 
   let dispatch_raw_key st key =
     let rec iter (st: ui list) : [> `Unhandled] =
@@ -674,7 +632,7 @@ struct
       | [] -> `Unhandled
       | ui :: tl ->
         begin match ui.desc with
-          | Atom _ | Overlay _ -> iter tl
+          | Atom _ -> iter tl
           | X (a, b) | Y (a, b) | Z (a, b) ->
             (* Try left/top most branch first *)
             let st' =
@@ -716,7 +674,7 @@ struct
 
   let rec dispatch_focus t dir =
     match t.desc with
-    | Atom _ | Overlay _ -> false
+    | Atom _ -> false
     | Mouse_handler (t, _) | Size_sensor (t, _) | Full_sensor (t, _, _)
     | Scroll_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
       dispatch_focus t dir
