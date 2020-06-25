@@ -46,6 +46,7 @@ let kfmt k ?attr fmt =
 
 let attr_menu_main = A.(bg green ++ fg black)
 let attr_menu_sub = A.(bg lightgreen ++ fg black)
+let attr_clickable = A.(bg lightblue)
 
 let menu_overlay ?dx ?dy handler t =
   let placeholder = Lwd.return (Ui.atom (I.void 1 0)) in
@@ -289,7 +290,7 @@ let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
     let content =
       Ui.atom @@ I.hcat @@
       if Focus.has_focus focus then (
-        let attr = A.(bg lightblue) in
+        let attr = attr_clickable in
         let len = String.length text in
         (if pos >= len
          then [I.string attr text]
@@ -421,7 +422,7 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
   let summary =
     Lwd.get opened >>= fun op ->
     summary >|= fun s ->
-    Ui.hcat [string ~attr:A.(bg blue) (if op then "v" else ">"); string " "; s]
+    Ui.hcat [string ~attr:attr_clickable (if op then "v" else ">"); string " "; s]
   in
   let cursor ~x:_ ~y:_ = function
      | `Left when Lwd.peek opened -> Lwd.set opened false; `Handled
@@ -555,9 +556,12 @@ let grid
   let ui = Lwd_utils.pure_pack pack_pad_y rows in
   Lwd.return ui
 
-let button ?attr s f =
-  Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) (string ?attr s)
+(** Turn the given [ui] into a clickable button, calls [f] when clicked. *)
+let button_of ui f =
+  Ui.mouse_area (fun ~x:_ ~y:_ _ -> f(); `Handled) ui
 
+(** A clickable button that calls [f] when clicked, labelled with a string. *)
+let button ?(attr=attr_clickable) s f = button_of (string ~attr s) f
 
 (* file explorer for selecting a file *)
 let file_select
@@ -596,8 +600,12 @@ let file_select
 let toggle, toggle' =
   let toggle_ st (lbl:string Lwd.t) (f:bool -> unit) : Ui.t Lwd.t =
     let mk_but st_v lbl_v =
-      let lbl = Printf.sprintf "[%s|%s]" lbl_v (if st_v then "✔" else "×");in
-      button lbl (fun () ->
+      let lbl = Ui.hcat [
+          printf "[%s|" lbl_v;
+          string ~attr:attr_clickable (if st_v then "✔" else "×");
+          string "]";
+        ] in
+      button_of lbl (fun () ->
           let new_st = not st_v in
           Lwd.set st new_st; f new_st)
     in
