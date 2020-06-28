@@ -11,7 +11,7 @@
  (name lwd)
  (synopsis "Lightweight reactive documents")
  (description "TODO")
- (depends dune seq (ocaml (>= "4.03"))
+ (depends (dune (>= 1.11.0)) seq (ocaml (>= "4.03"))
           (qtest :with-test)
           (qcheck :with-test)))
 
@@ -19,22 +19,22 @@
  (name nottui)
  (synopsis "UI toolkit for the terminal built on top of Notty")
  (description "TODO")
- (depends dune lwd notty))
+ (depends (dune (>= 1.11.0)) lwd notty))
 
 (package
  (name nottui-pretty)
  (synopsis "A pretty-printer based on PPrint rendering UIs")
  (description "TODO")
- (depends dune notty lwt nottui))
+ (depends (dune (>= 1.11.0)) notty lwt nottui))
 
 (package
  (name nottui-lwt)
  (synopsis "Run Nottui UIs in Lwt")
  (description "TODO")
- (depends dune notty lwt nottui))
+ (depends (dune (>= 1.11.0)) notty lwt nottui))
 
 (package
  (name nottui-widgets)
  (synopsis "A set of widget-like abstractions for Nottui")
  (description "TODO")
- (depends dune nottui))
+ (depends (dune (>= 1.11.0)) nottui))

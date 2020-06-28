@@ -7,7 +7,12 @@ authors: ["Frédéric Bour"]
 license: "MIT"
 homepage: "https://github.com/let-def/lwd"
 bug-reports: "https://github.com/let-def/lwd/issues"
-depends: ["dune" "notty" "lwt" "nottui"]
+depends: [
+  "dune" {>= "1.11.0"}
+  "notty"
+  "lwt"
+  "nottui"
+]
 build: [
   ["dune" "subst"] {pinned}
   [

@@ -8,7 +8,7 @@ license: "MIT"
 homepage: "https://github.com/let-def/lwd"
 bug-reports: "https://github.com/let-def/lwd/issues"
 depends: [
-  "dune"
+  "dune" {>= "1.11.0"}
   "seq"
   "ocaml" {>= "4.03"}
   "qtest" {with-test}
