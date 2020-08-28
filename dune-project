@@ -22,6 +22,12 @@
  (depends (dune (>= 1.11.0)) lwd notty))
 
 (package
+ (name tyxml-lwd)
+ (synopsis "Hello")
+ (description "TODO")
+ (depends dune lwd tyxml js_of_ocaml))
+
+(package
  (name nottui-pretty)
  (synopsis "A pretty-printer based on PPrint rendering UIs")
  (description "TODO")
