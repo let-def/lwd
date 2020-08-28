@@ -373,7 +373,7 @@ struct
   type t = {
     mutable size : size;
     mutable view : ui;
-    mutable mouse_grab : (int * int * grab_function) option;
+    mutable mouse_grab : grab_function option;
   }
 
   let make () = {
@@ -484,7 +484,7 @@ struct
       match f ~x:(x - ox) ~y:(y - oy) btn with
       | `Unhandled -> false
       | `Handled -> true
-      | `Grab f -> st.mouse_grab <- Some (ox, oy, f); true
+      | `Grab f -> st.mouse_grab <- Some f; true
     in
     let rec aux ox oy sw sh t =
       match t.desc with
@@ -530,9 +530,9 @@ struct
   let release_grab st x y =
     match st.mouse_grab with
     | None -> ()
-    | Some (ox, oy, (_, release)) ->
+    | Some (_, release) ->
       st.mouse_grab <- None;
-      release ~x:(x - ox) ~y:(y - oy)
+      release ~x ~y
 
   let dispatch_mouse t (event, (x, y), _mods) =
     if
@@ -544,7 +544,7 @@ struct
       | `Drag ->
         begin match t.mouse_grab with
           | None -> false
-          | Some (ox, oy, (drag, _)) -> drag ~x:(x - ox) ~y:(y - oy); true
+          | Some (drag, _) -> drag ~x ~y; true
         end
       | `Release ->
         release_grab t x y; true

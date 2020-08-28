@@ -3,6 +3,9 @@ all:
 
 TESTS=minimal misc reranger stress
 
+$(TESTS):
+	dune build examples/$@.bc
+
 run-minimal:
 	dune exec examples/minimal.bc
 
@@ -17,6 +20,9 @@ run-stress:
 
 run-pretty:
 	dune exec examples/pretty.bc
+
+run-pretty-lambda:
+	dune exec examples/pretty_lambda.bc
 
 run-stress.exe:
 	dune exec examples/stress.exe
