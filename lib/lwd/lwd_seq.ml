@@ -466,6 +466,10 @@ let fold_monoid map (zero, reduce) seq =
 
 let monoid = (empty, concat)
 
+let lwd_empty : 'a t Lwd.t = Lwd.pure Nil
+let lwd_monoid : 'a. 'a t Lwd.t Lwd_utils.monoid =
+  (lwd_empty, fun x y -> Lwd.map2 concat x y)
+
 let map f seq =
   fold_monoid (fun x -> element (f x)) monoid seq
 

@@ -36,6 +36,9 @@ val element : 'a -> 'a seq
 *)
 val concat : 'a seq -> 'a seq -> 'a seq
 
+val monoid : 'a t Lwd_utils.monoid
+val lwd_monoid : 'a t Lwd.t Lwd_utils.monoid
+
 (* Look at the contents of a sequence *)
 
 type ('a, 'b) view =

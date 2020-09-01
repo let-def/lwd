@@ -4,28 +4,41 @@ let js_string_of_float f = (Js.number_of_float f)##toString
 
 let js_string_of_int i = (Js.number_of_float (float_of_int i))##toString
 
+module Singleton : sig
+  type +'a t = private 'a Lwd_seq.t
+  val inj : 'a -> 'a t
+  val prj : 'a t -> 'a
+  val seq : 'a t -> 'a Lwd_seq.t
+end = struct
+  type +'a t = 'a Lwd_seq.t
+  let inj a = Lwd_seq.element a
+  let prj a =
+    match Lwd_seq.view a with Lwd_seq.Element x -> x | _ -> assert false
+  let seq a = a
+end
+
 module Elt = struct
-  type 'a t = 'a Lwd.t
-  type 'a child = 'a Lwd.t
+  type 'a t = 'a Singleton.t Lwd.t
+  type 'a child = 'a t
   let inject x = x
 end
 
 module Child = struct
-  type 'a t = 'a Lwd.t
-  let return = Lwd.return
+  type 'a t = 'a Elt.t
+  let return x = Lwd.pure (Singleton.inj x)
 
-  type 'a list = 'a Lwd.t Lwd_seq.t
-  let nil () = Lwd_seq.empty
-  let singleton x = Lwd_seq.element x
-  let cons x xs = Lwd_seq.concat (singleton x) xs
-  let append l1 l2 = Lwd_seq.concat l1 l2
+  type 'a list = 'a Lwd_seq.t Lwd.t
+  let nil = let nil = Lwd.pure Lwd_seq.empty in fun () -> nil
+  let singleton x = (x : 'a t :> 'a list)
+  let cons x xs = Lwd.map2 Lwd_seq.concat (singleton x) xs
+  let append l1 l2 = Lwd.map2 Lwd_seq.concat l1 l2
 end
 
 module Attr = struct
-  type 'a t = 'a Lwd.t
+  type 'a t = 'a option Lwd.t
   type (-'a,'b) ft = 'a -> 'b
-  let return = Lwd.return
-  let fmap = Lwd.map
+  let return x = Lwd.return (Some x)
+  let fmap f x = Lwd.map (function None -> None | Some x -> Some (f x)) x
 end
 
 module Xml
@@ -34,75 +47,104 @@ module Xml
      and module Child = Child
      and module Attr = Attr
      and type data = Dom.node Js.t
-
+     and type event_handler          = (Dom_html.event Js.t -> bool) Attr.t
+     and type mouse_event_handler    = (Dom_html.mouseEvent Js.t -> bool) Attr.t
+     and type keyboard_event_handler = (Dom_html.keyboardEvent Js.t -> bool) Attr.t
+     and type touch_event_handler    = (Dom_html.touchEvent Js.t -> bool) Attr.t
 = struct
 
   module Elt = Elt
   module Attr = Attr
+  type 'a attr = 'a Attr.t
   module Child = Child
-  
+
   type uri = string
   let uri_of_string s = s
   let string_of_uri s = s
 
   type aname = string
 
-  type event_handler = Dom_html.event Js.t -> bool
-  type mouse_event_handler = Dom_html.mouseEvent Js.t -> bool
-  type keyboard_event_handler = Dom_html.keyboardEvent Js.t -> bool
-  type touch_event_handler = Dom_html.touchEvent Js.t -> bool
+  type event_handler          = (Dom_html.event Js.t -> bool) attr
+  type mouse_event_handler    = (Dom_html.mouseEvent Js.t -> bool) attr
+  type keyboard_event_handler = (Dom_html.keyboardEvent Js.t -> bool) attr
+  type touch_event_handler    = (Dom_html.touchEvent Js.t -> bool) attr
 
-  type attrib_k =
-    | Event of event_handler
-    | MouseEvent of mouse_event_handler
-    | KeyboardEvent of keyboard_event_handler
-    | TouchEvent of touch_event_handler
-    | Attr of Js.js_string Js.t option Lwd.t
+  type 'a attrib_k =
+    | Event          : (Dom_html.event Js.t -> bool) attrib_k
+    | Event_mouse    : (Dom_html.mouseEvent Js.t -> bool) attrib_k
+    | Event_keyboard : (Dom_html.keyboardEvent Js.t -> bool) attrib_k
+    | Event_touch    : (Dom_html.touchEvent Js.t -> bool) attrib_k
+    | Attr_float     : float attrib_k
+    | Attr_int       : int attrib_k
+    | Attr_string    : string attrib_k
+    | Attr_space_sep : string list attrib_k
+    | Attr_comma_sep : string list attrib_k
+    | Attr_uri       : string attrib_k
+    | Attr_uris      : string list attrib_k
 
-  type attrib = aname * attrib_k
+  type 'a attrib_v = {name: string; kind : 'a attrib_k; value: 'a attr}
+  type attrib = Attrib : 'a attrib_v -> attrib [@@ocaml.unboxed]
 
-  let attr name v = name, Attr (Lwd.pure (Some v))
+  let attrib kind name value = Attrib {name; kind; value}
+  let float_attrib                  n v = attrib Attr_float n v
+  let int_attrib                    n v = attrib Attr_int n v
+  let string_attrib                 n v = attrib Attr_string n v
+  let space_sep_attrib              n v = attrib Attr_space_sep n v
+  let comma_sep_attrib              n v = attrib Attr_comma_sep n v
+  let event_handler_attrib          n v = attrib Event n v
+  let mouse_event_handler_attrib    n v = attrib Event_mouse n v
+  let keyboard_event_handler_attrib n v = attrib Event_keyboard n v
+  let touch_event_handler_attrib    n v = attrib Event_touch n v
+  let uri_attrib                    n v = attrib Attr_uri n v
+  let uris_attrib                   n v = attrib Attr_uris n v
 
-  let float_attrib name value : attrib = attr name (js_string_of_float value)
-
-  let int_attrib name value = attr name (js_string_of_int value)
-
-  let string_attrib name value = attr name (Js.string value)
-
-  let space_sep_attrib name values = attr name (Js.string (String.concat " " values))
-
-  let comma_sep_attrib name values = attr name (Js.string (String.concat "," values))
-
-  let event_handler_attrib name (value : event_handler) = name, Event value
-
-  let mouse_event_handler_attrib name (value : mouse_event_handler) =
-    name, MouseEvent value
-
-  let keyboard_event_handler_attrib name (value : keyboard_event_handler) =
-    name, KeyboardEvent value
-
-  let touch_event_handler_attrib name (value : touch_event_handler) =
-    name, TouchEvent value
-
-  let uri_attrib name value = attr name (Js.string value)
-
-  let uris_attrib name values = attr name (Js.string (String.concat " " values))
+  let attach
+      (type a) (node: #Dom.element Js.t) (k: a attrib_v) (v : a option) : unit =
+    let name_js = Js.string k.name in
+    match v with
+    | None -> begin match k.kind with
+        | Event | Event_mouse | Event_keyboard | Event_touch ->
+          Js.Unsafe.set node name_js Js.null
+        | Attr_float | Attr_int | Attr_string | Attr_space_sep
+        | Attr_comma_sep | Attr_uri | Attr_uris ->
+          Js.Unsafe.delete node name_js
+      end
+    | Some v -> begin match k.kind with
+        | Event          -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
+        | Event_mouse    -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
+        | Event_keyboard -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
+        | Event_touch    -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
+        | Attr_float     -> Js.Unsafe.set node name_js (Js.float v)
+        | Attr_int       -> Js.Unsafe.set node name_js v
+        | Attr_string    -> Js.Unsafe.set node name_js (Js.string v)
+        | Attr_space_sep -> Js.Unsafe.set node name_js (Js.string (String.concat " " v))
+        | Attr_comma_sep -> Js.Unsafe.set node name_js (Js.string (String.concat "," v))
+        | Attr_uri       -> Js.Unsafe.set node name_js (Js.string v)
+        | Attr_uris      -> Js.Unsafe.set node name_js (Js.string (String.concat " " v))
+      end
 
   (** Element *)
 
   type data = Dom.node Js.t
-  type elt = data Lwd.t
-  type children = data Lwd_seq.t
-  
+  type elt = data Elt.t
+  type children = data Child.list
+
   type ename = string
 
-  let empty () = (Dom_html.document##createDocumentFragment :> Dom.node Js.t)
+  let as_node (x : #Dom.node Js.t) = (x :> Dom.node Js.t)
+  let pure_node x = Child.return (as_node x)
 
-  let comment c = (Dom_html.document##createComment (Js.string c) :> Dom.node Js.t)
+  let empty () = pure_node Dom_html.document##createDocumentFragment
 
-  let pcdata s = (Dom_html.document##createTextNode (Js.string s) :> Dom.node Js.t)
+  let comment c = pure_node (Dom_html.document##createComment (Js.string c))
 
-  let encodedpcdata s = (Dom_html.document##createTextNode (Js.string s) :> Dom.node Js.t)
+  let pcdata s = Lwd.map' s @@ fun s ->
+    let s = Js.string (Singleton.prj s) in
+    Singleton.inj (as_node (Dom_html.document##createTextNode s))
+
+  let encodedpcdata s = Lwd.map' s @@ fun s ->
+    let s = Js.string (Singleton.prj s) in
+    Singleton.inj (as_node (Dom_html.document##createTextNode s))
 
   let entity =
     let string_fold s ~pos ~init ~f =
@@ -158,72 +200,65 @@ module Xml
           | _ -> Dom_html.decode_html_entities (Js.string ("&" ^ e ^ ";"))
         else invalid_entity e
       in
-      (Dom_html.document##createTextNode str :> Dom.node Js.t)
-
-  (* TODO: fix get_prop
-     it only work when html attribute and dom property names correspond.
-     find a way to get dom property name corresponding to html attribute
-  *)
-
-  let get_prop node name =
-    if Js.Optdef.test (Js.Unsafe.get node name) then Some name else None
-
-  let iter_prop_protected node name f =
-    match get_prop node name with
-    | Some n -> ( try f n with _ -> ())
-    | None -> ()
+      pure_node (Dom_html.document##createTextNode str)
 
   let attach_attribs node l =
-    List.fold_left
-      (fun (acc : unit Lwd.t) (name, att) ->
-         let name_js = Js.string name in
-         match att with
-         | Attr a ->
-           (* Note that once we have weak pointers working, we'll need to React.S.retain *)
-           Lwd.map2
-             (fun () -> function
-                | Some v -> (
-                    ignore (node##setAttribute name_js v);
-                    match name with
-                    | "style" -> node##.style##.cssText := v
-                    | _ ->
-                      iter_prop_protected node name_js (fun name ->
-                          Js.Unsafe.set node name v))
-                | None -> (
-                    ignore (node##removeAttribute name_js);
-                    match name with
-                    | "style" -> node##.style##.cssText := Js.string ""
-                    | _ ->
-                      iter_prop_protected node name_js (fun name ->
-                          Js.Unsafe.set node name Js.null)))
-             acc a
-         | Event h ->
-           Js.Unsafe.set node name_js (fun ev -> Js.bool (h ev));
-           acc
-         | MouseEvent h ->
-           Js.Unsafe.set node name_js (fun ev -> Js.bool (h ev));
-           acc
-         | KeyboardEvent h ->
-           Js.Unsafe.set node name_js (fun ev -> Js.bool (h ev));
-           acc
-         | TouchEvent h ->
-           Js.Unsafe.set node name_js (fun ev -> Js.bool (h ev));
-           acc
-      )
-      (Lwd.pure ()) l
+    Lwd_utils.pack ((), fun () () -> ())
+      (List.map (fun (Attrib a) -> Lwd.map (attach node a) a.value) l)
 
   let leaf ?(a = []) name : elt =
     let e = Dom_html.document##createElement (Js.string name) in
-    Lwd.map (fun () -> (e :> data)) @@ attach_attribs e a
+    let e' = Singleton.inj e in
+    Lwd.map' (attach_attribs e a) (fun () -> (e' :> data Singleton.t))
 
-  let update_children (_ : data) (_ : children) : unit = assert false
-  
+  type child_tree =
+    | Leaf of data
+    | Inner of { mutable bound: data Js.opt;
+                 left: child_tree; right: child_tree; }
+
+  let child_node node = Leaf node
+
+  let child_join left right = Inner { bound = Js.null; left; right }
+
+  let update_children (self : data) (children : children) : unit Lwd.t =
+    let reducer =
+      ref (Lwd_seq.Reducer.make ~map:child_node ~reduce:child_join)
+    in
+    Lwd.map' children @@ fun children ->
+    let dropped, reducer' =
+      Lwd_seq.Reducer.update_and_get_dropped !reducer children in
+    let remove_child child () = match child with
+      | Leaf node -> ignore (self##removeChild node)
+      | Inner _ -> ()
+    in
+    Lwd_seq.Reducer.fold_dropped `Map remove_child dropped ();
+    begin match Lwd_seq.Reducer.reduce reducer' with
+      | None -> ()
+      | Some tree ->
+        let rec update acc = function
+          | Leaf x ->
+            ignore (self##insertBefore x acc);
+            Js.some x
+          | Inner t ->
+            if Js.Opt.test t.bound then t.bound else (
+              let acc = update acc t.right in
+              let acc = update acc t.left in
+              t.bound <- acc;
+              acc
+            )
+        in
+        ignore (update Js.null tree)
+    end
+
   let node ?(a = []) name children : elt =
     let e = Dom_html.document##createElement (Js.string name) in
-    update_children (e :> data) children;
-    Lwd.map (fun () -> (e :> data)) @@ attach_attribs e a
-    
-  let cdata s = pcdata s
+    let e' = Singleton.inj e in
+    Lwd.map2'
+      (update_children (e :> data) children)
+      (attach_attribs e a)
+      (fun () () -> (e' :> data Singleton.t))
+
+  let cdata s = pure_node (Dom_html.document##createTextNode (Js.string s))
 
   let cdata_script s = cdata s
 
