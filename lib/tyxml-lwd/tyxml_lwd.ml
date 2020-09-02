@@ -4,34 +4,21 @@ let js_string_of_float f = (Js.number_of_float f)##toString
 
 let js_string_of_int i = (Js.number_of_float (float_of_int i))##toString
 
-module Singleton : sig
-  type +'a t = private 'a Lwd_seq.t
-  val inj : 'a -> 'a t
-  val prj : 'a t -> 'a
-  val seq : 'a t -> 'a Lwd_seq.t
-end = struct
-  type +'a t = 'a Lwd_seq.t
-  let inj a = Lwd_seq.element a
-  let prj a =
-    match Lwd_seq.view a with Lwd_seq.Element x -> x | _ -> assert false
-  let seq a = a
-end
-
 module Elt = struct
-  type 'a t = 'a Singleton.t Lwd.t
+  type 'a t = 'a Lwd_seq.t Lwd.t
   type 'a child = 'a t
   let inject x = x
 end
 
 module Child = struct
   type 'a t = 'a Elt.t
-  let return x = Lwd.pure (Singleton.inj x)
+  let return x = Lwd.pure (Lwd_seq.element x)
 
-  type 'a list = 'a Lwd_seq.t Lwd.t
+  type 'a list = 'a t
   let nil = let nil = Lwd.pure Lwd_seq.empty in fun () -> nil
-  let singleton x = (x : 'a t :> 'a list)
-  let cons x xs = Lwd.map2 Lwd_seq.concat (singleton x) xs
+  let singleton x = x
   let append l1 l2 = Lwd.map2 Lwd_seq.concat l1 l2
+  let cons x xs = append (singleton x) xs
 end
 
 module Attr = struct
@@ -138,13 +125,24 @@ module Xml
 
   let comment c = pure_node (Dom_html.document##createComment (Js.string c))
 
-  let pcdata s = Lwd.map' s @@ fun s ->
-    let s = Js.string (Singleton.prj s) in
-    Singleton.inj (as_node (Dom_html.document##createTextNode s))
+  let string_monoid =
+    let cat a b = match a, b with "", x | x, "" -> x | a, b -> a ^ b in
+    ("", cat)
 
-  let encodedpcdata s = Lwd.map' s @@ fun s ->
-    let s = Js.string (Singleton.prj s) in
-    Singleton.inj (as_node (Dom_html.document##createTextNode s))
+  let pcdata input =
+    let node =
+      Lwd_seq.element (Dom_html.document##createTextNode (Js.string ""))
+    in
+    let text = Lwd_seq.fold_monoid (fun x -> x) string_monoid input in
+    Lwd.map (fun text ->
+        begin match Lwd_seq.view node with
+          | Lwd_seq.Element elt -> elt##.data := Js.string text;
+          | _ -> assert false
+        end;
+        (node : Dom.text Js.t Lwd_seq.t :> data Lwd_seq.t)
+      ) text
+
+  let encodedpcdata = pcdata
 
   let entity =
     let string_fold s ~pos ~init ~f =
@@ -208,8 +206,8 @@ module Xml
 
   let leaf ?(a = []) name : elt =
     let e = Dom_html.document##createElement (Js.string name) in
-    let e' = Singleton.inj e in
-    Lwd.map' (attach_attribs e a) (fun () -> (e' :> data Singleton.t))
+    let e' = Lwd_seq.element (e : Dom_html.element Js.t :> data) in
+    Lwd.map' (attach_attribs e a) (fun () -> e')
 
   type child_tree =
     | Leaf of data
@@ -252,11 +250,11 @@ module Xml
 
   let node ?(a = []) name children : elt =
     let e = Dom_html.document##createElement (Js.string name) in
-    let e' = Singleton.inj e in
+    let e' = Lwd_seq.element e in
     Lwd.map2'
       (update_children (e :> data) children)
       (attach_attribs e a)
-      (fun () () -> (e' :> data Singleton.t))
+      (fun () () -> (e' :> data Lwd_seq.t))
 
   let cdata s = pure_node (Dom_html.document##createTextNode (Js.string s))
 
