@@ -73,6 +73,10 @@ let impure x = inj (
     | other -> other
   )
 
+let is_pure x = match prj x with
+  | Pure x -> Some x
+  | _ -> None
+
 let dummy = Pure (Any.any ())
 
 let operator desc =

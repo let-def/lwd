@@ -448,23 +448,86 @@ end
 
 (* Lwd interface *)
 
+let rec pure_map_reduce map reduce = function
+  | Nil  -> assert false
+  | Leaf t -> map t.v
+  | Join t ->
+    reduce
+      (pure_map_reduce map reduce t.l)
+      (pure_map_reduce map reduce t.r)
+
 let fold ~map ~reduce seq =
-  let reducer = ref (Reducer.make ~map ~reduce) in
-  Lwd.map' seq @@ fun seq ->
-  let reducer' = Reducer.update !reducer seq in
-  reducer := reducer';
-  Reducer.reduce reducer'
+  match Lwd.is_pure seq with
+  | Some Nil -> Lwd.pure None
+  | Some other -> Lwd.pure (Some (pure_map_reduce map reduce other))
+  | None ->
+    let reducer = ref (Reducer.make ~map ~reduce) in
+    Lwd.map' seq @@ fun seq ->
+    let reducer' = Reducer.update !reducer seq in
+    reducer := reducer';
+    Reducer.reduce reducer'
 
 let fold_monoid map (zero, reduce) seq =
-  let reducer = ref (Reducer.make ~map ~reduce) in
-  Lwd.map' seq @@ fun seq ->
-  let reducer' = Reducer.update !reducer seq in
-  reducer := reducer';
-  match Reducer.reduce reducer' with
-  | None -> zero
-  | Some x -> x
+  match Lwd.is_pure seq with
+  | Some Nil -> Lwd.pure zero
+  | Some other -> Lwd.pure (pure_map_reduce map reduce other)
+  | None ->
+    let reducer = ref (Reducer.make ~map ~reduce) in
+    Lwd.map' seq @@ fun seq ->
+    let reducer' = Reducer.update !reducer seq in
+    reducer := reducer';
+    match Reducer.reduce reducer' with
+    | None -> zero
+    | Some x -> x
 
 let monoid = (empty, concat)
+
+let of_list ls =
+  Lwd_utils.map_reduce element monoid ls
+
+let rec of_sub_array arr i j =
+  if j < i then empty
+  else if j = i then element arr.(i)
+  else
+    let k = i + (j - i) / 2 in
+    concat (of_sub_array arr i k) (of_sub_array arr (k + 1) j)
+
+let of_array arr = of_sub_array arr 0 (Array.length arr - 1)
+
+let to_list x =
+  let rec fold x acc = match x with
+    | Nil -> acc
+    | Leaf t -> t.v :: acc
+    | Join t -> fold t.l (fold t.r acc)
+  in
+  fold x []
+
+let to_array x =
+  let rec count = function
+    | Nil -> 0
+    | Leaf _ -> 1
+    | Join t -> count t.l + count t.r
+  in
+  match count x with
+  | 0 -> [||]
+  | n ->
+    let rec first = function
+      | Nil -> assert false
+      | Leaf t -> t.v
+      | Join t -> first t.l
+    in
+    let first = first x in
+    let arr = Array.make n first in
+    let rec fold i = function
+      | Nil -> i
+      | Leaf t -> arr.(i) <- t.v; i + 1
+      | Join t ->
+        let i = fold i t.l in
+        let i = fold i t.r in
+        i
+    in
+    let _ : int = fold 0 x in
+    arr
 
 let lwd_empty : 'a t Lwd.t = Lwd.pure Nil
 let lwd_monoid : 'a. 'a t Lwd.t Lwd_utils.monoid =
