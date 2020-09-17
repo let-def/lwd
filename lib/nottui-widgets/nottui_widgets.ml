@@ -619,11 +619,11 @@ let grid
                 Ui.resize ~w:col_widths.(i) ~h:row_h ?crop ?fill ?bg c)
              row
          in
-         Lwd_utils.pure_pack pack_pad_x row)
+         Lwd_utils.reduce pack_pad_x row)
       rows
   in
   (* TODO: mouse and keyboard handling *)
-  let ui = Lwd_utils.pure_pack pack_pad_y rows in
+  let ui = Lwd_utils.reduce pack_pad_y rows in
   Lwd.return ui
 
 (** Turn the given [ui] into a clickable button, calls [f] when clicked. *)

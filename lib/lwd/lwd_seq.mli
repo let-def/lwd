@@ -1,54 +1,46 @@
-(* Sequence construction
+(** {0 Sequence manipulation}
 
-   [Lwd_seq] implements a type of ordered collections with a pure interface.
-   In addition, changes to collections are easy to track.
+    [Lwd_seq] is an ordered collection with a pure interface.
+    Changes to collections are easy to track.
 
-   A collection can be transformed with the usual map, filter and fold
-   combinators. If later, the transformation is applied again to an updated
-   collection, shared elements (in the sense of physical sharing), the
-   result of the previous transformation will be reused for these elements.
+    A collection can be transformed with the usual map, filter and fold
+    combinators. If the collection is updated, shared elements (in the sense of
+    physical sharing), the result of the previous transformation will be reused
+    for these elements.
 
-   The book-keeping overhead is O(n) in the number of changes, so O(1) per
-   element.
+    The book-keeping overhead is O(n) in the number of changes, so O(1) per
+    element.
 *)
 
 type +'a t
 type +'a seq = 'a t
+(** The type of sequences *)
 
-(* A sequence with no element. *)
+(** {1 Primitive constructors} *)
+
 val empty : 'a seq
+(** A sequence with no element. *)
 
-(* A singleton sequence. The physical identity of the element is considered
-   when reusing previous computations.
-
-   If you do:
-     let x1 = element x
-     let x2 = element x
-
-   Then x1 and x2 are seen as different elements and no sharing will be done
-   during transformation.
-*)
 val element : 'a -> 'a seq
+(** A singleton sequence. The physical identity of the element is considered
+    when reusing previous computations.
 
-(* Concatenate two sequences into a bigger one.
-   As for [element], the physical identity of a sequence is considered for
-   reuse.
+    If you do:
+
+    {[let x1 = element x
+      let x2 = element x]}
+
+    Then [x1] and [x2] are seen as different elements and no sharing will be
+    done during transformation.
 *)
+
 val concat : 'a seq -> 'a seq -> 'a seq
+(** Concatenate two sequences into a bigger one.
+    As for [element], the physical identity of a sequence is considered for
+    reuse.
+*)
 
-val monoid : 'a t Lwd_utils.monoid
-val lwd_monoid : 'a t Lwd.t Lwd_utils.monoid
-
-(*val bind : 'a seq -> ('a -> 'b seq) -> 'b seq*)
-val bind_list : 'a list -> ('a -> 'b seq) -> 'b seq
-val bind_array : 'a array -> ('a -> 'b seq) -> 'b seq
-
-val of_list : 'a list -> 'a seq
-val of_array : 'a array -> 'a seq
-val to_list : 'a seq -> 'a list
-val to_array : 'a seq -> 'a array
-
-(* Look at the contents of a sequence *)
+(** {1 Looking at sequence contents} *)
 
 type ('a, 'b) view =
   | Empty
@@ -56,18 +48,44 @@ type ('a, 'b) view =
   | Concat of 'b * 'b
 
 val view : 'a seq -> ('a, 'a seq) view
+(** View how a sequence is defined *)
+
+(** {1 Conversion between sequences, lists and arrays} *)
+
+val transform_list : 'a list -> ('a -> 'b seq) -> 'b seq
+(** Produce a sequence by transforming each element of a list and concatenating
+    all results. *)
+
+val transform_array : 'a array -> ('a -> 'b seq) -> 'b seq
+(** Produce a sequence by transforming each element of an array and
+    concatenating all results. *)
+
+val of_list : 'a list -> 'a seq
+(** Produce a sequence from a list *)
+
+val of_array : 'a array -> 'a seq
+(** Produce a sequence from an array *)
+
+val to_list : 'a seq -> 'a list
+(** Produce a list from a sequence *)
+
+val to_array : 'a seq -> 'a array
+(** Produce an array from a sequence *)
+
+(** {1 Balanced variant of sequences *)
 
 module Balanced : sig
-  (* A variant of the sequence type that guarantees that the depth of
-     transformation, as measured in the number of [concat] nodes, grows in
-     O(log n) where n is the number of elements in the sequnce.
+
+  (** A variant of the sequence type that guarantees that the depth of a
+      transformation, measured as the number of nested [concat] nodes, grows in
+      O(log n) where n is the number of elements in the sequnce.
 
      This is useful to prevent stack overflows and to avoid degenerate cases
-     where a single element change, but it is at the end of a linear sequence
+     where a single element changes, but it is at the end of a linear sequence
      of [concat] nodes, thus making the total work O(n).
      For instance, in:
 
-       [concat e1 (concat e2 (concat e3 (... (concat e_n))...))]
+      {[concat e1 (concat e2 (concat e3 (... (concat e_n))...))]}
 
      If [e_n] changes, the whole spine has to be recomputed.
 
@@ -79,7 +97,10 @@ module Balanced : sig
      only useful to balance the first sequence of the pipeline. Derived
      sequence will have a depth bounded by the depth of the first one.
   *)
+
   type 'a t = private 'a seq
+  (** Type of balanced sequences *)
+
   val empty : 'a t
   val element : 'a -> 'a t
   val concat : 'a t -> 'a t -> 'a t
@@ -87,38 +108,51 @@ module Balanced : sig
   val view : 'a t -> ('a, 'a t) view
 end
 
-(* Lwd interface.
+(** {1 Transforming sequences} *)
 
+(**
    All sequences live in [Lwd] monad: if a sequence changes slightly, parts
    that have not changed will not be re-transformed.
 *)
 
-(* [fold ~map ~reduce] transforms a sequence.
-   If the sequence is non-empty, the [map] function is applied to element nodes
-   and the [reduce] function is used to combine transformed concatenated nodes.
-   If the sequence is empty, None is returned.
-*)
 val fold :
   map:('a -> 'b) -> reduce:('b -> 'b -> 'b) -> 'a seq Lwd.t -> 'b option Lwd.t
+(** [fold ~map ~reduce] transforms a sequence.
+    If the sequence is non-empty, the [map] function is applied to element
+    nodes and the [reduce] function is used to combine transformed concatenated
+    nodes.
+    If the sequence is empty, None is returned.
+*)
 
 val fold_monoid :
   ('a -> 'b) -> 'b Lwd_utils.monoid -> 'a seq Lwd.t -> 'b Lwd.t
+(** Like [fold], but reduction and default value are defined by a [monoid] *)
 
-(* [map f] transforms a sequence by applying [f] to each element. *)
 val map :
   ('a -> 'b) -> 'a seq Lwd.t -> 'b seq Lwd.t
+(** [map f] transforms a sequence by applying [f] to each element. *)
 
 val filter :
   ('a -> bool) -> 'a seq Lwd.t -> 'a seq Lwd.t
+(** [filter p] transforms a sequence by keeping elements that satisfies [p]. *)
 
 val filter_map :
   ('a -> 'b option) -> 'a seq Lwd.t -> 'b seq Lwd.t
+(** Filter and map elements at the same time *)
 
 val lift : 'a Lwd.t seq Lwd.t -> 'a seq Lwd.t
+(** Remove a layer of [Lwd] inside a sequence. *)
 
 val bind : 'a seq Lwd.t -> ('a -> 'b seq) -> 'b seq Lwd.t
+(** Sequence forms a monad too... *)
 
-(* Low-level interface *)
+val monoid : 'a t Lwd_utils.monoid
+(** Monoid instance for sequences *)
+
+val lwd_monoid : 'a t Lwd.t Lwd_utils.monoid
+(** Monoid instance for reactive sequences *)
+
+(** {1 Low-level interface for observing changes} *)
 
 module Reducer : sig
   (* The interface allows to implement incremental sequence transformation

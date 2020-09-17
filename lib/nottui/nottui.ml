@@ -317,9 +317,9 @@ struct
   let pack_y = (empty, join_y)
   let pack_z = (empty, join_z)
 
-  let hcat xs = Lwd_utils.pure_pack pack_x xs
-  let vcat xs = Lwd_utils.pure_pack pack_y xs
-  let zcat xs = Lwd_utils.pure_pack pack_z xs
+  let hcat xs = Lwd_utils.reduce pack_x xs
+  let vcat xs = Lwd_utils.reduce pack_y xs
+  let zcat xs = Lwd_utils.reduce pack_z xs
 
   let has_focus t = Focus.has_focus t.focus
 

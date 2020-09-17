@@ -17,7 +17,7 @@ let map_reduce inj (zero, plus) items =
   | (_,x) :: xs ->
     List.fold_left (fun acc (_, v) -> plus v acc) x xs
 
-let pure_pack monoid items = map_reduce (fun x -> x) monoid items
+let reduce monoid items = map_reduce (fun x -> x) monoid items
 
 let rec cons_lwd_monoid plus c xs v =
   match xs with
@@ -36,21 +36,6 @@ let pack_seq (zero, plus) items =
   | [] -> Lwd.return zero
   | (_,x) :: xs ->
     List.fold_left (fun acc (_, v) -> Lwd.map2 plus v acc) x xs
-
-let local_state f =
-  let r = ref None in
-  let acquire () = match !r with
-    | None -> invalid_arg "Lwd_utils.trace: cyclic evaluation"
-    | Some v -> v
-  in
-  let prim = Lwd.prim ~acquire ~release:ignore in
-  let update v =
-    r := Some v;
-    Lwd.invalidate prim
-  in
-  let v, result = f (Lwd.get_prim prim) update in
-  r := Some v;
-  result
 
 let rec map_l (f:'a -> 'b Lwd.t) (l:'a list) : 'b list Lwd.t =
   match l with

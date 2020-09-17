@@ -90,26 +90,6 @@ Here `Lwd.map : ('a -> 'b) -> 'a Lwd.t -> 'b Lwd.t` apply a transformation to a 
 
 When the `Link` is triggered, the counter is incremented. Because `document` depends on the value of the counter it is invalidated. 
 
-#### Optional: abstracting local state
-
-This pattern of having local state that you want to manipulate in an almost purely functional way is very common and has been abstracted in the `Lwd_utils` library.
-
-Here is another way to implement our button example:
-
-```ocaml
-val Lwd_utils.local_state : ('a Lwd.t -> ('a -> unit) -> 'a * 'b) -> 'b  
-
-Lwd_utils.local_state (fun counter update ->
-  let initial_value = 0 in
-  let increment clicks () = update (clicks + 1) in
-  let button clicks =
-    Link (increment clicks,
-    	  Text ("Clicked " ^ string_of_int clicks ^ " times"))
-  in
-  initial_value, Lwd.map button counter
-)
-```
-
 ### Building computation graph
 
 `Lwd.t` implements a few abstractions that should be familiar to seasoned functional programmers:
