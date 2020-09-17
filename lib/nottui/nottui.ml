@@ -246,7 +246,7 @@ struct
       desc = Atom img;
       sensor_cache = None; cache; }
 
-  let void x y = atom (I.void x y)
+  let space x y = atom (I.void x y)
 
   let mouse_area f t : t =
     { t with desc = Mouse_handler (t, f) }

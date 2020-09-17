@@ -194,11 +194,11 @@ open Nottui
 (* Some intermediate UI *)
 
 let blank_ui =
-  let space = Ui.atom (Notty.I.void 1 0) in
+  let space = Ui.space 1 0 in
   function
   | 0 -> Ui.empty
   | 1 -> space
-  | n -> Ui.atom (Notty.I.void n 0)
+  | n -> Ui.space n 0
 
 let flat_hardline =
   Flat_span { prefix = Ui.empty; body = Ui.empty; suffix = Ui.empty; }
@@ -207,7 +207,7 @@ let mk_body body1 suffix prefix body2 =
   Ui.join_y body1 (Ui.join_y (Ui.join_x suffix prefix) body2)
 
 let mk_pad indent body suffix =
-  let pad = Ui.void indent 0 in
+  let pad = Ui.space indent 0 in
   (Ui.join_x pad body, Ui.join_x pad suffix)
 
 (* Flat renderer *)

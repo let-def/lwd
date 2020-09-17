@@ -51,7 +51,7 @@ let attr_clickable = A.(bg lightblue)
 let menu_overlay ?dx ?dy handler t =
   ignore (dx, dy, handler, t);
   assert false
-  (*let placeholder = Lwd.return (Ui.atom (I.void 1 0)) in
+  (*let placeholder = Lwd.return (Ui.space 1 0) in
   let body = Lwd_utils.pack Ui.pack_x [placeholder; t; placeholder] in
   let bg = Lwd.map' body @@ fun t ->
     let {Ui. w; h; _} = Ui.layout_spec t in
@@ -96,7 +96,7 @@ let vscroll_area ~state ~change t =
   in
   Lwd.map2' t state @@ fun t state ->
   t
-  |> Ui.scroll_area 0 state.position
+  |> Ui.shift_area 0 state.position
   |> Ui.resize ~h:0 ~sh:1
   |> Ui.size_sensor (fun ~w:_ ~h ->
       let tchange =
@@ -141,7 +141,7 @@ let scroll_area ?(offset=0,0) t =
   in
   Lwd.map2' t (Lwd.get offset) @@ fun t (s_x, s_y) ->
   t
-  |> Ui.scroll_area s_x s_y
+  |> Ui.shift_area s_x s_y
   |> Ui.mouse_area scroll_handler
   |> Ui.keyboard_area focus_handler
 
@@ -557,7 +557,7 @@ let rec iterate n f x =
     @param bg attribute for controlling background style
     @param h_space horizontal space between each cell in a row
     @param v_space vertical space between each row
-    @param fill used to control filling of cells
+    @param pad used to control padding of cells
     @param crop used to control cropping of cells
     TODO: control padding/alignment, vertically and horizontally
     TODO: control align left/right in cells
@@ -565,7 +565,7 @@ let rec iterate n f x =
     TODO: headers *)
 let grid
     ?max_h ?max_w
-    ?fill ?crop ?bg
+    ?pad ?crop ?bg
     ?(h_space=0)
     ?(v_space=0)
     ?(headers:Ui.t Lwd.t list option)
@@ -598,10 +598,10 @@ let grid
   (* now render, with some padding *)
   let pack_pad_x =
     if h_space<=0 then (Ui.empty, Ui.join_x)
-    else (Ui.empty, (fun x y -> Ui.hcat [x; Ui.void h_space 0; y]))
+    else (Ui.empty, (fun x y -> Ui.hcat [x; Ui.space h_space 0; y]))
   and pack_pad_y =
     if v_space =0 then (Ui.empty, Ui.join_y)
-    else (Ui.empty, (fun x y -> Ui.vcat [x; Ui.void v_space 0; y]))
+    else (Ui.empty, (fun x y -> Ui.vcat [x; Ui.space v_space 0; y]))
   in
   let rows =
     List.map
@@ -616,7 +616,7 @@ let grid
          let row =
            List.mapi
              (fun i c ->
-                Ui.resize ~w:col_widths.(i) ~h:row_h ?crop ?fill ?bg c)
+                Ui.resize ~w:col_widths.(i) ~h:row_h ?crop ?pad ?bg c)
              row
          in
          Lwd_utils.reduce pack_pad_x row)
