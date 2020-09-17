@@ -35,14 +35,14 @@ let () =
     List.iter (fun doc' -> Lwd_table.append' doc (Lwd.pure doc'))
       [
         P.group (string "This" ^/^ string "is" ^/^ string "pretty.");
-        P.hardline; P.ui (Nottui.Ui.void 0 1); P.hardline;
+        P.hardline; P.ui (Ui.space 0 1); P.hardline;
         P.group (P.group (string "This" ^/^ string "is") ^/^ string "pretty.");
-        P.hardline; P.ui (Nottui.Ui.void 0 1); P.hardline;
+        P.hardline; P.ui (Ui.space 0 1); P.hardline;
         P.group (string "This" ^/^ P.group (string "is" ^/^ string "pretty."));
-        P.hardline; P.ui (Nottui.Ui.void 0 1); P.hardline;
+        P.hardline; P.ui (Ui.space 0 1); P.hardline;
         P.group (spring ^^ string "This" ^^ spring ^/^
                  P.group (string "is" ^^ spring ^/^ string "pretty.") ^^ spring);
-        P.hardline; P.ui (Nottui.Ui.void 0 1); P.hardline;
+        P.hardline; P.ui (Ui.space 0 1); P.hardline;
       ];
     Lwd_table.append' doc
       (Lwd.map' fruit (fun fruit ->
@@ -58,9 +58,9 @@ let varying_width f =
   Lwd.map'
     (f (Lwd.get width))
     (fun ui ->
-       Nottui.Ui.size_sensor
+       Ui.size_sensor
          (fun ~w ~h:_ -> if Lwd.peek width <> w then Lwd.set width w)
-         (Nottui.Ui.resize ~sw:1 ~sh:1 ~w:0 ui))
+         (Ui.resize ~sw:1 ~sh:1 ~w:0 ui))
 
 let doc =
   Lwd.join (Lwd_table.reduce (Lwd_utils.lift_monoid (P.empty, P.(^^))) doc)
@@ -68,8 +68,8 @@ let doc =
 let contents width = Lwd.map2' width doc P.pretty
 
 let () =
-  Nottui.Ui_loop.run (
+  Ui_loop.run (
     Nottui_widgets.h_pane
       (Nottui_widgets.scroll_area (varying_width contents))
-      (Lwd.pure Nottui.Ui.empty)
+      (Lwd.pure Ui.empty)
   )

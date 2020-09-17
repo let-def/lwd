@@ -120,7 +120,7 @@ let rec dir ?(initial_path = []) ?after_width:(wref = ref 0) path =
   (match initial_path with [] -> () | x :: xs -> goto ~initial_path:xs x);
   Lwd.join (Lwd.get column)
 
-let gravity_fill = Gravity.make ~h:`Negative ~v:`Negative
+let gravity_pad = Gravity.make ~h:`Negative ~v:`Negative
 
 let gravity_crop = Gravity.make ~h:`Positive ~v:`Negative
 
@@ -137,4 +137,4 @@ let () =
   in
   Ui_loop.run
     (Lwd.map' ui (fun ui ->
-         ui |> Ui.resize ~fill:gravity_fill ~crop:gravity_crop))
+         ui |> Ui.resize ~pad:gravity_pad ~crop:gravity_crop))

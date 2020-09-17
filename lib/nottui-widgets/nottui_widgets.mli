@@ -74,6 +74,9 @@ val vlist_with :
   ?filter:('a -> bool) Lwd.t ->
   ('a -> ui Lwd.t) -> 'a list Lwd.t -> ui Lwd.t
 
+(* FIXME This should probably go somewhere else *)
+val iterate :int -> ('a -> 'a) -> 'a -> 'a
+
 val grid :
   ?max_h:int -> ?max_w:int ->
   ?pad:gravity -> ?crop:gravity -> ?bg:attr ->
