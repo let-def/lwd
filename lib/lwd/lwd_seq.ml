@@ -482,17 +482,21 @@ let fold_monoid map (zero, reduce) seq =
 
 let monoid = (empty, concat)
 
-let of_list ls =
-  Lwd_utils.map_reduce element monoid ls
+let bind_list ls f =
+  Lwd_utils.map_reduce f monoid ls
 
-let rec of_sub_array arr i j =
+let of_list ls = bind_list ls element
+
+let rec of_sub_array f arr i j =
   if j < i then empty
-  else if j = i then element arr.(i)
+  else if j = i then f arr.(i)
   else
     let k = i + (j - i) / 2 in
-    concat (of_sub_array arr i k) (of_sub_array arr (k + 1) j)
+    concat (of_sub_array f arr i k) (of_sub_array f arr (k + 1) j)
 
-let of_array arr = of_sub_array arr 0 (Array.length arr - 1)
+let bind_array arr f = of_sub_array f arr 0 (Array.length arr - 1)
+
+let of_array arr = bind_array arr element
 
 let to_list x =
   let rec fold x acc = match x with
@@ -547,4 +551,8 @@ let filter_map f seq =
   fold_monoid select monoid seq
 
 let lift (seq : 'a Lwd.t seq Lwd.t) : 'a seq Lwd.t =
-  Lwd.join (fold_monoid (Lwd.map element) (Lwd_utils.lift_monoid monoid) seq)
+  Lwd.join (fold_monoid (Lwd.map element) lwd_monoid seq)
+
+let bind (seq : 'a seq Lwd.t) (f : 'a -> 'b seq)  : 'b seq Lwd.t =
+  fold_monoid f monoid seq
+

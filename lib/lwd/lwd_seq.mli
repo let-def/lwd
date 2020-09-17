@@ -39,6 +39,10 @@ val concat : 'a seq -> 'a seq -> 'a seq
 val monoid : 'a t Lwd_utils.monoid
 val lwd_monoid : 'a t Lwd.t Lwd_utils.monoid
 
+(*val bind : 'a seq -> ('a -> 'b seq) -> 'b seq*)
+val bind_list : 'a list -> ('a -> 'b seq) -> 'b seq
+val bind_array : 'a array -> ('a -> 'b seq) -> 'b seq
+
 val of_list : 'a list -> 'a seq
 val of_array : 'a array -> 'a seq
 val to_list : 'a seq -> 'a list
@@ -111,6 +115,8 @@ val filter_map :
   ('a -> 'b option) -> 'a seq Lwd.t -> 'b seq Lwd.t
 
 val lift : 'a Lwd.t seq Lwd.t -> 'a seq Lwd.t
+
+val bind : 'a seq Lwd.t -> ('a -> 'b seq) -> 'b seq Lwd.t
 
 (* Low-level interface *)
 
