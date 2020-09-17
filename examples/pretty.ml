@@ -11,8 +11,7 @@ let spring = P.ui (Ui.resize ~sw:1 Ui.empty)
 
 let selector text f choices =
   Nottui_widgets.main_menu_item text (fun () ->
-      Lwd.pure @@
-      Lwd_utils.pure_pack Ui.pack_y (
+      Lwd.pure @@ Ui.vcat (
         List.map
           (fun choice ->
              Nottui_widgets.sub_entry choice (fun () -> f choice))

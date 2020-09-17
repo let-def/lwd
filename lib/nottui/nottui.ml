@@ -217,7 +217,7 @@ struct
     | Resize of t * Gravity.t2 * A.t
     | Mouse_handler of t * mouse_handler
     | Focus_area of t * (key -> may_handle)
-    | Scroll_area of t * int * int
+    | Shift_area of t * int * int
     | Event_filter of t * ([`Key of key | `Mouse of mouse] -> may_handle)
     | X of t * t
     | Y of t * t
@@ -258,8 +258,8 @@ struct
     in
     { t with desc = Focus_area (t, f); focus }
 
-  let scroll_area x y t : t =
-    { t with desc = Scroll_area (t, x, y) }
+  let shift_area x y t : t =
+    { t with desc = Shift_area (t, x, y) }
 
   let size_sensor handler t : t =
     { t with desc = Size_sensor (t, handler) }
@@ -271,11 +271,11 @@ struct
   let permanent_sensor frame_sensor t =
     { t with desc = Permanent_sensor (t, frame_sensor);
              flags = t.flags lor flag_permanent_sensor }
-  let resize ?w ?h ?sw ?sh ?fill ?crop ?(bg=A.empty) t : t =
-    let g = match fill, crop with
+  let resize ?w ?h ?sw ?sh ?pad ?crop ?(bg=A.empty) t : t =
+    let g = match pad, crop with
       | None, None -> Gravity.(pair default default)
       | Some g, None | None, Some g -> Gravity.(pair g g)
-      | Some fill, Some crop -> Gravity.(pair fill crop)
+      | Some pad, Some crop -> Gravity.(pair pad crop)
     in
     match (w, t.w), (h, t.h), (sw, t.sw), (sh, t.sh) with
     | (Some w, _ | None, w), (Some h, _ | None, h),
@@ -344,8 +344,8 @@ struct
       Format.fprintf ppf "Mouse_handler (@[%a,@ _@])" pp n
     | Focus_area (n, _) ->
       Format.fprintf ppf "Focus_area (@[%a,@ _@])" pp n
-    | Scroll_area (n, _, _) ->
-      Format.fprintf ppf "Scroll_area (@[%a,@ _@])" pp n
+    | Shift_area (n, _, _) ->
+      Format.fprintf ppf "Shift_area (@[%a,@ _@])" pp n
     | Event_filter (n, _) ->
       Format.fprintf ppf "Event_filter (@[%a,@ _@])" pp n
     | X (a, b) -> Format.fprintf ppf "X (@[%a,@ %a@])" pp a pp b
@@ -356,7 +356,7 @@ struct
     | Atom _ -> ()
     | Size_sensor (u, _) | Transient_sensor (u, _) | Permanent_sensor (u, _)
     | Resize (u, _, _) | Mouse_handler (u, _)
-    | Focus_area (u, _) | Scroll_area (u, _, _) | Event_filter (u, _)
+    | Focus_area (u, _) | Shift_area (u, _, _) | Event_filter (u, _)
       -> f u
     | X (u1, u2) | Y (u1, u2) | Z (u1, u2) -> f u1; f u2
 end
@@ -452,7 +452,7 @@ struct
         let dx, rw = pack ~fixed:t.w ~stretch:t.sw sw (h (p1 g)) (h (p2 g)) in
         let dy, rh = pack ~fixed:t.h ~stretch:t.sh sh (v (p1 g)) (v (p2 g)) in
         update_sensors (ox + dx) (oy + dy) rw rh t
-      | Scroll_area (t, sx, sy) ->
+      | Shift_area (t, sx, sy) ->
         update_sensors (ox - sx) (oy - sy) sw sh t
       | X (a, b) ->
         let aw, bw = split ~a:a.w ~sa:a.sw ~b:b.w ~sb:b.sw sw in
@@ -511,7 +511,7 @@ struct
       | Transient_sensor (desc, _) | Permanent_sensor (desc, _)
       | Focus_area (desc, _) ->
         aux ox oy sw sh desc
-      | Scroll_area (desc, sx, sy) ->
+      | Shift_area (desc, sx, sy) ->
         aux (ox - sx) (oy - sy) sw sh desc
       | Resize (t, g, _bg) ->
         let open Gravity in
@@ -589,7 +589,7 @@ struct
           render_node vx1 vy1 vx2 vy2 sw sh desc
         | Focus_area (desc, _) | Mouse_handler (desc, _) ->
           render_node vx1 vy1 vx2 vy2 sw sh desc
-        | Scroll_area (t', sx, sy) ->
+        | Shift_area (t', sx, sy) ->
           let cache = render_node
               (vx1 + sx) (vy1 + sy) (vx2 + sx) (vy2 + sy) (sx + sw) (sy + sh) t'
           in
@@ -682,7 +682,7 @@ struct
             end
           | Mouse_handler (t, _) | Size_sensor (t, _)
           | Transient_sensor (t, _) | Permanent_sensor (t, _)
-          | Scroll_area (t, _, _) | Resize (t, _, _) ->
+          | Shift_area (t, _, _) | Resize (t, _, _) ->
             iter (t :: tl)
           | Event_filter (t, f) ->
             begin match f (`Key key) with
@@ -709,7 +709,7 @@ struct
     | Atom _ -> false
     | Mouse_handler (t, _) | Size_sensor (t, _)
     | Transient_sensor (t, _) | Permanent_sensor (t, _)
-    | Scroll_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
+    | Shift_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
       dispatch_focus t dir
     | Focus_area (t', _) ->
       if Focus.has_focus t'.focus then

@@ -7,8 +7,10 @@ val lift_monoid : 'a monoid -> 'a Lwd.t monoid
 (** {1 List reduction functions}
 
     All reductions are balanced, relying on operator associativity.
-    While [fold_{left,right}] would compute a chain like:
+
+    [fold_left] would compute a chain like:
       [fold f [a; b; c; d] = f a (f b (f c d)]
+
     [reduce] uses tree-shaped computations like:
       [reduce f [a; b; c; d] = f (f a b) (f c d)]
 
