@@ -25,7 +25,7 @@
  (name tyxml-lwd)
  (synopsis "Hello")
  (description "TODO")
- (depends dune lwd tyxml js_of_ocaml))
+ (depends dune lwd tyxml js_of_ocaml js_of_ocaml-ppx))
 
 (package
  (name nottui-pretty)

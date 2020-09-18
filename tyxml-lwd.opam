@@ -7,7 +7,7 @@ authors: ["Frédéric Bour"]
 license: "MIT"
 homepage: "https://github.com/let-def/lwd"
 bug-reports: "https://github.com/let-def/lwd/issues"
-depends: ["dune" "lwd" "tyxml" "js_of_ocaml"]
+depends: ["dune" "lwd" "tyxml" "js_of_ocaml" "js_of_ocaml-ppx"]
 build: [
   ["dune" "subst"] {pinned}
   [
