@@ -1,9 +1,5 @@
 open Js_of_ocaml
 
-let js_string_of_float f = (Js.number_of_float f)##toString
-
-let js_string_of_int i = (Js.number_of_float (float_of_int i))##toString
-
 module Elt = struct
   type 'a t = 'a Lwd_seq.t Lwd.t
   type 'a child = 'a t
@@ -14,8 +10,9 @@ module Child = struct
   type 'a t = 'a Elt.t
   let return x = Lwd.pure (Lwd_seq.element x)
 
+  let empty = Lwd.pure Lwd_seq.empty
   type 'a list = 'a t
-  let nil = let nil = Lwd.pure Lwd_seq.empty in fun () -> nil
+  let nil () = empty
   let singleton x = x
   let append l1 l2 = Lwd.map2 Lwd_seq.concat l1 l2
   let cons x xs = append (singleton x) xs
@@ -41,9 +38,10 @@ module Xml
 = struct
 
   module Elt = Elt
-  module Attr = Attr
-  type 'a attr = 'a Attr.t
   module Child = Child
+  module Attr = Attr
+
+  type 'a attr = 'a Attr.t
 
   type uri = string
   let uri_of_string s = s
@@ -261,4 +259,37 @@ module Xml
   let cdata_script s = cdata s
 
   let cdata_style s = cdata s
+end
+
+module Svg = Svg_f.Make(Xml)
+module Html = Html_f.Make(Xml)(Svg)
+
+type 'a elt = 'a Xml.Elt.t
+type 'a attr = 'a Xml.Attr.t
+
+module Lwdom = struct
+  let elt x = Lwd.pure (Lwd_seq.element x)
+  let attr x : _ attr = Lwd.pure (Some x)
+  let rattr x : _ attr = Lwd.map (fun x -> Some x) x
+
+  let dom_nodes x =
+    let rec fold x acc = match Lwd_seq.view x with
+      | Lwd_seq.Empty -> acc
+      | Lwd_seq.Element x -> x :: acc
+      | Lwd_seq.Concat (l, r) -> fold l (fold r acc)
+    in
+    fold x []
+
+  let children = function
+    | [] -> Xml.Child.nil ()
+    | [x] -> x
+    | [x; y] -> Lwd.map2 Lwd_seq.concat x y
+    | xs -> Lwd_utils.reduce Lwd_seq.lwd_monoid xs
+
+  let children_array = function
+    | [||] -> Xml.Child.nil ()
+    | [|x|] -> x
+    | [|x; y|] -> Lwd.map2 Lwd_seq.concat x y
+    | xs ->
+      Lwd_seq.bind (Lwd_seq.lift (Lwd.pure (Lwd_seq.of_array xs))) (fun x -> x)
 end
