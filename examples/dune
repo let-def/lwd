@@ -1,25 +1,25 @@
 (executable
  (name minimal)
  (modules minimal)
- (libraries notty notty.unix nottui nottui-widgets))
+ (libraries notty notty.unix nottui))
 
 (executable
  (name misc)
  (modules misc)
- (libraries notty notty.unix nottui nottui-widgets))
+ (libraries notty notty.unix nottui))
 
 (executable
  (name reranger)
  (modules reranger)
- (libraries notty notty.unix nottui nottui-widgets))
+ (libraries notty notty.unix nottui))
 
 (executable
  (name stress)
  (modules stress)
- (libraries notty notty.unix nottui nottui-widgets))
+ (libraries notty notty.unix nottui))
 
 (executable
  (name pretty)
  (modules pretty)
- (libraries nottui-pretty notty notty.unix nottui nottui-widgets))
+ (libraries nottui-pretty notty notty.unix nottui))
 

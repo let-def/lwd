@@ -31,16 +31,10 @@
  (name nottui-pretty)
  (synopsis "A pretty-printer based on PPrint rendering UIs")
  (description "TODO")
- (depends (dune (>= 1.11.0)) notty lwt nottui))
+ (depends (dune (>= 1.11.0)) notty nottui))
 
 (package
  (name nottui-lwt)
  (synopsis "Run Nottui UIs in Lwt")
  (description "TODO")
  (depends (dune (>= 1.11.0)) notty lwt nottui))
-
-(package
- (name nottui-widgets)
- (synopsis "A set of widget-like abstractions for Nottui")
- (description "TODO")
- (depends (dune (>= 1.11.0)) nottui))

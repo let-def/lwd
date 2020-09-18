@@ -1,4 +1,0 @@
-(library 
- (name nottui_widgets)
- (public_name nottui-widgets)
- (libraries nottui))

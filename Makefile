@@ -1,6 +1,9 @@
 all:
 	dune build
 
+clean:
+	dune clean
+
 TESTS=minimal misc reranger stress
 
 $(TESTS):
