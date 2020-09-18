@@ -4,33 +4,26 @@ all:
 clean:
 	dune clean
 
-TESTS=minimal misc reranger stress
+TESTS=minimal misc reranger stress pretty \
+			cbor/cbor_of_fs cbor/cbor_explorer
+RUN_TESTS_BC=$(patsubst %, run-%, $(TESTS))
+RUN_TESTS_EXE=$(patsubst %, run-%.exe, $(TESTS))
 
 $(TESTS):
 	dune build examples/$@.bc
 
-run-minimal:
-	dune exec examples/minimal.bc
+examples:
+	dune build $(patsubst	%, examples/%.bc, $(TESTS))
 
-run-misc:
-	dune exec examples/misc.bc
+$(RUN_TESTS_BC):
+	dune exec examples/$@.bc
 
-run-reranger:
-	dune exec examples/reranger.bc
-
-run-stress:
-	dune exec examples/stress.bc
-
-run-pretty:
-	dune exec examples/pretty.bc
-
-run-pretty-lambda:
-	dune exec examples/pretty_lambda.bc
-
-run-stress.exe:
-	dune exec examples/stress.exe
+$(RUN_TESTS_EXE):
+	dune exec examples/$@.exe
 
 run-cbor-explorer.exe:
 	rm curdir.cbor || true
 	dune exec examples/cbor/cbor_of_fs.exe -- -o curdir.cbor ./
 	dune exec examples/cbor/cbor_explorer.exe -- curdir.cbor
+
+.PHONY: all clean examples $(RUN_TESTS_BC) $(RUN_TESTS_EXE)
