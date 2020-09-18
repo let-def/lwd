@@ -1,6 +1,12 @@
 open Notty
 open Nottui
 
+(** Nottui_lwt exposes an Lwt-driven mainloop.
+
+    UI execution is done in an Lwt thread and UI events can spawn and
+    synchronize threads.
+*)
+
 type event = [
   | `Key of Unescape.key
   | `Mouse of Unescape.mouse
