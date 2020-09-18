@@ -73,21 +73,11 @@ let celsius_edit =
     ~on_submit:ignore
 
 let root =
-  let base =
     Lwd_utils.pack Ui.pack_y [
       Lwd.pure (Nottui_widgets.string "Celsius:");
       celsius_edit;
       Lwd.pure (Nottui_widgets.string "Farenheight:");
       farenheit_edit;
     ]
-  in
-  let base = Lwd.map2 Ui.join_y base base in
-  let base = Lwd.map2 Ui.join_y base base in
-  let base = Lwd.map2 Ui.join_y base base in
-  let base = Lwd.map2 Ui.join_y base base in
-  let base = Lwd.map2 Ui.join_y base base in
-  base
-
-(*let () = Statmemprof_emacs.start 1E-4 30 5*)
 
 let () = Ui_loop.run ~tick_period:0.2 root

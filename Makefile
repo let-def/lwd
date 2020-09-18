@@ -13,13 +13,13 @@ $(TESTS):
 	dune build examples/$@.bc
 
 examples:
-	dune build $(patsubst	%, examples/%.bc, $(TESTS))
+	dune build $(patsubst	%,examples/%.bc,$(TESTS))
 
 $(RUN_TESTS_BC):
-	dune exec examples/$@.bc
+	dune exec examples/$(patsubst run-%,%,$@.bc)
 
 $(RUN_TESTS_EXE):
-	dune exec examples/$@.exe
+	dune exec examples/$(patsubst run-%,%,$@.exe)
 
 run-cbor-explorer.exe:
 	rm curdir.cbor || true

@@ -2,6 +2,19 @@
 
 `Lwd` is a library that lets you build values that changes over time. It is a simple form of incremental computation, in the like of [Incremental](https://github.com/janestreet/incremental) and [React](https://github.com/dbuenzli/react).
 
+It is only about interactivity. A bunch of companion libraries make it usable in different settings:
+
+- [Nottui](lib/nottui) renders user interface in the terminal
+- [Nottui-lwt](libt/nottui-lwt) add support for concurrent/asynchronous UI to Nottui 
+- [Nottui-pretty](lib/nottui-pretty) is an interactive pretty-printer (based on [Pprint](https://github.com/fpottier/pprint))
+- [Tyxml-lwd](lib/tyxml-lwd) is a Js_of_ocaml library for making interactive applications, using Lwd for updating the DOM and [Tyxml](https://github.com/ocsigen/tyxml) for writing typesafe HTML Document.
+
+**Warning (18/09/2020)**: Tyxml-lwd relies on an experimental version of Tyxml, you need to pin the `wraps` branch:
+
+```shell
+$ opam pin add tyxml https://github.com/ocsigen/tyxml.git#wraps
+```
+
 [TOC]
 
 ## Documents?
@@ -195,4 +208,17 @@ The first question can be answered positively with a naive encoding: put `Lwd.va
 
 To answer the second question, it is interesting to observe that there is no concept of "diffing" here. _Lwd_ does not try to see if things have changed in order to update them. Rather, if an input change, the whole branch that depends on it is recomputed.
 
-While this might lead to inefficient recomputations. ...TODO...
+So it is not VDOM/Diffing that could make Lwd convenient. Instead, it is the fact that most of the time, dependencies are made explicit.
+Let's consider a component that changes its color when it is focused. With `Lwd` (and `Nottui`), this could be expressed as:
+
+```ocaml
+let focus = Focus.make () in
+let color status =
+  if Focus.has_focus status then blue else black
+in
+button ~focus ~color:(Lwd.map color (Focus.status focus)))
+```
+
+The color of the button is defined declaratively: it cannot be changed elsewhere, no other part of the code can mutate it. It is this explicit declaration of dependencies that make it possible to reason about the code, to enforce invariants and to encapsulate behaviors.
+
+`Lwd.var` is the escape hatch one can use to recover imperative code. But rather than being the default, it has to be opted in and can be exposed to a limited scope only.
