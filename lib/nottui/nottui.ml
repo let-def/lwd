@@ -842,8 +842,9 @@ struct
     in
     let t =
       t |> Lwd.map (Ui.event_filter (function
-            | `Key (`ASCII 'Q', [`Ctrl]) -> Lwd.set quit true; `Handled
-            | _ -> `Unhandled
+          | `Key (`ASCII 'Q', [`Ctrl]) | `Key (`Escape, []) ->
+            Lwd.set quit true; `Handled
+          | _ -> `Unhandled
         ))
     in
     match term with
