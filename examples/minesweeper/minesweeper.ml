@@ -7,6 +7,7 @@
  *
  *)
 open Js_of_ocaml
+open Tyxml_lwd
 open Lwdom
 
 let js = Js.string
@@ -153,27 +154,23 @@ type demin_cf =
   }
 
 let cell_image_src cell =
-  Some (
-    Html.uri_of_string @@
-    if cell.flag
-    then "sprites/flag.png"
-    else if cell.mined
-    then "sprites/bomb.png"
-    else if cell.seen
-    then
-      if cell.nbm = 0
-      then "sprites/empty.png"
-      else "sprites/" ^ string_of_int cell.nbm ^ ".png"
-    else "sprites/normal.png"
-  )
-
-let pure_attr x = Lwd.pure (Some x)
+  Html.uri_of_string @@
+  if cell.flag
+  then "sprites/flag.png"
+  else if cell.mined
+  then "sprites/bomb.png"
+  else if cell.seen
+  then
+    if cell.nbm = 0
+    then "sprites/empty.png"
+    else "sprites/" ^ string_of_int cell.nbm ^ ".png"
+  else "sprites/normal.png"
 
 let cell_image cell ~on_click =
   Html.img
     ~src:(Lwd.map cell_image_src cell)
-    ~alt:(pure_attr "Hello")
-    ~a:[Html.a_onclick (Lwd.pure (Some (fun _ -> on_click ())))]
+    ~alt:(Lwd.pure "Hello")
+    ~a:[Html.a_onclick (Lwdom.attr (fun _ -> on_click ()))]
     ()
 
 let mark_cell d cell =

@@ -7,6 +7,7 @@
  *
  *)
 open Js_of_ocaml
+open Tyxml_lwd
 open Lwdom
 
 let js = Js.string
@@ -22,10 +23,10 @@ let event_input event =
 let int_input name value ~set_value =
   let value = Lwd.map string_of_int value in
   children [
-    Html.txt (elt name);
+    Html.txt (Lwd.pure name);
     Html.input ~a:[
-        Html.a_input_type (attr `Text);
-        Html.a_value (lwd_attr value);
+        Html.a_input_type (Lwd.pure `Text);
+        Html.a_value value;
         Html.a_onchange (attr (fun event ->
             begin match Option.bind (event_input event) int_of_string_opt with
               | None -> ()
@@ -38,9 +39,9 @@ let int_input name value ~set_value =
 
 let button name callback =
   Html.input ~a:[
-    Html.a_input_type (attr `Submit);
-    Html.a_value (attr name);
-    Html.a_onclick (attr callback);
+    Html.a_input_type (Lwd.pure `Submit);
+    Html.a_value (Lwd.pure name);
+    Html.a_onclick (Lwd.pure (Some callback));
   ] ()
 
 let onload _ =
@@ -50,7 +51,7 @@ let onload _ =
   in
   let nbr, nbc, nbm = Lwd.var 10, Lwd.var 12, Lwd.var 15 in
   let boards = Lwd_table.make () in
-  let root = Html.span @@ children' [
+  let doc = Html.span [
       int_input "Number of columns"
         ~set_value:(fun v -> Lwd.set nbr v; prerr_endline @@ "columns = " ^ string_of_int v)
         (Lwd.get nbr);
@@ -61,8 +62,6 @@ let onload _ =
       children [
         Html.br ();
         button "nouvelle partie" (fun _ ->
-            (*let div = Html.createDiv document in
-                Dom.appendChild main div;*)
             Lwd_table.append' boards
               (Minesweeper.run (Lwd.peek nbc) (Lwd.peek nbr) (Lwd.peek nbm));
             false
@@ -71,12 +70,14 @@ let onload _ =
       Lwd.join (Lwd_table.reduce Lwd_seq.lwd_monoid boards);
     ]
   in
-  let root = Lwd.observe root in
+  (*let root = Lwd.observe (Lwdom.to_fragment doc) in*)
+  let root = Lwd.observe doc in
   Lwd.set_on_invalidate root (fun _ ->
       ignore (Dom_html.window##requestAnimationFrame
                 (Js.wrap_callback (fun _ -> ignore (Lwd.quick_sample root)))
              ));
-  List.iter (Dom.appendChild main) (dom_nodes (Lwd.quick_sample root));
+  List.iter (Dom.appendChild main)
+    (Lwd_seq.to_list (Lwd.quick_sample root) : _ node list :> raw_node list);
   Js._false
 
 let _ = Dom_html.window##.onload := Dom_html.handler onload

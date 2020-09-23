@@ -143,7 +143,10 @@ val filter_map :
 val lift : 'a Lwd.t seq Lwd.t -> 'a seq Lwd.t
 (** Remove a layer of [Lwd] inside a sequence. *)
 
-val bind : 'a seq Lwd.t -> ('a -> 'b seq) -> 'b seq Lwd.t
+val bind : 'a seq Lwd.t -> ('a -> 'b seq Lwd.t) -> 'b seq Lwd.t
+(** Sequence forms a monad too... *)
+
+val seq_bind : 'a seq Lwd.t -> ('a -> 'b seq) -> 'b seq Lwd.t
 (** Sequence forms a monad too... *)
 
 val monoid : 'a t Lwd_utils.monoid

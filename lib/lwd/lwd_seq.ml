@@ -550,9 +550,11 @@ let filter_map f seq =
   in
   fold_monoid select monoid seq
 
-let lift (seq : 'a Lwd.t seq Lwd.t) : 'a seq Lwd.t =
-  Lwd.join (fold_monoid (Lwd.map element) lwd_monoid seq)
+let bind (seq : 'a seq Lwd.t) (f : 'a -> 'b seq Lwd.t)  : 'b seq Lwd.t =
+  Lwd.join (fold_monoid f lwd_monoid seq)
 
-let bind (seq : 'a seq Lwd.t) (f : 'a -> 'b seq)  : 'b seq Lwd.t =
+let seq_bind (seq : 'a seq Lwd.t) (f : 'a -> 'b seq)  : 'b seq Lwd.t =
   fold_monoid f monoid seq
 
+let lift (seq : 'a Lwd.t seq Lwd.t) : 'a seq Lwd.t =
+  bind seq (Lwd.map element)
