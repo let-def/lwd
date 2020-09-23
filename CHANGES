@@ -1,0 +1,13 @@
+v0.1 - Alpha 0.1
+======
+Wed Sep 23 14:51:17 CEST 2020
+
+Preview release, the API is not yet stabilized.
+Most features are there, except support for overlays (menu, dialog windows,
+popup, ...) in Nottui.
+
+Libraries included in this release:
+- Lwd, the definition of reactive documents
+- Nottui, reactive terminal interfaces using Notty & Lwd
+- Nottui-lwt, an asynchronous mainloop for Nottui
+- Tyxml-lwd, strongly-typed reactive webpages in Jsoo using Tyxml & Lwd

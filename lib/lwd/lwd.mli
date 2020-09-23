@@ -105,7 +105,7 @@ val observe : ?on_invalidate:('a -> unit) -> 'a t -> 'a root
 
 val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 (** Change the callback for the root.
-    @see observe for more details. *)
+    See [observe] for more details. *)
 
 val sample : release_queue -> 'a root -> 'a
 (** Force the computation of the value for this root.

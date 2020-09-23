@@ -1,4 +1,4 @@
-(** {0 Table manipulation}
+(** {1 Table manipulation}
 
     [Lwd_table] is an ordered collection with an impure interface.
     It is designed to be efficient in an interactive setting.
@@ -18,7 +18,7 @@ type 'a row
 val make : unit -> 'a t
 (** Create a new table *)
 
-(** {1 Inserting rows} *)
+(** {2 Inserting rows} *)
 
 val prepend : ?set:'a -> 'a t -> 'a row
 (** Insert and return a new row at the start of a table.
@@ -50,7 +50,7 @@ val after : ?set:'a -> 'a row -> 'a row
     too.
 *)
 
-(** {1 Iterating over rows} *)
+(** {2 Iterating over rows} *)
 
 val first : 'a t -> 'a row option
 (** Returns the first row of a table, or [None] if the table is empty *)
@@ -66,7 +66,7 @@ val prev : 'a row -> 'a row option
 (** Returns the row just before another one, or [None] if the input row is
    unbound or is the first row *)
 
-(** {1 Accessing and changing row contents} *)
+(** {2 Accessing and changing row contents} *)
 
 val get : 'a row -> 'a option
 (** Get the value associated with a row, if any, or [None] if the row is
@@ -78,7 +78,7 @@ val set : 'a row -> 'a -> unit
 val unset : 'a row -> unit
 (** Unset the value associated with a row *)
 
-(** {1 Removing rows} *)
+(** {2 Removing rows} *)
 
 val is_bound : 'a row -> bool
 (** Returns [true] iff the row is bound in a table (it has not beem [remove]d
@@ -90,7 +90,7 @@ val remove : 'a row -> unit
 val clear : 'a t -> unit
 (** Remove all rows from a table *)
 
-(** {1 Observing table contents} *)
+(** {2 Observing table contents} *)
 
 val reduce : 'a Lwd_utils.monoid -> 'a t -> 'a Lwd.t
 (** Observe the content of a table by reducing it with a monoid *)

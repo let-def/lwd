@@ -1,4 +1,4 @@
-(** {0 Sequence manipulation}
+(** {1 Sequence manipulation}
 
     [Lwd_seq] is an ordered collection with a pure interface.
     Changes to collections are easy to track.
@@ -16,7 +16,7 @@ type +'a t
 type +'a seq = 'a t
 (** The type of sequences *)
 
-(** {1 Primitive constructors} *)
+(** {2 Primitive constructors} *)
 
 val empty : 'a seq
 (** A sequence with no element. *)
@@ -40,7 +40,7 @@ val concat : 'a seq -> 'a seq -> 'a seq
     reuse.
 *)
 
-(** {1 Looking at sequence contents} *)
+(** {2 Looking at sequence contents} *)
 
 type ('a, 'b) view =
   | Empty
@@ -50,7 +50,7 @@ type ('a, 'b) view =
 val view : 'a seq -> ('a, 'a seq) view
 (** View how a sequence is defined *)
 
-(** {1 Conversion between sequences, lists and arrays} *)
+(** {2 Conversion between sequences, lists and arrays} *)
 
 val transform_list : 'a list -> ('a -> 'b seq) -> 'b seq
 (** Produce a sequence by transforming each element of a list and concatenating
@@ -72,7 +72,7 @@ val to_list : 'a seq -> 'a list
 val to_array : 'a seq -> 'a array
 (** Produce an array from a sequence *)
 
-(** {1 Balanced variant of sequences *)
+(** {2 Balanced variant of sequences} *)
 
 module Balanced : sig
 
@@ -108,7 +108,7 @@ module Balanced : sig
   val view : 'a t -> ('a, 'a t) view
 end
 
-(** {1 Transforming sequences} *)
+(** {2 Transforming sequences} *)
 
 (**
    All sequences live in [Lwd] monad: if a sequence changes slightly, parts
@@ -155,7 +155,7 @@ val monoid : 'a t Lwd_utils.monoid
 val lwd_monoid : 'a t Lwd.t Lwd_utils.monoid
 (** Monoid instance for reactive sequences *)
 
-(** {1 Low-level interface for observing changes} *)
+(** {2 Low-level interface for observing changes} *)
 
 module Reducer : sig
   (* The interface allows to implement incremental sequence transformation
