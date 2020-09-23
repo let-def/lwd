@@ -21,7 +21,7 @@ val map : ('a -> 'b) -> 'a t -> 'b t
 (** [map f d] is the document that has value [f x] whenever [d] has value [x] *)
 
 val map2 : ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
-(** [map2 f d1 d2] is the document that has value [f x y] whenever
+(** [map2 f d1 d2] is the document that has value [f x1 x2] whenever
     [d1] has value [x1] and [d2] has value [x2] *)
 
 val map' : 'a t -> ('a -> 'b) -> 'b t
