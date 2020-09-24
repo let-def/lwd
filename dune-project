@@ -11,31 +11,49 @@
  (name lwd)
  (synopsis "Lightweight reactive documents")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (dune (>= 2.0)) seq (ocaml (>= "4.03"))
-          (qtest :with-test)
-          (qcheck :with-test)))
+ (depends
+  (dune (>= 2.0))
+  seq
+  (ocaml (>= "4.03"))
+  (qtest :with-test)
+  (qcheck :with-test)))
 
 (package
  (name nottui)
  (synopsis "UI toolkit for the terminal built on top of Notty and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (dune (>= 2.0)) lwd notty))
+ (depends
+  (dune (>= 2.0))
+  (lwd (= :version))
+  notty))
 
 (package
  (name tyxml-lwd)
- (synopsis "Hello")
+ (synopsis "<PLEASE EDIT: INSERT SOMETHING MORE DESCRIPTIVE>")
  (description "Make reactive webpages in Js_of_ocaml using Tyxml and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends dune lwd tyxml js_of_ocaml js_of_ocaml-ppx))
+ (depends
+  (dune (>= 2.0))
+  (lwd (= :version))
+  tyxml
+  js_of_ocaml
+  js_of_ocaml-ppx))
 
 (package
  (name nottui-pretty)
  (synopsis "A pretty-printer based on PPrint rendering UIs")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (dune (>= 2.0)) notty nottui))
+ (depends
+  (dune (>= 2.0))
+  notty
+  (nottui (= :version))))
 
 (package
  (name nottui-lwt)
  (synopsis "Run Nottui UIs in Lwt")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (dune (>= 2.0)) notty lwt nottui))
+ (depends
+  (dune (>= 2.0))
+  notty
+  lwt
+  (nottui (= :version))))
