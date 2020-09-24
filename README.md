@@ -9,8 +9,6 @@ It is only about interactivity. A bunch of companion libraries make it usable in
 - [Nottui-pretty](lib/nottui-pretty) is an interactive pretty-printer (based on [Pprint](https://github.com/fpottier/pprint))
 - [Tyxml-lwd](lib/tyxml-lwd) is a Js_of_ocaml library for making interactive applications, using Lwd for updating the DOM and [Tyxml](https://github.com/ocsigen/tyxml) for writing typesafe HTML Document.
 
-**Warning (18/09/2020)**: Tyxml-lwd relies on an experimental version of Tyxml, you need to pin the `wraps` branch:
-
 ```shell
 $ opam pin add tyxml https://github.com/ocsigen/tyxml.git#wraps
 ```
