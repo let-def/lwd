@@ -23,8 +23,7 @@
 
 (package
  (name tyxml-lwd)
- (synopsis "Hello")
- (description "Make reactive webpages in Js_of_ocaml using Tyxml and Lwd")
+ (synopsis "Make reactive webpages in Js_of_ocaml using Tyxml and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
  (depends dune lwd tyxml js_of_ocaml js_of_ocaml-ppx))
 
