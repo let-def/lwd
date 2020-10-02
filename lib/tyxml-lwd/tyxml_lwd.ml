@@ -42,6 +42,7 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
   Lwd.map' children @@ fun children ->
   let dropped, reducer' =
     Lwd_seq.Reducer.update_and_get_dropped !reducer children in
+  reducer := reducer';
   let remove_child child () = match child with
     | Leaf node -> ignore (self##removeChild node)
     | Inner _ -> ()
