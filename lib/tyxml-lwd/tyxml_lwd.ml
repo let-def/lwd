@@ -146,13 +146,15 @@ module Xml
       (type a) (node: #Dom.element Js.t) (k: a attrib_v) (v : a option) =
     let name_js = Js.string k.name in
     match v with
-    | None -> begin match k.kind with
-        | Event | Event_mouse | Event_keyboard | Event_touch ->
-          Js.Unsafe.set node name_js Js.null
-        | Attr_float | Attr_int | Attr_string | Attr_space_sep
-        | Attr_comma_sep | Attr_uri | Attr_uris ->
-          node##removeAttribute name_js
-      end
+    | None ->
+      if k.name = "style" then node##.style##.cssText := Js.string "" else
+        begin match k.kind with
+          | Event | Event_mouse | Event_keyboard | Event_touch ->
+            Js.Unsafe.set node name_js Js.null
+          | Attr_float | Attr_int | Attr_string | Attr_space_sep
+          | Attr_comma_sep | Attr_uri | Attr_uris ->
+            node##removeAttribute name_js
+        end
     | Some v ->
       begin match k.kind with
         | Event          -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
@@ -161,7 +163,10 @@ module Xml
         | Event_touch    -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
         | Attr_float     -> set_attr node name_js (js_string_of_float v)
         | Attr_int       -> set_attr node name_js (js_string_of_int v)
-        | Attr_string    -> set_attr node name_js (Js.string v)
+        | Attr_string    ->
+          if k.name = "style"
+          then node##.style##.cssText := (Js.string v)
+          else set_attr node name_js (Js.string v)
         | Attr_space_sep -> set_attr node name_js (Js.string (String.concat " " v))
         | Attr_comma_sep -> set_attr node name_js (Js.string (String.concat "," v))
         | Attr_uri       -> set_attr node name_js (Js.string v)
