@@ -135,6 +135,13 @@ module Xml
     | Element v -> Some v
     | Concat (l, _) -> first_element l*)
 
+
+  let js_string_of_float f = (Js.number_of_float f)##toString
+
+  let js_string_of_int i = (Js.number_of_float (float_of_int i))##toString
+
+  let set_attr (node: #Dom.element Js.t) k v = node##setAttribute k v
+
   let attach
       (type a) (node: #Dom.element Js.t) (k: a attrib_v) (v : a option) =
     let name_js = Js.string k.name in
@@ -144,20 +151,21 @@ module Xml
           Js.Unsafe.set node name_js Js.null
         | Attr_float | Attr_int | Attr_string | Attr_space_sep
         | Attr_comma_sep | Attr_uri | Attr_uris ->
-          Js.Unsafe.delete node name_js
+          node##removeAttribute name_js
       end
-    | Some v -> begin match k.kind with
+    | Some v ->
+      begin match k.kind with
         | Event          -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
         | Event_mouse    -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
         | Event_keyboard -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
         | Event_touch    -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
-        | Attr_float     -> Js.Unsafe.set node name_js (Js.float v)
-        | Attr_int       -> Js.Unsafe.set node name_js v
-        | Attr_string    -> Js.Unsafe.set node name_js (Js.string v)
-        | Attr_space_sep -> Js.Unsafe.set node name_js (Js.string (String.concat " " v))
-        | Attr_comma_sep -> Js.Unsafe.set node name_js (Js.string (String.concat "," v))
-        | Attr_uri       -> Js.Unsafe.set node name_js (Js.string v)
-        | Attr_uris      -> Js.Unsafe.set node name_js (Js.string (String.concat " " v))
+        | Attr_float     -> set_attr node name_js (js_string_of_float v)
+        | Attr_int       -> set_attr node name_js (js_string_of_int v)
+        | Attr_string    -> set_attr node name_js (Js.string v)
+        | Attr_space_sep -> set_attr node name_js (Js.string (String.concat " " v))
+        | Attr_comma_sep -> set_attr node name_js (Js.string (String.concat "," v))
+        | Attr_uri       -> set_attr node name_js (Js.string v)
+        | Attr_uris      -> set_attr node name_js (Js.string (String.concat " " v))
       end
 
   (** Element *)
