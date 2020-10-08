@@ -53,7 +53,8 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
     | Some tree ->
       let rec update acc = function
         | Leaf x ->
-          ignore (self##insertBefore x acc);
+          if x##.nextSibling != acc || x##.parentNode != Js.some self then
+            ignore (self##insertBefore x acc);
           Js.some x
         | Inner t ->
           if Js.Opt.test t.bound then t.bound else (
