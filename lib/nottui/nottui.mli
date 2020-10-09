@@ -256,6 +256,10 @@ sig
       [bg] is used to fill the padded background.
   *)
 
+  val resize_to :
+    layout_spec ->
+    ?pad:Gravity.t -> ?crop:Gravity.t -> ?bg:attr -> t -> t
+
   val shift_area : int -> int -> t -> t
   (** Shift the contents of a UI by a certain amount.
       Positive values crop the image while negative values pad.

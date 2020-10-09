@@ -17,10 +17,16 @@ val kprintf : (ui -> 'a) -> ?attr:attr -> ('b, unit, string, 'a) format4 -> 'b
 val fmt : ?attr:attr -> ('a, Format.formatter, unit, ui) format4 -> 'a
 val kfmt : (ui -> 'a) -> ?attr:attr -> ('b, Format.formatter, unit, 'a) format4 -> 'b
 
+(* window manager *)
+type window_manager
+val window_manager : ui Lwd.t -> window_manager
+val window_manager_view : window_manager -> ui Lwd.t
+val window_manager_overlays : window_manager -> ui Lwd.t Lwd_table.t
+
 (* FIXME Menu *)
-(*val menu_overlay : ?dx:'a -> ?dy:'b -> 'c -> 'd -> 'e*)
-val main_menu_item : string -> (unit -> 'a) -> ui Lwd.t
-val sub_menu_item : string -> (unit -> 'a) -> ui Lwd.t
+val menu_overlay : window_manager -> gravity -> ?dx:int -> ?dy:int -> ui Lwd.t -> ui -> ui
+val main_menu_item : window_manager -> string -> (unit -> ui Lwd.t) -> ui Lwd.t
+val sub_menu_item : window_manager -> string -> (unit -> ui Lwd.t) -> ui Lwd.t
 val sub_entry : string -> (unit -> unit) -> ui
 
 (* FIXME Explain how scrolling works *)

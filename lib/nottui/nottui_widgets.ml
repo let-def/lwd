@@ -48,16 +48,95 @@ let attr_menu_main = A.(bg green ++ fg black)
 let attr_menu_sub = A.(bg lightgreen ++ fg black)
 let attr_clickable = A.(bg lightblue)
 
-let menu_overlay ?dx ?dy handler t =
-  ignore (dx, dy, handler, t);
-  assert false
-  (*let placeholder = Lwd.return (Ui.space 1 0) in
-  let body = Lwd_utils.pack Ui.pack_x [placeholder; t; placeholder] in
-  let bg = Lwd.map' body @@ fun t ->
-    let {Ui. w; h; _} = Ui.layout_spec t in
-    Ui.atom (I.char A.(bg lightgreen) ' ' w h)
+type window_manager = {
+  overlays: ui Lwd.t Lwd_table.t;
+  view: ui Lwd.t;
+}
+
+let window_manager base =
+  let overlays =
+    Lwd_table.make ()
   in
-  Lwd.map (Ui.overlay ?dx ?dy ~handler) (Lwd_utils.pack Ui.pack_z [bg; body])*)
+  let composition =
+    Lwd.join (Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_z) overlays)
+  in
+  let view =
+    Lwd.map2' base composition @@ fun base composite ->
+    Ui.join_z base (Ui.resize_to (Ui.layout_spec base) composite)
+  in
+  { overlays; view }
+
+let window_manager_view wm = wm.view
+let window_manager_overlays wm = wm.overlays
+
+let menu_overlay wm g ?(dx=0) ?(dy=0) body around =
+  let sensor ~x ~y ~w ~h () =
+    let row = Lwd_table.append (window_manager_overlays wm) in
+    let h_pad = match Gravity.h g with
+      | `Negative -> Ui.space (x + dx) 0
+      | `Neutral  -> Ui.space (x + dx + w / 2) 0
+      | `Positive -> Ui.space (x + dx + w) 0
+    in
+    let v_pad = match Gravity.v g with
+      | `Negative -> Ui.space 0 (y + dy)
+      | `Neutral  -> Ui.space 0 (y + dy + h / 2)
+      | `Positive -> Ui.space 0 (y + dy + h)
+    in
+    let view = Lwd.map' body @@ fun body ->
+      let body =
+        let pad = Ui.space 1 0 in Ui.join_x pad (Ui.join_x body pad)
+      in
+      let bg =
+        Ui.resize_to (Ui.layout_spec body) ~bg:A.(bg lightgreen) Ui.empty
+      in
+      let catchall = Ui.mouse_area
+          (fun ~x:_ ~y:_ -> function
+             | `Left -> Lwd_table.remove row; `Handled
+             | _ -> `Handled)
+          (Ui.resize ~sw:1 ~sh:1 Ui.empty)
+      in
+      Ui.join_z catchall @@
+      Ui.join_y v_pad @@
+      Ui.join_x h_pad @@
+      Ui.join_z bg body
+    in
+    Lwd_table.set row view
+  in
+  Ui.transient_sensor sensor around
+
+(*let menu_overlay wm ?(dx=0) ?(dy=0) handler body =
+  let refresh = Lwd.var () in
+  let clicked = ref false in
+  Lwd.map' body @@ fun body ->
+  let body = let pad = Ui.space 1 0 in Ui.join_x pad (Ui.join_x body pad) in
+  let bg =
+    Ui.resize_to (Ui.layout_spec body) ~bg:A.(bg lightgreen) Ui.empty
+  in
+  let click_handler ~x:_ ~y:_ = function
+    | `Left -> clicked := true; Lwd.set refresh (); `Handled
+    | _ -> `Unhandled
+  in
+  let ui = Ui.mouse_area click_handler (Ui.join_z bg body) in
+  if !clicked then (
+    clicked := false;
+    let sensor ~x ~y ~w:_ ~h () =
+      let row = Lwd_table.append (window_manager_overlays wm) in
+      let h_pad = Ui.space (x + dx) 0 in
+      let v_pad = Ui.space 0 (y + h + dy) in
+      let view = Lwd.map' (handler ()) @@ fun view ->
+        let catchall =
+          Ui.mouse_area
+            (fun ~x:_ ~y:_ -> function
+               | `Left -> Lwd_table.remove row; `Handled
+               | _ -> `Handled)
+            (Ui.resize ~sw:1 ~sh:1 Ui.empty)
+        in
+        Ui.join_z catchall (Ui.join_y v_pad (Ui.join_x h_pad view))
+      in
+      Lwd_table.set row view
+    in
+    Ui.transient_sensor sensor ui
+  ) else ui*)
 
 let scroll_step = 1
 
@@ -145,55 +224,41 @@ let scroll_area ?(offset=0,0) t =
   |> Ui.mouse_area scroll_handler
   |> Ui.keyboard_area focus_handler
 
-let main_menu_item text f =
+let main_menu_item wm text f =
   let text = string ~attr:attr_menu_main (" " ^ text ^ " ") in
-  let v = Lwd.var empty_lwd in
-  let visible = ref false in
+  let refresh = Lwd.var () in
+  let overlay = ref false in
   let on_click ~x:_ ~y:_ = function
     | `Left ->
-      visible := not !visible;
-      if not !visible then (
-        v $= Lwd.return Ui.empty
-      ) else (
-        let h ~x:_ ~y:_ = function
-          | `Left ->
-            visible := false; v $= Lwd.return Ui.empty; `Unhandled
-          | _ -> `Unhandled
-        in
-        v $= menu_overlay h (f ())
-      );
+      overlay := true;
+      Lwd.set refresh ();
       `Handled
     | _ -> `Unhandled
   in
-  Lwd_utils.pack Ui.pack_y [
-    Lwd.return (Ui.mouse_area on_click text);
-    Lwd.join (Lwd.get v)
-  ]
+  Lwd.map' (Lwd.get refresh) @@ fun () ->
+  let ui = Ui.mouse_area on_click text in
+  if !overlay then (
+    overlay := false;
+    menu_overlay wm (Gravity.make ~h:`Negative ~v:`Positive) (f ()) ui
+  ) else ui
 
-let sub_menu_item text f =
+let sub_menu_item wm text f =
   let text = string ~attr:attr_menu_sub text in
-  let v = Lwd.var empty_lwd in
-  let visible = ref false in
+  let refresh = Lwd.var () in
+  let overlay = ref false in
   let on_click ~x:_ ~y:_ = function
     | `Left ->
-      visible := not !visible;
-      if not !visible then (
-        v $= Lwd.return Ui.empty
-      ) else (
-        let h ~x:_ ~y:_ = function
-          | `Left ->
-            visible := false; v $= Lwd.return Ui.empty; `Unhandled
-          | _ -> `Unhandled
-        in
-        v $= menu_overlay h (f ())
-      );
+      overlay := true;
+      Lwd.set refresh ();
       `Handled
     | _ -> `Unhandled
   in
-  Lwd_utils.pack Ui.pack_x [
-    Lwd.return (Ui.mouse_area on_click text);
-    Lwd.join (Lwd.get v)
-  ]
+  Lwd.map' (Lwd.get refresh) @@ fun () ->
+  let ui = Ui.mouse_area on_click text in
+  if !overlay then (
+    overlay := false;
+    menu_overlay wm (Gravity.make ~h:`Positive ~v:`Negative) (f ()) ui
+  ) else ui
 
 let sub_entry text f =
   let text = string ~attr:attr_menu_sub text in
@@ -284,70 +349,6 @@ let h_pane l r =
     ui
   in
   Lwd.map2 render (Lwd.get state_var) (Lwd.pair l r)
-
-(*type pane_state =
-  | Static of { w : int; h : int; split : float }
-  | Resizing of { w : int; h : int; split : float; x : int; y : int; }
-
-let pane_h (Static {h; _} | Resizing {h; _}) = h
-let pane_w (Static {w; _} | Resizing {w; _}) = w
-let pane_split (Static {split; _} | Resizing {split; _}) = split
-
-let h_pane l r =
-  let state_var = Lwd.var (Static {w = 0; h = 0 ; split = 0.5}) in
-  let render state (l, r) =
-    let h = pane_h state in
-    let split = int_of_float (pane_split state *. float (pane_w state))  in
-    let l = Ui.resize ~w:split ~h l in
-    let r = Ui.resize ~w:(pane_w state - split - 1) ~h r in
-    let splitter = Ui.atom (Notty.I.char Notty.A.(bg lightyellow) ' ' 1 h) in
-    let splitter =
-      Ui.mouse_area (fun ~x:_ ~y:_ -> function
-          | `Left ->
-            `Grab (
-              (fun ~x ~y:_ ->
-                 match Lwd.peek state_var with
-                 | Static {w; h; split} ->
-                   Lwd.set state_var (Resizing {x = min_int; y = min_int; w; h; split})
-                 | Resizing r ->
-                   if r.x > min_int then
-                     let split = float (x - r.x) /. float r.w in
-                     Lwd.set state_var (Resizing {r with split})
-              ),
-              (fun ~x:_ ~y:_ ->
-                 match Lwd.peek state_var with
-                 | Static _ -> ()
-                 | Resizing {w; h; split; _} ->
-                   Lwd.set state_var (Static {w; h; split})
-              )
-            )
-          | _ -> `Unhandled
-        ) splitter
-    in
-    let ui = Ui.join_x l (Ui.join_x splitter r) in
-    let ui = Ui.resize ~w:10 ~h:10 ~sw:1 ~sh:1 ui in
-    let ui = match state with
-      | Static _ ->
-        Ui.size_sensor (fun ~w ~h ->
-            match Lwd.peek state_var with
-            | Static r ->
-              if r.w <> w || r.h <> h then
-                Lwd.set state_var (Static {r with w; h})
-            | Resizing _ -> ()
-          ) ui
-      | Resizing _ ->
-        Ui.permanent_sensor (fun ~x ~y ~w ~h ->
-            match Lwd.peek state_var with
-            | Static _ -> ignore
-            | Resizing r ->
-              if r.x <> x || r.y <> y || r.w <> w || r.h <> h then
-                Lwd.set state_var (Resizing {x; y; w; h; split = r.split});
-              ignore
-          ) ui
-    in
-    ui
-  in
-  Lwd.map2 render (Lwd.get state_var) (Lwd.pair l r)*)
 
 let sub' str p l =
   if p = 0 && l = String.length str

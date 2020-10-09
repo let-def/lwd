@@ -246,7 +246,17 @@ struct
       desc = Atom img;
       sensor_cache = None; cache; }
 
-  let space x y = atom (I.void x y)
+  let space_1_0 = atom (I.void 1 0)
+  let space_0_1 = atom (I.void 0 1)
+  let space_1_1 = atom (I.void 1 1)
+
+  let space x y =
+    match x, y with
+    | 0, 0 -> empty
+    | 1, 0 -> space_1_0
+    | 0, 1 -> space_0_1
+    | 1, 1 -> space_1_1
+    | _ -> atom (I.void x y)
 
   let mouse_area f t : t =
     { t with desc = Mouse_handler (t, f) }
@@ -271,16 +281,22 @@ struct
   let permanent_sensor frame_sensor t =
     { t with desc = Permanent_sensor (t, frame_sensor);
              flags = t.flags lor flag_permanent_sensor }
+
+  let prepare_gravity = function
+    | None, None -> Gravity.(pair default default)
+    | Some g, None | None, Some g -> Gravity.(pair g g)
+    | Some pad, Some crop -> Gravity.(pair pad crop)
+
   let resize ?w ?h ?sw ?sh ?pad ?crop ?(bg=A.empty) t : t =
-    let g = match pad, crop with
-      | None, None -> Gravity.(pair default default)
-      | Some g, None | None, Some g -> Gravity.(pair g g)
-      | Some pad, Some crop -> Gravity.(pair pad crop)
-    in
+    let g = prepare_gravity (pad, crop) in
     match (w, t.w), (h, t.h), (sw, t.sw), (sh, t.sh) with
     | (Some w, _ | None, w), (Some h, _ | None, h),
       (Some sw, _ | None, sw), (Some sh, _ | None, sh) ->
       {t with w; h; sw; sh; desc = Resize (t, g, bg)}
+
+  let resize_to ({w; h; sw; sh} : layout_spec) ?pad ?crop ?(bg=A.empty) t : t =
+    let g = prepare_gravity (pad, crop) in
+    {t with w; h; sw; sh; desc = Resize (t, g, bg)}
 
   let event_filter ?focus f t : t =
     let focus = match focus with

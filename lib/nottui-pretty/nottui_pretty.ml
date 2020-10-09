@@ -193,12 +193,7 @@ open Nottui
 
 (* Some intermediate UI *)
 
-let blank_ui =
-  let space = Ui.space 1 0 in
-  function
-  | 0 -> Ui.empty
-  | 1 -> space
-  | n -> Ui.space n 0
+let blank_ui n = Ui.space n 0
 
 let flat_hardline =
   Flat_span { prefix = Ui.empty; body = Ui.empty; suffix = Ui.empty; }

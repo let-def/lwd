@@ -90,7 +90,8 @@ let top = Lwd.var (Lwd.return Ui.empty)
 
 let bot = Lwd.var (Lwd.return Ui.empty)
 
-let root =
+let wm =
+  Nottui_widgets.window_manager @@
   Lwd_utils.pack Ui.pack_y [ Lwd.join (Lwd.get top); Lwd.join (Lwd.get bot) ]
 
 (*let () = Statmemprof_emacs.start 1E-4 30 5*)
@@ -99,12 +100,12 @@ let () =
   top
   $= Lwd_utils.pack Ui.pack_x
        [
-         main_menu_item "File" (fun () ->
+         main_menu_item wm "File" (fun () ->
              Lwd_utils.pack Ui.pack_y
                [
                  Lwd.return @@ sub_entry "New" ignore;
                  Lwd.return @@ sub_entry "Open" ignore;
-                 sub_menu_item "Recent" (fun () ->
+                 sub_menu_item wm "Recent" (fun () ->
                      Lwd_utils.pack Ui.pack_y
                        [
                          Lwd.return @@ sub_entry "A" ignore;
@@ -113,10 +114,10 @@ let () =
                        ]);
                  Lwd.return @@ sub_entry "Quit" (fun () -> raise Exit);
                ]);
-         main_menu_item "View" (fun _ ->
+         main_menu_item wm "View" (fun _ ->
              bot $= Lwd.return (string "<View>");
              Lwd.return Ui.empty);
-         main_menu_item "Edit" (fun _ ->
+         main_menu_item wm "Edit" (fun _ ->
              bot $= Lwd.return (string "<Edit>");
              Lwd.return Ui.empty);
        ];
@@ -127,5 +128,5 @@ let () =
          v_pane (strict_table ()) (Lwd.return @@ string "B");
          h_pane (Lwd.return (string "A")) (Lwd.return (string "B"));
        ];
-  try Ui_loop.run ~tick_period:0.2 root
+  try Ui_loop.run ~tick_period:0.2 (window_manager_view wm)
   with Exit -> ()
