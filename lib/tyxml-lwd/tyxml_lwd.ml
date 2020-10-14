@@ -167,6 +167,8 @@ module Xml
         | Attr_string    ->
           if k.name = "style"
           then node##.style##.cssText := (Js.string v)
+          else if k.name = "value"
+          then Js.Unsafe.set node name_js (Js.string v)
           else set_attr node name_js (Js.string v)
         | Attr_space_sep -> set_attr node name_js (Js.string (String.concat " " v))
         | Attr_comma_sep -> set_attr node name_js (Js.string (String.concat "," v))
