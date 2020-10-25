@@ -27,8 +27,8 @@ type 'a eval =
     The graph is made of two parts:
     - a "forward" one, described by types [t_] and [desc], that describes a
       computation
-    - a "backward" one, implemented by [trace] and [trace_children], that keep
-      track of nodes invalidated by changes to the current node.
+    - a "backward" one, implemented by [trace], that keep track of nodes
+      invalidated by changes to the current node.
 *)
 type 'a t_ =
   | Pure of 'a
@@ -37,8 +37,7 @@ type 'a t_ =
   | Operator : {
       mutable value : 'a eval;
       (* A cache for result of evaluation *)
-      mutable trace_children : trace_children;
-      mutable trace_parent : trace;
+      mutable trace : trace;
       (* List of parents this to invalidate if this node changes. *)
       desc: 'a desc;
       (* The actual operation, described by [desc] type. *)
@@ -46,7 +45,8 @@ type 'a t_ =
   | Root : {
       mutable value : 'a eval;
       (* A cache for result of evaluation *)
-      mutable trace_children : trace_children; (* list of direct children that can invalidate this *)
+      mutable trace : trace;
+      (* List of parents this to invalidate if this node changes. *)
       mutable on_invalidate : 'a -> unit;
       mutable acquired : bool;
       child : 'a t_;
@@ -65,20 +65,16 @@ and _ desc =
 
 (* a set of (active) parents for a ['a t], used during invalidation *)
 and trace =
-  | TP0
+  | T0
   | TP1 : _ t_ -> trace
   | TP2 : _ t_ * _ t_ -> trace
   | TP3 : _ t_ * _ t_ * _ t_ -> trace
   | TP4 : _ t_ * _ t_ * _ t_ * _ t_ -> trace
   | TPn : { mutable active : int; mutable count : int;
             mutable entries : any t_ array } -> trace
-
-(* a set of direct children for a composite document *)
-and trace_children =
-  | TC0
   | TC1 : { mutable idx : int ;
-           obj : 'a t_;
-           mutable next : trace_children } -> trace_children
+            obj : 'a t_;
+            mutable next : trace } -> trace
 
 (** {1 Traces}
 
@@ -95,7 +91,12 @@ module Trace : sig
   val invalidate : trace -> unit
 end = struct
 
-  let is_empty = function TP0 -> true | _ -> false
+  let rec is_empty = function
+    | T0 -> true
+    | TC1 t -> is_empty t.next
+    (* TODO: maybe [is_empty] is always [false] when there is a TC1 node:
+       a node without active parent should not have active children.  *)
+    | _ -> false
 
   (* Management of trace indices *)
 
@@ -104,13 +105,10 @@ end = struct
 
   let add_idx obj idx = function
     | Pure _ -> assert false
-    | Root t' ->
-      t'.trace_children <- TC1 { idx; obj; next = t'.trace_children }
-    | Operator t' ->
-      t'.trace_children <- TC1 { idx; obj; next = t'.trace_children }
+    | Root t'     -> t'.trace <- TC1 { idx; obj; next = t'.trace }
+    | Operator t' -> t'.trace <- TC1 { idx; obj; next = t'.trace }
 
   let rec rem_idx_rec obj = function
-    | TC0 -> assert false
     | TC1 t as self ->
       if t_equal t.obj obj
       then (t.idx, t.next)
@@ -119,42 +117,43 @@ end = struct
         t.next <- result;
         (idx, self)
       )
+    | _ -> assert false
 
   (* remove [obj] from the lwd's trace. *)
   let rem_idx obj = function
     | Pure _ -> assert false
     | Root t' ->
-      let idx, trace_children = rem_idx_rec obj t'.trace_children in
-      t'.trace_children <- trace_children; idx
+      let idx, trace = rem_idx_rec obj t'.trace in
+      t'.trace <- trace; idx
     | Operator t' ->
-      let idx, trace_children = rem_idx_rec obj t'.trace_children in
-      t'.trace_children <- trace_children; idx
+      let idx, trace = rem_idx_rec obj t'.trace in
+      t'.trace <- trace; idx
 
   (* move [obj] from old index to new index. *)
   let rec mov_idx_rec obj oldidx newidx = function
-    | TC0 -> assert false
     | TC1 t ->
       if t.idx = oldidx && t_equal t.obj obj
       then t.idx <- newidx
       else mov_idx_rec obj oldidx newidx t.next
+    | _ -> assert false
 
   let mov_idx obj oldidx newidx = function
     | Pure _ -> assert false
-    | Root t' -> mov_idx_rec obj oldidx newidx t'.trace_children
-    | Operator t' -> mov_idx_rec obj oldidx newidx t'.trace_children
+    | Root t' -> mov_idx_rec obj oldidx newidx t'.trace
+    | Operator t' -> mov_idx_rec obj oldidx newidx t'.trace
 
   let rec get_idx_rec obj = function
-    | TC0 -> assert false
     | TC1 t ->
       if t_equal t.obj obj
       then t.idx
       else get_idx_rec obj t.next
+    | _ -> assert false
 
   (* find index of [obj] in the given lwd *)
   let get_idx obj = function
     | Pure _ -> assert false
-    | Root t' -> get_idx_rec obj t'.trace_children
-    | Operator t' -> get_idx_rec obj t'.trace_children
+    | Root t' -> get_idx_rec obj t'.trace
+    | Operator t' -> get_idx_rec obj t'.trace
 
   (* Propagating invalidation recursively.
      Each document is invalidated at most once,
@@ -171,11 +170,11 @@ end = struct
     | Operator { value = Eval_none; _ } -> ()
     | Operator t ->
       t.value <- Eval_none;
-      invalidate t.trace_parent; (* invalidate parents recursively *)
+      invalidate t.trace; (* invalidate parents recursively *)
 
       (* invalidate recursively documents in the given trace *)
   and invalidate = function
-    | TP0 -> ()
+    | T0 -> ()
     | TP1 x -> invalidate_node x
     | TP2 (x, y) ->
       invalidate_node x;
@@ -195,12 +194,13 @@ end = struct
       for i = 0 to active - 1 do
         invalidate_node t.entries.(i)
       done
+    | TC1 t -> invalidate t.next
 
   let dummy = any_t (Pure ())
 
-  let remove_parent ~self ~parent = function
-    | TP0 -> assert false
-    | TP1 x -> assert (t_equal x parent); TP0
+  let rec remove_parent ~self ~parent = function
+    | T0 -> assert false
+    | TP1 x -> assert (t_equal x parent); T0
     | TP2 (x, y) ->
       if t_equal x parent then TP1 y
       else if t_equal y parent then TP1 x
@@ -246,9 +246,12 @@ end = struct
         else
           trace
       )
+    | TC1 t as t' ->
+      t.next <- remove_parent ~self ~parent t.next;
+      t'
 
-  let add_parent ~self ~parent = function
-    | TP0 -> TP1 parent
+  let rec add_parent ~self ~parent = function
+    | T0 -> TP1 parent
     | TP1 x -> TP2 (parent, x)
     | TP2 (x, y) -> TP3 (parent, x, y)
     | TP3 (x, y, z) -> TP4 (parent, x, y, z)
@@ -276,9 +279,12 @@ end = struct
       entries.(index) <- parent';
       add_idx self index parent';
       trace
+    | TC1 t as t' ->
+      t.next <- add_parent ~self ~parent t.next;
+      t'
 
   (* make sure that [parent] is in [self.trace_parent], passed as last arg. *)
-  let activate ~self ~parent = function
+  let rec activate ~self ~parent = function
     | TPn tn ->
       let idx = get_idx self parent in
       (* index of [self] in [parent.trace_children] *)
@@ -296,6 +302,7 @@ end = struct
         mov_idx self active idx old;
         mov_idx self idx active parent
       )
+    | TC1 t -> activate ~self ~parent t.next
     | _ -> ()
 end
 
@@ -327,10 +334,10 @@ end = struct
       | Pure _ -> failures
       | Operator t as self ->
         (* compute [t.trace_parent \ {origin}] *)
-        let trace = Trace.remove_parent ~self ~parent t.trace_parent in
-        t.trace_parent <- trace;
-        match trace with
-        | TP0 ->
+        let trace = Trace.remove_parent ~self ~parent t.trace in
+        t.trace <- trace;
+        let need_release = Trace.is_empty trace in
+        if need_release then begin
           (* [self] is not active anymore, since it's not reachable
              from any root. We can release its cached value and
              recursively release its subtree. *)
@@ -365,7 +372,9 @@ end = struct
                   end
               end
           end
-        | _ -> failures
+        end
+        else
+          failures
 
   (* [acquire] cannot raise *)
   let rec acquire : type a b . parent:a t_ -> b t_ -> unit = fun ~parent ->
@@ -375,9 +384,9 @@ end = struct
     | Operator t as self ->
       (* [acquire] is true if this is the first time this operator
          is used, in which case we need to acquire its children *)
-      let need_acquire = Trace.is_empty t.trace_parent in
-      let trace = Trace.add_parent ~self ~parent t.trace_parent in
-      t.trace_parent <- trace;
+      let need_acquire = Trace.is_empty t.trace in
+      let trace = Trace.add_parent ~self ~parent t.trace in
+      t.trace <- trace;
       if need_acquire then (
         (* acquire immediate children, and so on recursively *)
         match t.desc with
@@ -416,7 +425,7 @@ end = struct
         (* try to use cached value, if present *)
         match t.value with
         | Eval_some value ->
-          Trace.activate ~self ~parent t.trace_parent;
+          Trace.activate ~self ~parent t.trace;
           value
         | _ ->
           t.value <- Eval_progress;
@@ -458,7 +467,7 @@ end = struct
              mutated, or if it's a primitive that gets invalidated.
              We need to put [origin] into [self.trace_parent] in case it isn't
              there yet. *)
-          Trace.activate ~self ~parent t.trace_parent;
+          Trace.activate ~self ~parent t.trace;
           result
     in
     aux parent
@@ -484,7 +493,7 @@ let observe ?(on_invalidate=ignore) child : _ root =
       child = prj child;
       value = Eval_none;
       on_invalidate;
-      trace_children = TC0;
+      trace = T0;
       acquired = false;
     } in
   inj root
@@ -565,8 +574,7 @@ let is_pure x = match prj x with
   | Pure x -> Some x
   | _ -> None
 
-let operator desc =
-  Operator { value = Eval_none; trace_parent = TP0; desc; trace_children = TC0 }
+let operator desc = Operator { value = Eval_none; trace = T0; desc }
 
 let map x ~f = inj (
     match prj x with
@@ -630,7 +638,7 @@ let invalidate x = match prj x with
     let value = t.value in
     t.value <- Eval_none;
     (* the value is invalidated, be sure to invalidate all parents as well *)
-    Trace.invalidate t.trace_parent;
+    Trace.invalidate t.trace;
     begin match value with
       | Eval_none | Eval_progress -> ()
       | Eval_some v -> p.release (prj x) v
@@ -646,18 +654,19 @@ let dump_trace x =
       | Pure _ -> Printf.eprintf "%a: Pure _\n%!" addr obj
       | Operator t ->
         Printf.eprintf "%a: Operator _ -> %a\n%!"
-          addr obj dump_trace_aux t.trace_parent;
-        begin match t.trace_parent with
-          | TP0 -> ()
+          addr obj dump_trace_aux t.trace;
+        let rec aux = function
+          | T0 -> ()
           | TP1 a -> dump_trace a
           | TP2 (a,b) -> dump_trace a; dump_trace b
           | TP3 (a,b,c) -> dump_trace a; dump_trace b; dump_trace c
           | TP4 (a,b,c,d) -> dump_trace a; dump_trace b; dump_trace c; dump_trace d
           | TPn t -> Array.iter dump_trace t.entries
-        end
+          | TC1 t -> aux t.next
+        in aux t.trace
       | Root _ -> Printf.eprintf "%a: Root _\n%!" addr obj
   and dump_trace_aux oc = function
-    | TP0 -> Printf.fprintf oc "TP0"
+    | T0 -> Printf.fprintf oc "T0"
     | TP1 a -> Printf.fprintf oc "TP1 %a" addr a
     | TP2 (a,b) ->
       Printf.fprintf oc "TP2 (%a, %a)" addr a addr b
@@ -670,6 +679,11 @@ let dump_trace x =
         t.active t.count;
       Array.iter (Printf.fprintf oc "(%a)" addr) t.entries;
       Printf.fprintf oc "}"
+    | TC1 t ->
+      Printf.fprintf oc "TC1 { idx = %d; obj = %a; next = %a }"
+        t.idx
+        addr t.obj
+        dump_trace_aux t.next;
   in
   dump_trace (prj x)
 
