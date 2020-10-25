@@ -17,25 +17,19 @@ val return : 'a -> 'a t
 val pure : 'a -> 'a t
 (** Alias to {!return} *)
 
-val map : ('a -> 'b) -> 'a t -> 'b t
-(** [map f d] is the document that has value [f x] whenever [d] has value [x] *)
+val map : 'a t -> f:('a -> 'b) -> 'b t
+(** [map d ~f] is the document that has value [f x] whenever [d] has value [x] *)
 
-val map2 : ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
-(** [map2 f d1 d2] is the document that has value [f x1 x2] whenever
+val map2 : 'a t -> 'b t -> f:('a -> 'b -> 'c) -> 'c t
+(** [map2 d1 d2 ~f] is the document that has value [f x1 x2] whenever
     [d1] has value [x1] and [d2] has value [x2] *)
-
-val map' : 'a t -> ('a -> 'b) -> 'b t
-(** Alias to {!map} with arguments flipped *)
-
-val map2' : 'a t -> 'b t -> ('a -> 'b -> 'c) -> 'c t
-(** Alias to {!map2} with arguments flipped *)
 
 val join : 'a t t -> 'a t
 (** Monadic operator [join d] is the document pointed to by document [d].
     This is powerful but potentially costly in case of recomputation.
 *)
 
-val bind : 'a t -> ('a -> 'b t) -> 'b t
+val bind : 'a t -> f:('a -> 'b t) -> 'b t
 (** Monadic bind, a mix of {!join} and {!map} *)
 
 val app : ('a -> 'b) t -> 'a t -> 'b t

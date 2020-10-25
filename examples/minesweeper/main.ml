@@ -21,7 +21,7 @@ let event_input event =
   | Some target -> Some (Js.to_string target##.value)
 
 let int_input name value ~set_value =
-  let value = Lwd.map string_of_int value in
+  let value = Lwd.map ~f:string_of_int value in
   children [
     Html.txt (Lwd.pure name);
     Html.input ~a:[

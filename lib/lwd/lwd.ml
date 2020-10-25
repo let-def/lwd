@@ -82,20 +82,17 @@ let dummy = Pure (Any.any ())
 let operator desc =
   Operator { value = Eval_none; trace = T0; desc; trace_idx = I0 }
 
-let map f x = inj (
+let map x ~f = inj (
     match prj x with
     | Pure vx -> Pure (f vx)
     | x -> operator (Map (x, f))
   )
 
-let map2 f x y = inj (
+let map2 x y ~f = inj (
     match prj x, prj y with
     | Pure vx, Pure vy -> Pure (f vx vy)
     | x, y -> operator (Map2 (x, y, f))
   )
-
-let map' x f = map f x
-let map2' x y f = map2 f x y
 
 let pair x y = inj (
     match prj x, prj y with
@@ -115,7 +112,7 @@ let join child = inj (
     | child -> operator (Join { child; intermediate = None })
   )
 
-let bind x f = join (map f x)
+let bind x ~f = join (map ~f x)
 
 (* Management of trace indices *)
 
@@ -624,8 +621,8 @@ let quick_release root =
   flush_or_fail None queue
 
 module Infix = struct
-  let (>>=) = bind
-  let (>|=) = map'
+  let (>>=) x f = bind x ~f
+  let (>|=) x f = map x ~f
   let (<*>) = app
 end
 

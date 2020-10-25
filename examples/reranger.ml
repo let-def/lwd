@@ -47,8 +47,8 @@ let rec dir ?(initial_path = []) ?after_width:(wref = ref 0) path =
     in
     let t = Lwd_utils.pack Ui.pack_y [ Lwd.return header; body ] in
     let t =
-      if constrain then Lwd.map (Ui.resize ~w:12) t
-      else Lwd.map (remember_width ~wref) t
+      if constrain then Lwd.map ~f:(Ui.resize ~w:12) t
+      else Lwd.map ~f:(remember_width ~wref) t
     in
     column $= Lwd_utils.pack Ui.pack_x [ t; Lwd.join (Lwd.get after) ]
   in
@@ -61,7 +61,7 @@ let rec dir ?(initial_path = []) ?after_width:(wref = ref 0) path =
       with exn ->
         Lwd.return (string ~attr:Notty.(A.bg A.red) (Printexc.to_string exn))
     in
-    after $= Lwd.map (Ui.join_x (string " ")) t
+    after $= Lwd.map ~f:(Ui.join_x (string " ")) t
   in
   let highlighted_cell = ref None in
   let rec render_directory ?(highlight = false) cell name =
@@ -137,6 +137,6 @@ let () =
       dir ~initial_path "/"
     ]
   in
-  Lwd.set body (Lwd.map (Ui.resize ~pad:gravity_pad ~crop:gravity_crop) ui);
+  Lwd.set body (Lwd.map ~f:(Ui.resize ~pad:gravity_pad ~crop:gravity_crop) ui);
   Ui_loop.run (Nottui_widgets.window_manager_view wm)
 

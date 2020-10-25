@@ -168,7 +168,7 @@ let cell_image_src cell =
 
 let cell_image cell ~on_click =
   Html.img
-    ~src:(Lwd.map cell_image_src cell)
+    ~src:(Lwd.map ~f:cell_image_src cell)
     ~alt:(Lwd.pure "Hello")
     ~a:[Html.a_onclick (Lwdom.attr (fun _ -> on_click ()))]
     ()

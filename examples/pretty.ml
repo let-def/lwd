@@ -26,9 +26,8 @@ let fruit =
   let fruits = ["Apple"; "Orange"; "Strawberry"] in
   let choice = Lwd.var (List.hd fruits) in
   Lwd.join (
-    Lwd.map' (Lwd.get choice) (fun current ->
-        selector current (Lwd.set choice) fruits
-      )
+    Lwd.map (Lwd.get choice)
+      ~f:(fun current -> selector current (Lwd.set choice) fruits)
   )
 
 let doc = Lwd_table.make ()
@@ -48,7 +47,7 @@ let () =
         P.hardline; P.ui (Ui.space 0 1); P.hardline;
       ];
     Lwd_table.append' doc
-      (Lwd.map' fruit (fun fruit ->
+      (Lwd.map fruit ~f:(fun fruit ->
            P.group (spring ^^ string "I" ^^ spring ^/^
                     P.group (string "like" ^^ spring ^/^
                              P.ui fruit ^^ spring ^/^
@@ -58,17 +57,16 @@ let () =
 
 let varying_width f =
   let width = Lwd.var 0 in
-  Lwd.map'
-    (f (Lwd.get width))
-    (fun ui ->
-       Ui.size_sensor
-         (fun ~w ~h:_ -> if Lwd.peek width <> w then Lwd.set width w)
-         (Ui.resize ~sw:1 ~sh:1 ~w:0 ui))
+  Lwd.map (f (Lwd.get width)) ~f:(fun ui ->
+      Ui.size_sensor
+        (fun ~w ~h:_ -> if Lwd.peek width <> w then Lwd.set width w)
+        (Ui.resize ~sw:1 ~sh:1 ~w:0 ui)
+    )
 
 let doc =
   Lwd.join (Lwd_table.reduce (Lwd_utils.lift_monoid (P.empty, P.(^^))) doc)
 
-let contents width = Lwd.map2' width doc P.pretty
+let contents width = Lwd.map2 ~f:P.pretty width doc
 
 let () =
   Lwd.set base (

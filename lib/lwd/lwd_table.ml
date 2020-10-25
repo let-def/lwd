@@ -501,7 +501,7 @@ let map_reduce mapper monoid source =
           )
     end
   } in
-  Lwd.map eval (Lwd.get_prim (Lazy.force reduction.primitive))
+  Lwd.map ~f:eval (Lwd.get_prim (Lazy.force reduction.primitive))
 
 let reduce monoid source = map_reduce (fun _ x -> x) monoid source
 

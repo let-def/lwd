@@ -462,10 +462,11 @@ let fold ~map ~reduce seq =
   | Some other -> Lwd.pure (Some (pure_map_reduce map reduce other))
   | None ->
     let reducer = ref (Reducer.make ~map ~reduce) in
-    Lwd.map' seq @@ fun seq ->
-    let reducer' = Reducer.update !reducer seq in
-    reducer := reducer';
-    Reducer.reduce reducer'
+    Lwd.map seq ~f:begin fun seq ->
+      let reducer' = Reducer.update !reducer seq in
+      reducer := reducer';
+      Reducer.reduce reducer'
+    end
 
 let fold_monoid map (zero, reduce) seq =
   match Lwd.is_pure seq with
@@ -473,12 +474,13 @@ let fold_monoid map (zero, reduce) seq =
   | Some other -> Lwd.pure (pure_map_reduce map reduce other)
   | None ->
     let reducer = ref (Reducer.make ~map ~reduce) in
-    Lwd.map' seq @@ fun seq ->
-    let reducer' = Reducer.update !reducer seq in
-    reducer := reducer';
-    match Reducer.reduce reducer' with
-    | None -> zero
-    | Some x -> x
+    Lwd.map seq ~f:begin fun seq ->
+      let reducer' = Reducer.update !reducer seq in
+      reducer := reducer';
+      match Reducer.reduce reducer' with
+      | None -> zero
+      | Some x -> x
+    end
 
 let monoid = (empty, concat)
 
@@ -535,7 +537,7 @@ let to_array x =
 
 let lwd_empty : 'a t Lwd.t = Lwd.pure Nil
 let lwd_monoid : 'a. 'a t Lwd.t Lwd_utils.monoid =
-  (lwd_empty, fun x y -> Lwd.map2 concat x y)
+  (lwd_empty, fun x y -> Lwd.map2 ~f:concat x y)
 
 let map f seq =
   fold_monoid (fun x -> element (f x)) monoid seq
@@ -557,4 +559,4 @@ let seq_bind (seq : 'a seq Lwd.t) (f : 'a -> 'b seq)  : 'b seq Lwd.t =
   fold_monoid f monoid seq
 
 let lift (seq : 'a Lwd.t seq Lwd.t) : 'a seq Lwd.t =
-  bind seq (Lwd.map element)
+  bind seq (Lwd.map ~f:element)
