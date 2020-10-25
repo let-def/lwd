@@ -19,7 +19,7 @@ $(RUN_TESTS_BC):
 	dune exec examples/$(patsubst run-%,%,$@.bc)
 
 $(RUN_TESTS_EXE):
-	dune exec examples/$(patsubst run-%,%,$@.exe)
+	dune exec examples/$(patsubst run-%,%,$@)
 
 run-cbor-explorer.exe:
 	rm curdir.cbor || true
