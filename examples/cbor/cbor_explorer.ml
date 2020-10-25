@@ -57,7 +57,7 @@ let ui_of_cbor (c:C.t) =
     in
     W.unfoldable summary (fun () -> traverse ~fold:false y)
   in
-  let w = Lwd.map2 Ui.Ui.join_y
+  let w = Lwd.map2 ~f:Ui.Ui.join_y
       w_q (Nottui_widgets.scroll_area @@ traverse ~fold:true c)
   in
   quit, w

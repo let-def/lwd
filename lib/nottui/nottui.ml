@@ -35,7 +35,7 @@ end = struct
 
   let make () =
     let v = Lwd.var 0 in
-    (v, Lwd.map (fun i -> Handle (i, v)) (Lwd.get v))
+    (v, Lwd.map ~f:(fun i -> Handle (i, v)) (Lwd.get v))
 
   let empty : status = Empty
 
@@ -856,12 +856,11 @@ struct
       | Some quit -> quit
       | None -> Lwd.var false
     in
-    let t =
-      t |> Lwd.map (Ui.event_filter (function
-          | `Key (`ASCII 'Q', [`Ctrl]) | `Key (`Escape, []) ->
-            Lwd.set quit true; `Handled
-          | _ -> `Unhandled
-        ))
+    let t = Lwd.map t ~f:(Ui.event_filter (function
+        | `Key (`ASCII 'Q', [`Ctrl]) | `Key (`Escape, []) ->
+          Lwd.set quit true; `Handled
+        | _ -> `Unhandled
+      ))
     in
     match term with
     | Some term -> run_with_term term ?tick_period ?tick ~renderer quit t

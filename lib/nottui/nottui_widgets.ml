@@ -61,8 +61,9 @@ let window_manager base =
     Lwd.join (Lwd_table.reduce (Lwd_utils.lift_monoid Ui.pack_z) overlays)
   in
   let view =
-    Lwd.map2' base composition @@ fun base composite ->
-    Ui.join_z base (Ui.resize_to (Ui.layout_spec base) composite)
+    Lwd.map2 base composition ~f:begin fun base composite ->
+      Ui.join_z base (Ui.resize_to (Ui.layout_spec base) composite)
+    end
   in
   { overlays; view }
 
@@ -82,23 +83,24 @@ let menu_overlay wm g ?(dx=0) ?(dy=0) body around =
       | `Neutral  -> Ui.space 0 (y + dy + h / 2)
       | `Positive -> Ui.space 0 (y + dy + h)
     in
-    let view = Lwd.map' body @@ fun body ->
-      let body =
-        let pad = Ui.space 1 0 in Ui.join_x pad (Ui.join_x body pad)
-      in
-      let bg =
-        Ui.resize_to (Ui.layout_spec body) ~bg:A.(bg lightgreen) Ui.empty
-      in
-      let catchall = Ui.mouse_area
-          (fun ~x:_ ~y:_ -> function
-             | `Left -> Lwd_table.remove row; `Handled
-             | _ -> `Handled)
-          (Ui.resize ~sw:1 ~sh:1 Ui.empty)
-      in
-      Ui.join_z catchall @@
-      Ui.join_y v_pad @@
-      Ui.join_x h_pad @@
-      Ui.join_z bg body
+    let view = Lwd.map body ~f:begin fun body ->
+        let body =
+          let pad = Ui.space 1 0 in Ui.join_x pad (Ui.join_x body pad)
+        in
+        let bg =
+          Ui.resize_to (Ui.layout_spec body) ~bg:A.(bg lightgreen) Ui.empty
+        in
+        let catchall = Ui.mouse_area
+            (fun ~x:_ ~y:_ -> function
+               | `Left -> Lwd_table.remove row; `Handled
+               | _ -> `Handled)
+            (Ui.resize ~sw:1 ~sh:1 Ui.empty)
+        in
+        Ui.join_z catchall @@
+        Ui.join_y v_pad @@
+        Ui.join_x h_pad @@
+        Ui.join_z bg body
+      end
     in
     Lwd_table.set row view
   in
@@ -173,27 +175,28 @@ let vscroll_area ~state ~change t =
     | `Scroll `Down -> scroll state (+scroll_step)
     | _ -> `Unhandled
   in
-  Lwd.map2' t state @@ fun t state ->
-  t
-  |> Ui.shift_area 0 state.position
-  |> Ui.resize ~h:0 ~sh:1
-  |> Ui.size_sensor (fun ~w:_ ~h ->
-      let tchange =
-        if !total <> (Ui.layout_spec t).Ui.h
-        then (total := (Ui.layout_spec t).Ui.h; true)
-        else false
-      in
-      let vchange =
-        if !visible <> h
-        then (visible := h; true)
-        else false
-      in
-      if tchange || vchange then
-        change `Content {state with visible = !visible; total = !total;
-                                    bound = max 0 (!total - !visible); }
-    )
-  |> Ui.mouse_area (scroll_handler state)
-  |> Ui.keyboard_area (focus_handler state)
+  Lwd.map2 t state ~f:begin fun t state ->
+    t
+    |> Ui.shift_area 0 state.position
+    |> Ui.resize ~h:0 ~sh:1
+    |> Ui.size_sensor (fun ~w:_ ~h ->
+        let tchange =
+          if !total <> (Ui.layout_spec t).Ui.h
+          then (total := (Ui.layout_spec t).Ui.h; true)
+          else false
+        in
+        let vchange =
+          if !visible <> h
+          then (visible := h; true)
+          else false
+        in
+        if tchange || vchange then
+          change `Content {state with visible = !visible; total = !total;
+                                      bound = max 0 (!total - !visible); }
+      )
+    |> Ui.mouse_area (scroll_handler state)
+    |> Ui.keyboard_area (focus_handler state)
+  end
 
 let scroll_area ?(offset=0,0) t =
   let offset = Lwd.var offset in
@@ -218,11 +221,12 @@ let scroll_area ?(offset=0,0) t =
     | `Scroll `Down -> scroll 0 (+scroll_step)
     | _ -> `Unhandled
   in
-  Lwd.map2' t (Lwd.get offset) @@ fun t (s_x, s_y) ->
-  t
-  |> Ui.shift_area s_x s_y
-  |> Ui.mouse_area scroll_handler
-  |> Ui.keyboard_area focus_handler
+  Lwd.map2 t (Lwd.get offset) ~f:begin fun t (s_x, s_y) ->
+    t
+    |> Ui.shift_area s_x s_y
+    |> Ui.mouse_area scroll_handler
+    |> Ui.keyboard_area focus_handler
+  end
 
 let main_menu_item wm text f =
   let text = string ~attr:attr_menu_main (" " ^ text ^ " ") in
@@ -235,12 +239,13 @@ let main_menu_item wm text f =
       `Handled
     | _ -> `Unhandled
   in
-  Lwd.map' (Lwd.get refresh) @@ fun () ->
-  let ui = Ui.mouse_area on_click text in
-  if !overlay then (
-    overlay := false;
-    menu_overlay wm (Gravity.make ~h:`Negative ~v:`Positive) (f ()) ui
-  ) else ui
+  Lwd.map (Lwd.get refresh) ~f:begin fun () ->
+    let ui = Ui.mouse_area on_click text in
+    if !overlay then (
+      overlay := false;
+      menu_overlay wm (Gravity.make ~h:`Negative ~v:`Positive) (f ()) ui
+    ) else ui
+  end
 
 let sub_menu_item wm text f =
   let text = string ~attr:attr_menu_sub text in
@@ -253,12 +258,13 @@ let sub_menu_item wm text f =
       `Handled
     | _ -> `Unhandled
   in
-  Lwd.map' (Lwd.get refresh) @@ fun () ->
-  let ui = Ui.mouse_area on_click text in
-  if !overlay then (
-    overlay := false;
-    menu_overlay wm (Gravity.make ~h:`Positive ~v:`Negative) (f ()) ui
-  ) else ui
+  Lwd.map (Lwd.get refresh) ~f:begin fun () ->
+    let ui = Ui.mouse_area on_click text in
+    if !overlay then (
+      overlay := false;
+      menu_overlay wm (Gravity.make ~h:`Positive ~v:`Negative) (f ()) ui
+    ) else ui
+  end
 
 let sub_entry text f =
   let text = string ~attr:attr_menu_sub text in
@@ -280,10 +286,10 @@ let v_pane left right =
   let render () =
     let split = int_of_float (!split *. float !h) in
     let split = min (!h - 1) (max split 0) in
-    left_pane $= Lwd.map' left
-      (fun t -> Ui.resize ~w:!w ~h:split t);
-    right_pane $= Lwd.map' right
-      (fun t -> Ui.resize ~w:!w ~h:(!h - split - 1) t);
+    left_pane $= Lwd.map left
+      ~f:(fun t -> Ui.resize ~w:!w ~h:split t);
+    right_pane $= Lwd.map right
+      ~f:(fun t -> Ui.resize ~w:!w ~h:(!h - split - 1) t);
     splitter_bg $= Ui.atom (I.char A.(bg lightyellow) ' ' !w 1);
   in
   let action ~x:_ ~y:_ = function
@@ -296,7 +302,7 @@ let v_pane left right =
         ), (fun ~x:_ ~y:_ -> ()))
     | _ -> `Unhandled
   in
-  splitter $= Lwd.map (Ui.mouse_area action) (Lwd.get splitter_bg);
+  splitter $= Lwd.map ~f:(Ui.mouse_area action) (Lwd.get splitter_bg);
   render ();
   let on_resize ~w:ew ~h:eh =
     if !w <> ew || !h <> eh then (
@@ -304,8 +310,9 @@ let v_pane left right =
       render ()
     )
   in
-  Lwd.map' node @@ fun t ->
-  Ui.size_sensor on_resize (Ui.resize ~w:10 ~h:10 ~sw:1 ~sh:1 t)
+  Lwd.map node ~f:begin fun t ->
+    Ui.size_sensor on_resize (Ui.resize ~w:10 ~h:10 ~sw:1 ~sh:1 t)
+  end
 
 type pane_state =
   | Split of { pos: int; max: int }
@@ -348,7 +355,7 @@ let h_pane l r =
     in
     ui
   in
-  Lwd.map2 render (Lwd.get state_var) (Lwd.pair l r)
+  Lwd.map2 ~f:render (Lwd.get state_var) (Lwd.pair l r)
 
 let sub' str p l =
   if p = 0 && l = String.length str
@@ -420,7 +427,7 @@ let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
     Ui.keyboard_area ~focus handler content
   in
   let node =
-    Lwd.map2 (update focus) (Focus.status focus) state
+    Lwd.map2 ~f:(update focus) (Focus.status focus) state
   in
   let mouse_grab (text, pos) ~x ~y:_ = function
     | `Left ->
@@ -429,8 +436,9 @@ let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
       `Handled
     | _ -> `Unhandled
   in
-  Lwd.map2' state node @@ fun state content ->
-  Ui.mouse_area (mouse_grab state) content
+  Lwd.map2 state node ~f:begin fun state content ->
+    Ui.mouse_area (mouse_grab state) content
+  end
 
 (** Tab view, where exactly one element of [l] is shown at a time. *)
 let tabs (tabs: (string * (unit -> Ui.t Lwd.t)) list) : Ui.t Lwd.t =
@@ -486,7 +494,7 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
     Lwd.get opened >>= function
     | true ->
       (* call [f] and pad a bit *)
-      f() |> Lwd.map (Ui.join_x (string " "))
+      f() |> Lwd.map ~f:(Ui.join_x (string " "))
     | false -> empty_lwd
   in
   (* pad summary with a "> " when it's opened *)
@@ -500,9 +508,9 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
      | `Left -> Lwd.set opened true; `Handled
      | _ -> `Unhandled
   in
-  let mouse = Lwd.map (fun m -> Ui.mouse_area cursor m) summary in
-  Lwd.map2
-    (fun summary fold ->
+  let mouse = Lwd.map ~f:(fun m -> Ui.mouse_area cursor m) summary in
+  Lwd.map2 mouse fold_content
+    ~f:(fun summary fold ->
       (* TODO: make this configurable/optional *)
       (* newline if it's too big to fit on one line nicely *)
       let spec_sum = Ui.layout_spec summary in
@@ -515,7 +523,6 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
       if too_big
       then Ui.join_y summary (Ui.join_x (string " ") fold)
       else Ui.join_x summary fold)
-    mouse fold_content
 
 let hbox l = Lwd_utils.pack Ui.pack_x l
 let vbox l = Lwd_utils.pack Ui.pack_y l
@@ -523,7 +530,7 @@ let zbox l = Lwd_utils.pack Ui.pack_z l
 
 let vlist ?(bullet="- ") (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
   l
-  |> List.map (fun ui -> Lwd.map (Ui.join_x (string bullet)) ui)
+  |> List.map (fun ui -> Lwd.map ~f:(Ui.join_x (string bullet)) ui)
   |> Lwd_utils.pack Ui.pack_y
 
 (** A list of items with a dynamic filter on the items *)
@@ -540,7 +547,9 @@ let vlist_with
       let acc' = match f x with | None -> acc | Some y -> y::acc in
       filter_map_ acc' f l'
   in
-  let l = l >|= List.map (fun x -> x, Lwd.map (Ui.join_x (string bullet)) @@ f x) in
+  let l =
+    l >|= List.map (fun x -> x, Lwd.map ~f:(Ui.join_x (string bullet)) @@ f x)
+  in
   let l_filter : _ list Lwd.t =
     filter >>= fun filter ->
     l >|=
@@ -680,7 +689,7 @@ let toggle, toggle' =
           let new_st = not st_v in
           Lwd.set st new_st; f new_st)
     in
-    Lwd.map2 mk_but (Lwd.get st) lbl
+    Lwd.map2 ~f:mk_but (Lwd.get st) lbl
   in
   (* Similar to {!toggle}, except it directly reflects the state of a variable. *)
   let toggle' (lbl:string Lwd.t) (v:bool Lwd.var) : Ui.t Lwd.t =

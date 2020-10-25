@@ -18,12 +18,12 @@ struct
   type 'a tlist = 'a Lwd.t list
 
   let return = Lwd.pure
-  let fmap = Lwd.map
+  let fmap f x = Lwd.map ~f x
   let nil () = []
   let singleton x = [x]
   let append = (@)
   let cons x xs = x :: xs
-  let map f xs = List.map (fun x -> Lwd.map f x) xs
+  let map f xs = List.map (fun x -> Lwd.map ~f x) xs
 end
 
 type child_tree =
@@ -39,32 +39,33 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
   let reducer =
     ref (Lwd_seq.Reducer.make ~map:child_node ~reduce:child_join)
   in
-  Lwd.map' children @@ fun children ->
-  let dropped, reducer' =
-    Lwd_seq.Reducer.update_and_get_dropped !reducer children in
-  reducer := reducer';
-  let remove_child child () = match child with
-    | Leaf node -> ignore (self##removeChild node)
-    | Inner _ -> ()
-  in
-  Lwd_seq.Reducer.fold_dropped `Map remove_child dropped ();
-  begin match Lwd_seq.Reducer.reduce reducer' with
-    | None -> ()
-    | Some tree ->
-      let rec update acc = function
-        | Leaf x ->
-          if x##.nextSibling != acc || x##.parentNode != Js.some self then
-            ignore (self##insertBefore x acc);
-          Js.some x
-        | Inner t ->
-          if Js.Opt.test t.bound then t.bound else (
-            let acc = update acc t.right in
-            let acc = update acc t.left in
-            t.bound <- acc;
-            acc
-          )
-      in
-      ignore (update Js.null tree)
+  Lwd.map children ~f:begin fun children ->
+    let dropped, reducer' =
+      Lwd_seq.Reducer.update_and_get_dropped !reducer children in
+    reducer := reducer';
+    let remove_child child () = match child with
+      | Leaf node -> ignore (self##removeChild node)
+      | Inner _ -> ()
+    in
+    Lwd_seq.Reducer.fold_dropped `Map remove_child dropped ();
+    begin match Lwd_seq.Reducer.reduce reducer' with
+      | None -> ()
+      | Some tree ->
+        let rec update acc = function
+          | Leaf x ->
+            if x##.nextSibling != acc || x##.parentNode != Js.some self then
+              ignore (self##insertBefore x acc);
+            Js.some x
+          | Inner t ->
+            if Js.Opt.test t.bound then t.bound else (
+              let acc = update acc t.right in
+              let acc = update acc t.left in
+              t.bound <- acc;
+              acc
+            )
+        in
+        ignore (update Js.null tree)
+    end
   end
 
 let update_children_list self children =
@@ -116,7 +117,7 @@ module Xml
 
   let attrib kind name value = Attrib {name; kind; value}
   let attrib' kind name value =
-    attrib kind name (Lwd.map some value)
+    attrib kind name (Lwd.map ~f:some value)
 
   let float_attrib                  n v = attrib' Attr_float n v
   let int_attrib                    n v = attrib' Attr_int n v
@@ -194,13 +195,13 @@ module Xml
     let node =
       Lwd_seq.element (Dom_html.document##createTextNode (Js.string ""))
     in
-    Lwd.map (fun text ->
+    Lwd.map text ~f:(fun text ->
         begin match Lwd_seq.view node with
           | Lwd_seq.Element elt -> elt##.data := Js.string text;
           | _ -> assert false
         end;
         (node : Dom.text Js.t Lwd_seq.t :> raw_node Lwd_seq.t)
-      ) text
+      )
 
   let encodedpcdata = pcdata
 
@@ -262,20 +263,20 @@ module Xml
 
   let attach_attribs node l =
     Lwd_utils.pack ((), fun () () -> ())
-      (List.map (fun (Attrib a) -> Lwd.map (attach node a) a.value) l)
+      (List.map (fun (Attrib a) -> Lwd.map ~f:(attach node a) a.value) l)
 
   let leaf ?(a = []) name : elt =
     let e = Dom_html.document##createElement (Js.string name) in
     let e' = Lwd_seq.element (e : Dom_html.element Js.t :> data) in
-    Lwd.map' (attach_attribs e a) (fun () -> e')
+    Lwd.map (attach_attribs e a) ~f:(fun () -> e')
 
   let node ?(a = []) name (children : elt list_wrap) : elt =
     let e = Dom_html.document##createElement (Js.string name) in
     let e' = Lwd_seq.element e in
-    Lwd.map2'
+    Lwd.map2
       (update_children_list (e :> data) children)
       (attach_attribs e a)
-      (fun () () -> (e' :> data Lwd_seq.t))
+      ~f:(fun () () -> (e' :> data Lwd_seq.t))
 
   let cdata s = pure_node (Dom_html.document##createTextNode (Js.string s))
 
@@ -1804,7 +1805,7 @@ module Lwdom = struct
 
   let elt x = Lwd.pure (Lwd_seq.element x)
   let attr x : _ attr = Lwd.pure (Some x)
-  let rattr x : _ attr = Lwd.map some x
+  let rattr x : _ attr = Lwd.map ~f:some x
 
   (*let to_fragment (elts : _ node elt) =
     let fragment = Dom_html.document##createDocumentFragment in
@@ -1813,13 +1814,13 @@ module Lwdom = struct
   let children : _ elt list -> _ elt = function
     | [] -> empty
     | [x] -> x
-    | [x; y] -> Lwd.map2 Lwd_seq.concat x y
+    | [x; y] -> Lwd.map2 ~f:Lwd_seq.concat x y
     | xs -> Lwd_utils.reduce Lwd_seq.lwd_monoid xs
 
   let children_array : _ elt array -> _ elt = function
     | [||] -> empty
     | [|x|] -> x
-    | [|x; y|] -> Lwd.map2 Lwd_seq.concat x y
+    | [|x; y|] -> Lwd.map2 ~f:Lwd_seq.concat x y
     | xs -> Lwd_seq.bind (Lwd.pure (Lwd_seq.of_array xs)) (fun x -> x)
 
   let to_node x = x

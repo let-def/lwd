@@ -38,9 +38,9 @@ let degrees = Lwd.var 0.0
 let farenheit = Lwd.var (nan, ("", 0))
 
 let farenheit_text =
-  Lwd.map2' (Lwd.get degrees) (Lwd.get farenheit)
-    (fun d (d', f) ->
-       if d = d' then f else (string_of_float (c_to_f d), 0))
+  Lwd.map2 (Lwd.get degrees) (Lwd.get farenheit)
+    ~f:(fun d (d', f) ->
+        if d = d' then f else (string_of_float (c_to_f d), 0))
 
 let farenheit_edit =
   Nottui_widgets.edit_field
@@ -57,8 +57,8 @@ let farenheit_edit =
 let celsius = Lwd.var (nan, ("", 0))
 
 let celsius_text =
-  Lwd.map2' (Lwd.get degrees) (Lwd.get celsius)
-    (fun d (d', f) -> if d = d' then f else (string_of_float d, 0))
+  Lwd.map2 (Lwd.get degrees) (Lwd.get celsius)
+    ~f:(fun d (d', f) -> if d = d' then f else (string_of_float d, 0))
 
 let celsius_edit =
   Nottui_widgets.edit_field
