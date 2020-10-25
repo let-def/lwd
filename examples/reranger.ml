@@ -21,8 +21,6 @@ let remember_width ~wref ui =
   wref := max (Ui.layout_spec ui).Ui.w !wref;
   Ui.resize ~w:!wref ui
 
-let menu_quit = main_menu_item "Quit" (fun () -> exit 0)
-
 let rec dir ?(initial_path = []) ?after_width:(wref = ref 0) path =
   let column = Lwd.var (Lwd.return Ui.empty) in
   let header = string ~attr:Notty.(A.bg A.green) (Filename.basename path) in
@@ -132,9 +130,13 @@ let () =
     in
     List.rev (split (Sys.getcwd ()))
   in
-  let ui =
-    Lwd_utils.pack Ui.pack_y [ menu_quit; dir ~initial_path "/"]
+  let body = Lwd.var (Lwd.pure Ui.empty) in
+  let wm = Nottui_widgets.window_manager (Lwd.join (Lwd.get body)) in
+  let ui = Lwd_utils.pack Ui.pack_y [
+      main_menu_item wm "Quit" (fun () -> exit 0);
+      dir ~initial_path "/"
+    ]
   in
-  Ui_loop.run
-    (Lwd.map' ui (fun ui ->
-         ui |> Ui.resize ~pad:gravity_pad ~crop:gravity_crop))
+  Lwd.set body (Lwd.map (Ui.resize ~pad:gravity_pad ~crop:gravity_crop) ui);
+  Ui_loop.run (Nottui_widgets.window_manager_view wm)
+

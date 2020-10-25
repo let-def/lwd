@@ -3,9 +3,15 @@ module W = Nottui_widgets
 module C = CBOR.Simple
 module A = Notty.A
 
+let body = Lwd.var W.empty_lwd
+
+let wm = Nottui_widgets.window_manager (Lwd.join (Lwd.get body))
+
 let ui_of_cbor (c:C.t) =
   let quit = Lwd.var false in
-  let w_q = W.main_menu_item "[quit]" (fun () -> Lwd.set quit true; W.empty_lwd) in
+  let w_q = W.main_menu_item wm "[quit]"
+      (fun () -> Lwd.set quit true; W.empty_lwd)
+  in
   let rec traverse ?(fold=false) (c:C.t) : Ui.ui Lwd.t =
     match c with
     | `Bool b -> Lwd.return (W.printf ~attr:A.(fg blue) "%B" b)
@@ -51,16 +57,16 @@ let ui_of_cbor (c:C.t) =
     in
     W.unfoldable summary (fun () -> traverse ~fold:false y)
   in
-  let w =
-    Lwd.map2 Ui.Ui.join_y w_q
-      (Nottui_widgets.scroll_area @@ traverse ~fold:true c)
+  let w = Lwd.map2 Ui.Ui.join_y
+      w_q (Nottui_widgets.scroll_area @@ traverse ~fold:true c)
   in
   quit, w
 
 let show_file f =
   let cbor = CCIO.with_in f (fun ic -> CCIO.read_all ic |> C.decode) in
   let quit, ui = ui_of_cbor cbor in
-  Ui.Ui_loop.run ~quit ~tick_period:0.2 ui
+  Lwd.set body ui;
+  Ui.Ui_loop.run ~quit ~tick_period:0.2 (W.window_manager_view wm)
 
 let () =
   let f = ref "" in
