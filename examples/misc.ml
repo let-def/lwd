@@ -10,10 +10,10 @@ let simple_edit x =
 
 let strict_table () =
   let columns = Lwd_table.make () in
-  for colidx = 0 to 99 do
+  for colidx = 0 to 999 do
     let rows = Lwd_table.make () in
     Lwd_table.append' rows (printf "Column %d" colidx |> Lwd.pure);
-    for rowidx = 0 to 99 do
+    for rowidx = 0 to 999 do
       Lwd_table.append' rows
         (simple_edit (Printf.sprintf "Test-%03d-%03d" colidx rowidx))
     done;
