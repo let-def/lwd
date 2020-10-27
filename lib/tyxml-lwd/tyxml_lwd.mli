@@ -393,6 +393,16 @@ module Svg : sig
      [>animatetransform]) star
   val metadata : ?a:metadata_attr attrib list -> Xml.elt list -> [>metadata] elt
   val foreignObject : ?a:foreignobject_attr attrib list -> Xml.elt list -> [>foreignobject] elt
+
+  (* val pcdata : string Lwd.t -> [>txt] elt *)
+  (* val of_seq : Xml_stream.signal Seq.t -> 'a elt list *)
+  val tot : Xml.elt -> 'a elt
+  (* val totl : Xml.elt list -> 'a elt list *)
+  val toelt : 'a elt -> Xml.elt
+  (* val toeltl : 'a elt list -> Xml.elt list *)
+  val doc_toelt : doc -> Xml.elt
+  val to_xmlattribs : 'a attrib list -> Xml.attrib list
+  val to_attrib : Xml.attrib -> 'a attrib
 end
 
 open Html_types
@@ -787,6 +797,16 @@ module Html : sig
   val rt : ([<rt_attrib], [<rt_content_fun], [>rt]) star
   val rp : ([<rp_attrib], [<rp_content_fun], [>rp]) star
   val ruby : ([<ruby_attrib], [<ruby_content_fun], [>ruby]) star
+
+  (* val pcdata : string Lwd.t -> [>pcdata] elt *)
+  (* val of_seq : Xml_stream.signal Seq.t -> 'a elt list *)
+  val tot : Xml.elt -> 'a elt
+  (* val totl : Xml.elt list -> 'a elt list *)
+  val toelt : 'a elt -> Xml.elt
+  (* val toeltl : 'a elt list -> Xml.elt list *)
+  val doc_toelt : doc -> Xml.elt
+  val to_xmlattribs : 'a attrib list -> Xml.attrib list
+  val to_attrib : Xml.attrib -> 'a attrib
 end
 
 (** {1 Running an Lwd-driven DOM in the browser} *)
