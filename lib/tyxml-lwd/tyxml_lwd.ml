@@ -663,15 +663,15 @@ module Svg : sig
   val foreignObject : ?a:foreignobject_attr attrib list -> Xml.elt list -> [>foreignobject] elt
 
 
-  (*val pcdata : string Lwd.t -> [>txt] elt
-  val of_seq : Xml_stream.signal Seq.t -> 'a elt list
+  (* val pcdata : string Lwd.t -> [>txt] elt *)
+  (* val of_seq : Xml_stream.signal Seq.t -> 'a elt list *)
   val tot : Xml.elt -> 'a elt
-  val totl : Xml.elt list -> 'a elt list
+  (* val totl : Xml.elt list -> 'a elt list *)
   val toelt : 'a elt -> Xml.elt
-  val toeltl : 'a elt list -> Xml.elt list
+  (* val toeltl : 'a elt list -> Xml.elt list *)
   val doc_toelt : doc -> Xml.elt
   val to_xmlattribs : 'a attrib list -> Xml.attrib list
-  val to_attrib : Xml.attrib -> 'a attrib*)
+  val to_attrib : Xml.attrib -> 'a attrib
 
   (*module Unsafe : sig
     val data : string Lwd.t -> 'a elt
@@ -995,6 +995,14 @@ end = struct
   let animateTransform             = star Raw_svg.animateTransform
   let metadata                     = star Raw_svg.metadata
   let foreignObject                = star Raw_svg.foreignObject
+  (* let of_seq = Raw_svg.of_seq *)
+  let tot = Raw_svg.tot
+  (* let totl = Raw_svg.totl *)
+  let toelt = Raw_svg.toelt
+  (* let toeltl = Raw_svg.toeltl *)
+  let doc_toelt = Raw_svg.doc_toelt
+  let to_xmlattribs = Raw_svg.to_xmlattribs
+  let to_attrib = Raw_svg.to_attrib
 end
 
 module Raw_html = Html_f.Make(Xml)(Raw_svg)
@@ -1392,17 +1400,17 @@ module Html : sig
   val rp : ([<rp_attrib], [<rp_content_fun], [>rp]) star
   val ruby : ([<ruby_attrib], [<ruby_content_fun], [>ruby]) star
 
-  (* val pcdata : string Lwd.t -> [>pcdata] elt
-     val of_seq : Xml_stream.signal Seq.t -> 'a elt list
-     val tot : Xml.elt -> 'a elt
-     val totl : Xml.elt list -> 'a elt list
-     val toelt : 'a elt -> Xml.elt
-     val toeltl : 'a elt list -> Xml.elt list
-     val doc_toelt : doc -> Xml.elt
-     val to_xmlattribs : 'a attrib list -> Xml.attrib list
-     val to_attrib : Xml.attrib -> 'a attrib
+   (* val pcdata : string Lwd.t -> [>pcdata] elt *)
+   (* val of_seq : Xml_stream.signal Seq.t -> 'a elt list *)
+   val tot : Xml.elt -> 'a elt
+   (* val totl : Xml.elt list -> 'a elt list *)
+   val toelt : 'a elt -> Xml.elt
+   (* val toeltl : 'a elt list -> Xml.elt list *)
+   val doc_toelt : doc -> Xml.elt
+   val to_xmlattribs : 'a attrib list -> Xml.attrib list
+   val to_attrib : Xml.attrib -> 'a attrib
 
-  module Unsafe : sig
+  (* module Unsafe : sig
     val data : string Lwd.t -> 'a elt
     val node : string -> ?a:'a attrib list -> 'b elt list -> 'c elt
     val leaf : string -> ?a:'a attrib list -> unit -> 'b elt
@@ -1413,7 +1421,7 @@ module Html : sig
     val uri_attrib : string -> Xml.uri Lwd.t -> 'a attrib
     val space_sep_attrib : string -> string list Lwd.t -> 'a attrib
     val comma_sep_attrib : string -> string list Lwd.t -> 'a attrib
-  end*)
+  end *)
 end = struct
   type 'a elt = 'a Raw_html.elt
   type doc = Raw_html.doc
@@ -1781,6 +1789,14 @@ end = struct
   let rt                    = star Raw_html.rt
   let rp                    = star Raw_html.rp
   let ruby                  = star Raw_html.ruby
+  (* let of_seq = Raw_html.of_seq *)
+  let tot = Raw_html.tot
+  (* let totl = Raw_html.totl *)
+  let toelt = Raw_html.toelt
+  (* let toeltl = Raw_html.toeltl *)
+  let doc_toelt = Raw_html.doc_toelt
+  let to_xmlattribs = Raw_html.to_xmlattribs
+  let to_attrib = Raw_html.to_attrib
 end
 
 module Lwdom = struct
