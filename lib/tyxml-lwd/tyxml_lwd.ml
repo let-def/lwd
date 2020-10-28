@@ -1824,3 +1824,882 @@ module Lwdom = struct
 
   let to_node x = x
 end
+
+let pure_arg f x = f (Lwd.pure x)
+
+let pure_snd_arg f x1 x2 = f x1 (Lwd.pure x2)
+
+let pure_opt_arg f x = f (Lwd.pure (Some x))
+
+module Pure_html = struct
+  include Html
+
+  let a_class = pure_arg Html.a_class
+
+  let a_user_data = pure_snd_arg Html.a_user_data
+
+  let a_id = pure_arg Html.a_id
+
+  let a_title = pure_arg Html.a_title
+
+  let a_xml_lang = pure_arg Html.a_xml_lang
+
+  let a_lang = pure_arg Html.a_lang
+
+  let a_onabort = pure_opt_arg Html.a_onabort
+
+  let a_onafterprint = pure_opt_arg Html.a_onafterprint
+
+  let a_onbeforeprint = pure_opt_arg Html.a_onbeforeprint
+
+  let a_onbeforeunload = pure_opt_arg Html.a_onbeforeunload
+
+  let a_onblur = pure_opt_arg Html.a_onblur
+
+  let a_oncanplay = pure_opt_arg Html.a_oncanplay
+
+  let a_oncanplaythrough = pure_opt_arg Html.a_oncanplaythrough
+
+  let a_onchange = pure_opt_arg Html.a_onchange
+
+  let a_ondurationchange = pure_opt_arg Html.a_ondurationchange
+
+  let a_onemptied = pure_opt_arg Html.a_onemptied
+
+  let a_onended = pure_opt_arg Html.a_onended
+
+  let a_onerror = pure_opt_arg Html.a_onerror
+
+  let a_onfocus = pure_opt_arg Html.a_onfocus
+
+  let a_onformchange = pure_opt_arg Html.a_onformchange
+
+  let a_onforminput = pure_opt_arg Html.a_onforminput
+
+  let a_onhashchange = pure_opt_arg Html.a_onhashchange
+
+  let a_oninput = pure_opt_arg Html.a_oninput
+
+  let a_oninvalid = pure_opt_arg Html.a_oninvalid
+
+  let a_onmousewheel = pure_opt_arg Html.a_onmousewheel
+
+  let a_onoffline = pure_opt_arg Html.a_onoffline
+
+  let a_ononline = pure_opt_arg Html.a_ononline
+
+  let a_onpause = pure_opt_arg Html.a_onpause
+
+  let a_onplay = pure_opt_arg Html.a_onplay
+
+  let a_onplaying = pure_opt_arg Html.a_onplaying
+
+  let a_onpagehide = pure_opt_arg Html.a_onpagehide
+
+  let a_onpageshow = pure_opt_arg Html.a_onpageshow
+
+  let a_onpopstate = pure_opt_arg Html.a_onpopstate
+
+  let a_onprogress = pure_opt_arg Html.a_onprogress
+
+  let a_onratechange = pure_opt_arg Html.a_onratechange
+
+  let a_onreadystatechange = pure_opt_arg Html.a_onreadystatechange
+
+  let a_onredo = pure_opt_arg Html.a_onredo
+
+  let a_onresize = pure_opt_arg Html.a_onresize
+
+  let a_onscroll = pure_opt_arg Html.a_onscroll
+
+  let a_onseeked = pure_opt_arg Html.a_onseeked
+
+  let a_onseeking = pure_opt_arg Html.a_onseeking
+
+  let a_onselect = pure_opt_arg Html.a_onselect
+
+  let a_onshow = pure_opt_arg Html.a_onshow
+
+  let a_onstalled = pure_opt_arg Html.a_onstalled
+
+  let a_onstorage = pure_opt_arg Html.a_onstorage
+
+  let a_onsubmit = pure_opt_arg Html.a_onsubmit
+
+  let a_onsuspend = pure_opt_arg Html.a_onsuspend
+
+  let a_ontimeupdate = pure_opt_arg Html.a_ontimeupdate
+
+  let a_onundo = pure_opt_arg Html.a_onundo
+
+  let a_onunload = pure_opt_arg Html.a_onunload
+
+  let a_onvolumechange = pure_opt_arg Html.a_onvolumechange
+
+  let a_onwaiting = pure_opt_arg Html.a_onwaiting
+
+  let a_onload = pure_opt_arg Html.a_onload
+
+  let a_onloadeddata = pure_opt_arg Html.a_onloadeddata
+
+  let a_onloadedmetadata = pure_opt_arg Html.a_onloadedmetadata
+
+  let a_onloadstart = pure_opt_arg Html.a_onloadstart
+
+  let a_onmessage = pure_opt_arg Html.a_onmessage
+
+  let a_onclick = pure_opt_arg Html.a_onclick
+
+  let a_oncontextmenu = pure_opt_arg Html.a_oncontextmenu
+
+  let a_ondblclick = pure_opt_arg Html.a_ondblclick
+
+  let a_ondrag = pure_opt_arg Html.a_ondrag
+
+  let a_ondragend = pure_opt_arg Html.a_ondragend
+
+  let a_ondragenter = pure_opt_arg Html.a_ondragenter
+
+  let a_ondragleave = pure_opt_arg Html.a_ondragleave
+
+  let a_ondragover = pure_opt_arg Html.a_ondragover
+
+  let a_ondragstart = pure_opt_arg Html.a_ondragstart
+
+  let a_ondrop = pure_opt_arg Html.a_ondrop
+
+  let a_onmousedown = pure_opt_arg Html.a_onmousedown
+
+  let a_onmouseup = pure_opt_arg Html.a_onmouseup
+
+  let a_onmouseover = pure_opt_arg Html.a_onmouseover
+
+  let a_onmousemove = pure_opt_arg Html.a_onmousemove
+
+  let a_onmouseout = pure_opt_arg Html.a_onmouseout
+
+  let a_ontouchstart = pure_opt_arg Html.a_ontouchstart
+
+  let a_ontouchend = pure_opt_arg Html.a_ontouchend
+
+  let a_ontouchmove = pure_opt_arg Html.a_ontouchmove
+
+  let a_ontouchcancel = pure_opt_arg Html.a_ontouchcancel
+
+  let a_onkeypress = pure_opt_arg Html.a_onkeypress
+
+  let a_onkeydown = pure_opt_arg Html.a_onkeydown
+
+  let a_onkeyup = pure_opt_arg Html.a_onkeyup
+
+  let a_allowfullscreen = Html.a_allowfullscreen
+
+  let a_allowpaymentrequest = Html.a_allowpaymentrequest
+
+  let a_autocomplete = pure_arg Html.a_autocomplete
+
+  let a_async = Html.a_async
+
+  let a_autofocus = Html.a_autofocus
+
+  let a_autoplay = Html.a_autoplay
+
+  let a_muted = Html.a_muted
+
+  let a_crossorigin = pure_arg Html.a_crossorigin
+
+  let a_integrity = pure_arg Html.a_integrity
+
+  let a_mediagroup = pure_arg Html.a_mediagroup
+
+  let a_challenge = pure_arg Html.a_challenge
+
+  let a_contenteditable = pure_arg Html.a_contenteditable
+
+  let a_contextmenu = pure_arg Html.a_contextmenu
+
+  let a_controls = Html.a_controls
+
+  let a_dir = pure_arg Html.a_dir
+
+  let a_draggable = pure_arg Html.a_draggable
+
+  let a_form = pure_arg Html.a_form
+
+  let a_formaction = pure_arg Html.a_formaction
+
+  let a_formenctype = pure_arg Html.a_formenctype
+
+  let a_formnovalidate = Html.a_formnovalidate
+
+  let a_formtarget = pure_arg Html.a_formtarget
+
+  let a_hidden = Html.a_hidden
+
+  let a_high = pure_arg Html.a_high
+
+  let a_icon = pure_arg Html.a_icon
+
+  let a_ismap = Html.a_ismap
+
+  let a_keytype = pure_arg Html.a_keytype
+
+  let a_list = pure_arg Html.a_list
+
+  let a_loop = Html.a_loop
+
+  let a_low = pure_arg Html.a_low
+
+  let a_max = pure_arg Html.a_max
+
+  let a_input_max = pure_arg Html.a_input_max
+
+  let a_min = pure_arg Html.a_min
+
+  let a_input_min = pure_arg Html.a_input_min
+
+  let a_inputmode = pure_arg Html.a_inputmode
+
+  let a_novalidate = Html.a_novalidate
+
+  let a_open = Html.a_open
+
+  let a_optimum = pure_arg Html.a_optimum
+
+  let a_pattern = pure_arg Html.a_pattern
+
+  let a_placeholder = pure_arg Html.a_placeholder
+
+  let a_poster = pure_arg Html.a_poster
+
+  let a_preload = pure_arg Html.a_preload
+
+  let a_pubdate = Html.a_pubdate
+
+  let a_radiogroup = pure_arg Html.a_radiogroup
+
+  let a_referrerpolicy = pure_arg Html.a_referrerpolicy
+
+  let a_required = Html.a_required
+
+  let a_reversed = Html.a_reversed
+
+  let a_sandbox = pure_arg Html.a_sandbox
+
+  let a_spellcheck = pure_arg Html.a_spellcheck
+
+  let a_scoped = Html.a_scoped
+
+  let a_seamless = Html.a_seamless
+
+  let a_sizes = pure_arg Html.a_sizes
+
+  let a_span = pure_arg Html.a_span
+
+  let a_srcset = pure_arg Html.a_srcset
+
+  let a_img_sizes = pure_arg Html.a_img_sizes
+
+  let a_start = pure_arg Html.a_start
+
+  let a_step = pure_arg Html.a_step
+
+  let a_wrap = pure_arg Html.a_wrap
+
+  let a_version = pure_arg Html.a_version
+
+  let a_xmlns = pure_arg Html.a_xmlns
+
+  let a_manifest = pure_arg Html.a_manifest
+
+  let a_cite = pure_arg Html.a_cite
+
+  let a_xml_space = pure_arg Html.a_xml_space
+
+  let a_accesskey = pure_arg Html.a_accesskey
+
+  let a_charset = pure_arg Html.a_charset
+
+  let a_accept_charset = pure_arg Html.a_accept_charset
+
+  let a_accept = pure_arg Html.a_accept
+
+  let a_href = pure_arg Html.a_href
+
+  let a_hreflang = pure_arg Html.a_hreflang
+
+  let a_download = pure_arg Html.a_download
+
+  let a_rel = pure_arg Html.a_rel
+
+  let a_tabindex = pure_arg Html.a_tabindex
+
+  let a_mime_type = pure_arg Html.a_mime_type
+
+  let a_datetime = pure_arg Html.a_datetime
+
+  let a_action = pure_arg Html.a_action
+
+  let a_checked = Html.a_checked
+
+  let a_cols = pure_arg Html.a_cols
+
+  let a_enctype = pure_arg Html.a_enctype
+
+  let a_label_for = pure_arg Html.a_label_for
+
+  let a_output_for = pure_arg Html.a_output_for
+
+  let a_maxlength = pure_arg Html.a_maxlength
+
+  let a_minlength = pure_arg Html.a_minlength
+
+  let a_method = pure_arg Html.a_method
+
+  let a_multiple = Html.a_multiple
+
+  let a_name = pure_arg Html.a_name
+
+  let a_rows = pure_arg Html.a_rows
+
+  let a_selected = Html.a_selected
+
+  let a_size = pure_arg Html.a_size
+
+  let a_src = pure_arg Html.a_src
+
+  let a_input_type = pure_arg Html.a_input_type
+
+  let a_text_value = pure_arg Html.a_text_value
+
+  let a_int_value = pure_arg Html.a_int_value
+
+  let a_value = pure_arg Html.a_value
+
+  let a_float_value = pure_arg Html.a_float_value
+
+  let a_disabled = Html.a_disabled
+
+  let a_readonly = Html.a_readonly
+
+  let a_button_type = pure_arg Html.a_button_type
+
+  let a_command_type = pure_arg Html.a_command_type
+
+  let a_menu_type = pure_arg Html.a_menu_type
+
+  let a_label = pure_arg Html.a_label
+
+  let a_colspan = pure_arg Html.a_colspan
+
+  let a_headers = pure_arg Html.a_headers
+
+  let a_rowspan = pure_arg Html.a_rowspan
+
+  let a_alt = pure_arg Html.a_alt
+
+  let a_height = pure_arg Html.a_height
+
+  let a_width = pure_arg Html.a_width
+
+  let a_shape = pure_arg Html.a_shape
+
+  let a_coords = pure_arg Html.a_coords
+
+  let a_usemap = pure_arg Html.a_usemap
+
+  let a_data = pure_arg Html.a_data
+
+  let a_scrolling = pure_arg Html.a_scrolling
+
+  let a_target = pure_arg Html.a_target
+
+  let a_content = pure_arg Html.a_content
+
+  let a_http_equiv = pure_arg Html.a_http_equiv
+
+  let a_defer = Html.a_defer
+
+  let a_media = pure_arg Html.a_media
+
+  let a_style = pure_arg Html.a_style
+
+  let a_property = pure_arg Html.a_property
+
+  let a_role = pure_arg Html.a_role
+
+  let a_aria = pure_snd_arg Html.a_aria
+
+  let txt = pure_arg Html.txt
+
+  let bdo ~dir = Html.bdo ~dir:(Lwd.pure dir)
+  let img ~src ~alt = Html.img ~src:(Lwd.pure src) ~alt:(Lwd.pure alt)
+
+  let audio ?src  = Html.audio ?src:(Option.map Lwd.pure src)
+  let video ?src = Html.video ?src:(Option.map Lwd.pure src)
+  let area ~alt = Html.area ~alt:(Lwd.pure alt)
+  let optgroup ~label = Html.optgroup ~label:(Lwd.pure label)
+  let command ~label = Html.command ~label:(Lwd.pure label)
+  let link ~rel ~href = Html.link ~rel:(Lwd.pure rel) ~href:(Lwd.pure href)
+end
+
+module Pure_svg = struct
+  include Svg
+
+  let a_x = pure_arg Svg.a_x
+
+  let a_y = pure_arg Svg.a_y
+
+  let a_width = pure_arg Svg.a_width
+
+  let a_height = pure_arg Svg.a_height
+
+  let a_preserveAspectRatio = pure_arg Svg.a_preserveAspectRatio
+
+  let a_zoomAndPan = pure_arg Svg.a_zoomAndPan
+
+  let a_href = pure_arg Svg.a_href
+
+  let a_requiredExtensions = pure_arg Svg.a_requiredExtensions
+
+  let a_systemLanguage = pure_arg Svg.a_systemLanguage
+
+  let a_externalRessourcesRequired =
+    pure_arg Svg.a_externalRessourcesRequired
+
+  let a_id = pure_arg Svg.a_id
+
+  let a_user_data = pure_snd_arg Svg.a_user_data
+
+  let a_xml_lang = pure_arg Svg.a_xml_lang
+
+  let a_type = pure_arg Svg.a_type
+
+  let a_media = pure_arg Svg.a_media
+
+  let a_class = pure_arg Svg.a_class
+
+  let a_style = pure_arg Svg.a_style
+
+  let a_transform = pure_arg Svg.a_transform
+
+  let a_viewBox = pure_arg Svg.a_viewBox
+
+  let a_d = pure_arg Svg.a_d
+
+  let a_pathLength = pure_arg Svg.a_pathLength
+
+  let a_rx = pure_arg Svg.a_rx
+
+  let a_ry = pure_arg Svg.a_ry
+
+  let a_cx = pure_arg Svg.a_cx
+
+  let a_cy = pure_arg Svg.a_cy
+
+  let a_r = pure_arg Svg.a_r
+
+  let a_x1 = pure_arg Svg.a_x1
+
+  let a_y1 = pure_arg Svg.a_y1
+
+  let a_x2 = pure_arg Svg.a_x2
+
+  let a_y2 = pure_arg Svg.a_y2
+
+  let a_points = pure_arg Svg.a_points
+
+  let a_x_list = pure_arg Svg.a_x_list
+
+  let a_y_list = pure_arg Svg.a_y_list
+
+  let a_dx = pure_arg Svg.a_dx
+
+  let a_dy = pure_arg Svg.a_dy
+
+  let a_dx_list = pure_arg Svg.a_dx_list
+
+  let a_dy_list = pure_arg Svg.a_dy_list
+
+  let a_lengthAdjust = pure_arg Svg.a_lengthAdjust
+
+  let a_textLength = pure_arg Svg.a_textLength
+
+  let a_text_anchor = pure_arg Svg.a_text_anchor
+
+  let a_text_decoration = pure_arg Svg.a_text_decoration
+
+  let a_text_rendering = pure_arg Svg.a_text_rendering
+
+  let a_rotate = pure_arg Svg.a_rotate
+
+  let a_startOffset = pure_arg Svg.a_startOffset
+
+  let a_method = pure_arg Svg.a_method
+
+  let a_spacing = pure_arg Svg.a_spacing
+
+  let a_glyphRef = pure_arg Svg.a_glyphRef
+
+  let a_format = pure_arg Svg.a_format
+
+  let a_markerUnits = pure_arg Svg.a_markerUnits
+
+  let a_refX = pure_arg Svg.a_refX
+
+  let a_refY = pure_arg Svg.a_refY
+
+  let a_markerWidth = pure_arg Svg.a_markerWidth
+
+  let a_markerHeight = pure_arg Svg.a_markerHeight
+
+  let a_orient = pure_arg Svg.a_orient
+
+  let a_local = pure_arg Svg.a_local
+
+  let a_rendering_intent = pure_arg Svg.a_rendering_intent
+
+  let a_gradientUnits = pure_arg Svg.a_gradientUnits
+
+  let a_gradientTransform = pure_arg Svg.a_gradientTransform
+
+  let a_spreadMethod = pure_arg Svg.a_spreadMethod
+
+  let a_fx = pure_arg Svg.a_fx
+
+  let a_fy = pure_arg Svg.a_fy
+
+  let a_offset = pure_arg Svg.a_offset
+
+  let a_patternUnits = pure_arg Svg.a_patternUnits
+
+  let a_patternContentUnits = pure_arg Svg.a_patternContentUnits
+
+  let a_patternTransform = pure_arg Svg.a_patternTransform
+
+  let a_clipPathUnits = pure_arg Svg.a_clipPathUnits
+
+  let a_maskUnits = pure_arg Svg.a_maskUnits
+
+  let a_maskContentUnits = pure_arg Svg.a_maskContentUnits
+
+  let a_primitiveUnits = pure_arg Svg.a_primitiveUnits
+
+  let a_filterRes = pure_arg Svg.a_filterRes
+
+  let a_result = pure_arg Svg.a_result
+
+  let a_in = pure_arg Svg.a_in
+
+  let a_in2 = pure_arg Svg.a_in2
+
+  let a_azimuth = pure_arg Svg.a_azimuth
+
+  let a_elevation = pure_arg Svg.a_elevation
+
+  let a_pointsAtX = pure_arg Svg.a_pointsAtX
+
+  let a_pointsAtY = pure_arg Svg.a_pointsAtY
+
+  let a_pointsAtZ = pure_arg Svg.a_pointsAtZ
+
+  let a_specularExponent = pure_arg Svg.a_specularExponent
+
+  let a_specularConstant = pure_arg Svg.a_specularConstant
+
+  let a_limitingConeAngle = pure_arg Svg.a_limitingConeAngle
+
+  let a_mode = pure_arg Svg.a_mode
+
+  let a_feColorMatrix_type = pure_arg Svg.a_feColorMatrix_type
+
+  let a_values = pure_arg Svg.a_values
+
+  let a_transfer_type = pure_arg Svg.a_transfer_type
+
+  let a_tableValues = pure_arg Svg.a_tableValues
+
+  let a_intercept = pure_arg Svg.a_intercept
+
+  let a_amplitude = pure_arg Svg.a_amplitude
+
+  let a_exponent = pure_arg Svg.a_exponent
+
+  let a_transfer_offset = pure_arg Svg.a_transfer_offset
+
+  let a_feComposite_operator = pure_arg Svg.a_feComposite_operator
+
+  let a_k1 = pure_arg Svg.a_k1
+
+  let a_k2 = pure_arg Svg.a_k2
+
+  let a_k3 = pure_arg Svg.a_k3
+
+  let a_k4 = pure_arg Svg.a_k4
+
+  let a_order = pure_arg Svg.a_order
+
+  let a_kernelMatrix = pure_arg Svg.a_kernelMatrix
+
+  let a_divisor = pure_arg Svg.a_divisor
+
+  let a_bias = pure_arg Svg.a_bias
+
+  let a_kernelUnitLength = pure_arg Svg.a_kernelUnitLength
+
+  let a_targetX = pure_arg Svg.a_targetX
+
+  let a_targetY = pure_arg Svg.a_targetY
+
+  let a_edgeMode = pure_arg Svg.a_edgeMode
+
+  let a_preserveAlpha = pure_arg Svg.a_preserveAlpha
+
+  let a_surfaceScale = pure_arg Svg.a_surfaceScale
+
+  let a_diffuseConstant = pure_arg Svg.a_diffuseConstant
+
+  let a_scale = pure_arg Svg.a_scale
+
+  let a_xChannelSelector = pure_arg Svg.a_xChannelSelector
+
+  let a_yChannelSelector = pure_arg Svg.a_yChannelSelector
+
+  let a_stdDeviation = pure_arg Svg.a_stdDeviation
+
+  let a_feMorphology_operator = pure_arg Svg.a_feMorphology_operator
+
+  let a_radius = pure_arg Svg.a_radius
+
+  let a_baseFrenquency = pure_arg Svg.a_baseFrenquency
+
+  let a_numOctaves = pure_arg Svg.a_numOctaves
+
+  let a_seed = pure_arg Svg.a_seed
+
+  let a_stitchTiles = pure_arg Svg.a_stitchTiles
+
+  let a_feTurbulence_type = pure_arg Svg.a_feTurbulence_type
+
+  let a_target = pure_arg Svg.a_target
+
+  let a_attributeName = pure_arg Svg.a_attributeName
+
+  let a_attributeType = pure_arg Svg.a_attributeType
+
+  let a_begin = pure_arg Svg.a_begin
+
+  let a_dur = pure_arg Svg.a_dur
+
+  let a_min = pure_arg Svg.a_min
+
+  let a_max = pure_arg Svg.a_max
+
+  let a_restart = pure_arg Svg.a_restart
+
+  let a_repeatCount = pure_arg Svg.a_repeatCount
+
+  let a_repeatDur = pure_arg Svg.a_repeatDur
+
+  let a_fill = pure_arg Svg.a_fill
+
+  let a_animation_fill = pure_arg Svg.a_animation_fill
+
+  let a_calcMode = pure_arg Svg.a_calcMode
+
+  let a_animation_values = pure_arg Svg.a_animation_values
+
+  let a_keyTimes = pure_arg Svg.a_keyTimes
+
+  let a_keySplines = pure_arg Svg.a_keySplines
+
+  let a_from = pure_arg Svg.a_from
+
+  let a_to = pure_arg Svg.a_to
+
+  let a_by = pure_arg Svg.a_by
+
+  let a_additive = pure_arg Svg.a_additive
+
+  let a_accumulate = pure_arg Svg.a_accumulate
+
+  let a_keyPoints = pure_arg Svg.a_keyPoints
+
+  let a_path = pure_arg Svg.a_path
+
+  let a_animateTransform_type = pure_arg Svg.a_animateTransform_type
+
+  let a_horiz_origin_x = pure_arg Svg.a_horiz_origin_x
+
+  let a_horiz_origin_y = pure_arg Svg.a_horiz_origin_y
+
+  let a_horiz_adv_x = pure_arg Svg.a_horiz_adv_x
+
+  let a_vert_origin_x = pure_arg Svg.a_vert_origin_x
+
+  let a_vert_origin_y = pure_arg Svg.a_vert_origin_y
+
+  let a_vert_adv_y = pure_arg Svg.a_vert_adv_y
+
+  let a_unicode = pure_arg Svg.a_unicode
+
+  let a_glyph_name = pure_arg Svg.a_glyph_name
+
+  let a_orientation = pure_arg Svg.a_orientation
+
+  let a_arabic_form = pure_arg Svg.a_arabic_form
+
+  let a_lang = pure_arg Svg.a_lang
+
+  let a_u1 = pure_arg Svg.a_u1
+
+  let a_u2 = pure_arg Svg.a_u2
+
+  let a_g1 = pure_arg Svg.a_g1
+
+  let a_g2 = pure_arg Svg.a_g2
+
+  let a_k = pure_arg Svg.a_k
+
+  let a_font_family = pure_arg Svg.a_font_family
+
+  let a_font_style = pure_arg Svg.a_font_style
+
+  let a_font_variant = pure_arg Svg.a_font_variant
+
+  let a_font_weight = pure_arg Svg.a_font_weight
+
+  let a_font_stretch = pure_arg Svg.a_font_stretch
+
+  let a_font_size = pure_arg Svg.a_font_size
+
+  let a_unicode_range = pure_arg Svg.a_unicode_range
+
+  let a_units_per_em = pure_arg Svg.a_units_per_em
+
+  let a_stemv = pure_arg Svg.a_stemv
+
+  let a_stemh = pure_arg Svg.a_stemh
+
+  let a_slope = pure_arg Svg.a_slope
+
+  let a_cap_height = pure_arg Svg.a_cap_height
+
+  let a_x_height = pure_arg Svg.a_x_height
+
+  let a_accent_height = pure_arg Svg.a_accent_height
+
+  let a_ascent = pure_arg Svg.a_ascent
+
+  let a_widths = pure_arg Svg.a_widths
+
+  let a_bbox = pure_arg Svg.a_bbox
+
+  let a_ideographic = pure_arg Svg.a_ideographic
+
+  let a_alphabetic = pure_arg Svg.a_alphabetic
+
+  let a_mathematical = pure_arg Svg.a_mathematical
+
+  let a_hanging = pure_arg Svg.a_hanging
+
+  let a_videographic = pure_arg Svg.a_videographic
+
+  let a_v_alphabetic = pure_arg Svg.a_v_alphabetic
+
+  let a_v_mathematical = pure_arg Svg.a_v_mathematical
+
+  let a_v_hanging = pure_arg Svg.a_v_hanging
+
+  let a_underline_position = pure_arg Svg.a_underline_position
+
+  let a_underline_thickness = pure_arg Svg.a_underline_thickness
+
+  let a_strikethrough_position = pure_arg Svg.a_strikethrough_position
+
+  let a_strikethrough_thickness =
+    pure_arg Svg.a_strikethrough_thickness
+
+  let a_overline_position = pure_arg Svg.a_overline_position
+
+  let a_overline_thickness = pure_arg Svg.a_overline_thickness
+
+  let a_string = pure_arg Svg.a_string
+
+  let a_name = pure_arg Svg.a_name
+
+  let a_alignment_baseline = pure_arg Svg.a_alignment_baseline
+
+  let a_dominant_baseline = pure_arg Svg.a_dominant_baseline
+
+  let a_stop_color = pure_arg Svg.a_stop_color
+
+  let a_stop_opacity = pure_arg Svg.a_stop_opacity
+
+  let a_stroke = pure_arg Svg.a_stroke
+
+  let a_stroke_width = pure_arg Svg.a_stroke_width
+
+  let a_stroke_linecap = pure_arg Svg.a_stroke_linecap
+
+  let a_stroke_linejoin = pure_arg Svg.a_stroke_linejoin
+
+  let a_stroke_miterlimit = pure_arg Svg.a_stroke_miterlimit
+
+  let a_stroke_dasharray = pure_arg Svg.a_stroke_dasharray
+
+  let a_stroke_dashoffset = pure_arg Svg.a_stroke_dashoffset
+
+  let a_stroke_opacity = pure_arg Svg.a_stroke_opacity
+
+  let a_onabort = pure_opt_arg Svg.a_onabort
+
+  let a_onactivate = pure_opt_arg Svg.a_onactivate
+
+  let a_onbegin = pure_opt_arg Svg.a_onbegin
+
+  let a_onend = pure_opt_arg Svg.a_onend
+
+  let a_onerror = pure_opt_arg Svg.a_onerror
+
+  let a_onfocusin = pure_opt_arg Svg.a_onfocusin
+
+  let a_onfocusout = pure_opt_arg Svg.a_onfocusout
+
+  let a_onrepeat = pure_opt_arg Svg.a_onrepeat
+
+  let a_onresize = pure_opt_arg Svg.a_onresize
+
+  let a_onscroll = pure_opt_arg Svg.a_onscroll
+
+  let a_onunload = pure_opt_arg Svg.a_onunload
+
+  let a_onzoom = pure_opt_arg Svg.a_onzoom
+
+  let a_onclick = pure_opt_arg Svg.a_onclick
+
+  let a_onmousedown = pure_opt_arg Svg.a_onmousedown
+
+  let a_onmouseup = pure_opt_arg Svg.a_onmouseup
+
+  let a_onmouseover = pure_opt_arg Svg.a_onmouseover
+
+  let a_onmouseout = pure_opt_arg Svg.a_onmouseout
+
+  let a_onmousemove = pure_opt_arg Svg.a_onmousemove
+
+  let a_ontouchstart = pure_opt_arg Svg.a_ontouchstart
+
+  let a_ontouchend = pure_opt_arg Svg.a_ontouchend
+
+  let a_ontouchmove = pure_opt_arg Svg.a_ontouchmove
+
+  let a_ontouchcancel = pure_opt_arg Svg.a_ontouchcancel
+
+  let txt = pure_arg Svg.txt
+end
+
+module Pure = struct
+  module Svg = Pure_svg
+  module Html = Pure_html
+end
