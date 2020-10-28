@@ -14,7 +14,6 @@ type 'a eval =
 
 type 'a t_ =
   | Pure of 'a
-  | Impure of 'a (* NOTE: is this really used anywhere? *)
   | Operator : {
       mutable value : 'a eval; (* cached value *)
       mutable trace : trace; (* list of parents this can invalidate *)
@@ -66,12 +65,6 @@ external prj2 : 'a t t -> 'a t_ t_ = "%identity"
 (* Basic combinators *)
 let return x = inj (Pure x)
 let pure x = inj (Pure x)
-
-let impure x = inj (
-    match prj x with
-    | Pure x -> Impure x
-    | other -> other
-  )
 
 let is_pure x = match prj x with
   | Pure x -> Some x
@@ -125,7 +118,6 @@ external obj_t : 'a t_ -> Any.t t_ = "%identity"
 let rec dump_trace : type a. a t_ -> unit =
   fun obj -> match obj with
   | Pure _ -> Printf.eprintf "%a: Pure _\n%!" addr obj
-  | Impure _ -> Printf.eprintf "%a: Impure _\n%!" addr obj
   | Operator t ->
     Printf.eprintf "%a: Operator _ -> %a\n%!" addr obj dump_trace_aux t.trace;
     begin match t.trace with
@@ -156,7 +148,7 @@ and dump_trace_aux oc = function
 let dump_trace x = dump_trace (obj_t (prj x))
 
 let add_idx obj idx = function
-  | Pure _ | Impure _ -> assert false
+  | Pure _ -> assert false
   | Root t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
   | Operator t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
 
@@ -173,7 +165,7 @@ let rec rem_idx_rec obj = function
 
 (* remove [obj] from the lwd's trace. *)
 let rem_idx obj = function
-  | Pure _ | Impure _ -> assert false
+  | Pure _ -> assert false
   | Root t' ->
     let idx, trace_idx = rem_idx_rec obj t'.trace_idx in
     t'.trace_idx <- trace_idx; idx
@@ -190,7 +182,7 @@ let rec mov_idx_rec obj oldidx newidx = function
     else mov_idx_rec obj oldidx newidx t.next
 
 let mov_idx obj oldidx newidx = function
-  | Pure _ | Impure _ -> assert false
+  | Pure _ -> assert false
   | Root t' -> mov_idx_rec obj oldidx newidx t'.trace_idx
   | Operator t' -> mov_idx_rec obj oldidx newidx t'.trace_idx
 
@@ -203,7 +195,7 @@ let rec get_idx_rec obj = function
 
 (* find index of [obj] in the given lwd *)
 let get_idx obj = function
-  | Pure _ | Impure _ -> assert false
+  | Pure _ -> assert false
   | Root t' -> get_idx_rec obj t'.trace_idx
   | Operator t' -> get_idx_rec obj t'.trace_idx
 
@@ -211,7 +203,7 @@ let get_idx obj = function
    Each document is invalidated at most once,
    and only if it has [t.value = Some _]. *)
 let rec invalidate_node : type a . a t_ -> unit = function
-  | Pure _ | Impure _ -> assert false
+  | Pure _ -> assert false
   | Root ({ value; _ } as t) ->
     t.value <- Eval_none;
     begin match value with
@@ -302,7 +294,7 @@ let rec sub_release
   : type a b . release_failure list -> a t_ -> b t_ -> release_failure list
   = fun failures origin -> function
     | Root _ -> assert false
-    | Pure _ | Impure _ -> failures
+    | Pure _ -> failures
     | Operator t as self ->
       (* compute [t.trace \ {origin}] *)
       let trace = match t.trace with
@@ -397,7 +389,7 @@ let rec sub_release
 let rec sub_acquire : type a b . a t_ -> b t_ -> unit = fun origin ->
   function
   | Root _ -> assert false
-  | Pure _ | Impure _ -> ()
+  | Pure _ -> ()
   | Operator t as self ->
     (* [acquire] is true if this is the first time this operator
        is used, in which case we need to acquire its children *)
@@ -486,7 +478,7 @@ let sub_sample queue =
   let rec aux : type a b . a t_ -> b t_ -> b = fun origin ->
     function
     | Root _ -> assert false
-    | Pure x | Impure x -> x
+    | Pure x -> x
     | Operator t as self ->
       (* try to use cached value, if present *)
       match t.value with
@@ -566,7 +558,7 @@ let flush_release_queue queue =
   raw_flush_release_queue queue'
 
 let sample queue x = match prj x with
-  | Pure _ | Impure _ | Operator _ -> assert false
+  | Pure _ | Operator _ -> assert false
   | Root t as self ->
     match t.value with
     | Eval_some value -> value
@@ -585,12 +577,12 @@ let sample queue x = match prj x with
       value
 
 let is_damaged x = match prj x with
-  | Pure _ | Impure _ | Operator _ -> assert false
+  | Pure _ | Operator _ -> assert false
   | Root {value = Eval_some _; _} -> false
   | Root {value = Eval_none | Eval_progress; _} -> true
 
 let release queue x = match prj x with
-  | Pure _ | Impure _ | Operator _ -> assert false
+  | Pure _ | Operator _ -> assert false
   | Root t as self ->
     if t.acquired then (
       (* release subtree, remove cached value *)
@@ -601,7 +593,7 @@ let release queue x = match prj x with
 
 let set_on_invalidate x f =
   match prj x with
-  | Pure _ | Impure _ | Operator _ -> assert false
+  | Pure _ | Operator _ -> assert false
   | Root t -> t.on_invalidate <- f
 
 let flush_or_fail main_exn queue =
