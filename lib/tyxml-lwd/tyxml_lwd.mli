@@ -835,7 +835,7 @@ end
 
 open Html_types
 module Pure_html : sig
-  include module type of Html
+  include module type of struct include Html end
   
   val a_class : nmtokens -> [>`Class] attrib
   val a_user_data : string -> string -> [>`User_data] attrib
@@ -1054,7 +1054,7 @@ end
 
 open Svg_types
 module Pure_svg : sig
-  include module type of Svg
+  include module type of struct include Svg end
 
   val a_x : Unit.length -> [>`X] attrib
   val a_y : Unit.length -> [>`Y] attrib
