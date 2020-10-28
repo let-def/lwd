@@ -39,8 +39,13 @@ val app : ('a -> 'b) t -> 'a t -> 'b t
 val pair : 'a t -> 'b t -> ('a * 'b) t
 (** [pair a b] is [map2 (fun x y->x,y) a b] *)
 
-val impure : 'a t -> 'a t
 val is_pure : 'a t -> 'a option
+(** [is_pure x] will return [Some v] if [x] was built with [pure v] or
+    [return v].
+
+    Normal code should not rely on the "reactive-ness" of a value, but this is
+    often useful for optimising reactive data structures.
+*)
 
 type 'a var
 (** The workhorse of Lwd: a mutable variable that also tracks dependencies.
