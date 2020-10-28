@@ -265,13 +265,34 @@ module Xml
     Lwd_utils.pack ((), fun () () -> ())
       (List.map (fun (Attrib a) -> Lwd.map ~f:(attach node a) a.value) l)
 
+  let rec find_ns : attrib list -> string option = function
+    | [] -> None
+    | Attrib {name = "xmlns"; kind = Attr_string; value} :: _ ->
+      begin
+        (* The semantics should not differ whether an Lwd value is pure or not,
+           but let's do an exception for xml namespaces (those are managed
+           differently from other and can't be changed at runtime). *)
+        match Lwd.is_pure value with
+        | None ->
+          prerr_endline "xmlns attribute should be static";
+          None
+        | Some x -> x
+      end
+    | _ :: rest -> find_ns rest
+
+  let createElement ~ns name =
+    let name = Js.string name in
+    match ns with
+    | None -> Dom_html.document##createElement name
+    | Some ns -> Dom_html.document##createElementNS (Js.string ns) name
+
   let leaf ?(a = []) name : elt =
-    let e = Dom_html.document##createElement (Js.string name) in
+    let e = createElement ~ns:(find_ns a) name in
     let e' = Lwd_seq.element (e : Dom_html.element Js.t :> data) in
     Lwd.map (attach_attribs e a) ~f:(fun () -> e')
 
   let node ?(a = []) name (children : elt list_wrap) : elt =
-    let e = Dom_html.document##createElement (Js.string name) in
+    let e = createElement ~ns:(find_ns a) name in
     let e' = Lwd_seq.element e in
     Lwd.map2
       (update_children_list (e :> data) children)
