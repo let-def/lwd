@@ -71,15 +71,33 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
 let update_children_list self children =
   update_children self (Lwd.join (Lwd_utils.pack Lwd_seq.lwd_monoid children))
 
-module Xml
-  : Xml_sigs.T
+module Attrib = struct
+  type t =
+    | Event of
+        { name: string; value: (Dom_html.event Js.t -> bool) attr }
+    | Event_mouse of
+        { name: string; value: (Dom_html.mouseEvent Js.t -> bool) attr }
+    | Event_keyboard of
+        { name: string; value: (Dom_html.keyboardEvent Js.t -> bool) attr }
+    | Event_touch of
+        { name: string; value: (Dom_html.touchEvent Js.t -> bool) attr }
+    | Attrib of
+        { name: string; value: Js.js_string Js.t attr }
+end
+
+module Xml :
+sig
+  include Xml_sigs.T
     with module W = W
      and type uri = string
      and type elt = raw_node live
+     and type attrib = Attrib.t
      and type event_handler          = (Dom_html.event Js.t -> bool) attr
      and type mouse_event_handler    = (Dom_html.mouseEvent Js.t -> bool) attr
      and type keyboard_event_handler = (Dom_html.keyboardEvent Js.t -> bool) attr
      and type touch_event_handler    = (Dom_html.touchEvent Js.t -> bool) attr
+
+end
 = struct
 
   module W = W
@@ -99,83 +117,65 @@ module Xml
   type keyboard_event_handler = (Dom_html.keyboardEvent Js.t -> bool) attr
   type touch_event_handler    = (Dom_html.touchEvent Js.t -> bool) attr
 
-  type 'a attrib_k =
-    | Event          : (Dom_html.event Js.t -> bool) attrib_k
-    | Event_mouse    : (Dom_html.mouseEvent Js.t -> bool) attrib_k
-    | Event_keyboard : (Dom_html.keyboardEvent Js.t -> bool) attrib_k
-    | Event_touch    : (Dom_html.touchEvent Js.t -> bool) attrib_k
-    | Attr_float     : float attrib_k
-    | Attr_int       : int attrib_k
-    | Attr_string    : string attrib_k
-    | Attr_space_sep : string list attrib_k
-    | Attr_comma_sep : string list attrib_k
-    | Attr_uri       : string attrib_k
-    | Attr_uris      : string list attrib_k
+  type attrib = Attrib.t
 
-  type 'a attrib_v = {name: string; kind : 'a attrib_k; value: 'a attr}
-  type attrib = Attrib : 'a attrib_v -> attrib [@@ocaml.unboxed]
-
-  let attrib kind name value = Attrib {name; kind; value}
-  let attrib' kind name value =
-    attrib kind name (Lwd.map ~f:some value)
-
-  let float_attrib                  n v = attrib' Attr_float n v
-  let int_attrib                    n v = attrib' Attr_int n v
-  let string_attrib                 n v = attrib' Attr_string n v
-  let space_sep_attrib              n v = attrib' Attr_space_sep n v
-  let comma_sep_attrib              n v = attrib' Attr_comma_sep n v
-  let event_handler_attrib          n v = attrib Event n v
-  let mouse_event_handler_attrib    n v = attrib Event_mouse n v
-  let keyboard_event_handler_attrib n v = attrib Event_keyboard n v
-  let touch_event_handler_attrib    n v = attrib Event_touch n v
-  let uri_attrib                    n v = attrib' Attr_uri n v
-  let uris_attrib                   n v = attrib' Attr_uris n v
-
-  (*let rec first_element v =
-    match Lwd_seq.view v with
-    | Empty -> None
-    | Element v -> Some v
-    | Concat (l, _) -> first_element l*)
-
+  let attrib name value f = Attrib.Attrib {name; value = Lwd.map ~f value}
 
   let js_string_of_float f = (Js.number_of_float f)##toString
-
   let js_string_of_int i = (Js.number_of_float (float_of_int i))##toString
 
-  let set_attr (node: #Dom.element Js.t) k v = node##setAttribute k v
+  let float_attrib n v = attrib n v
+      (fun v -> Some (js_string_of_float v))
+  let int_attrib n v = attrib n v
+      (fun v -> Some (js_string_of_int v))
+  let string_attrib n v = attrib n v
+      (fun v -> Some (Js.string v))
+  let space_sep_attrib n v = attrib n v
+      (fun v -> Some (Js.string (String.concat " " v)))
+  let comma_sep_attrib n v = attrib n v
+      (fun v -> Some (Js.string (String.concat "," v)))
 
-  let attach
-      (type a) (node: #Dom.element Js.t) (k: a attrib_v) (v : a option) =
-    let name_js = Js.string k.name in
-    match v with
-    | None ->
-      if k.name = "style" then node##.style##.cssText := Js.string "" else
-        begin match k.kind with
-          | Event | Event_mouse | Event_keyboard | Event_touch ->
-            Js.Unsafe.set node name_js Js.null
-          | Attr_float | Attr_int | Attr_string | Attr_space_sep
-          | Attr_comma_sep | Attr_uri | Attr_uris ->
-            node##removeAttribute name_js
-        end
-    | Some v ->
-      begin match k.kind with
-        | Event          -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
-        | Event_mouse    -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
-        | Event_keyboard -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
-        | Event_touch    -> Js.Unsafe.set node name_js (fun ev -> Js.bool (v ev))
-        | Attr_float     -> set_attr node name_js (js_string_of_float v)
-        | Attr_int       -> set_attr node name_js (js_string_of_int v)
-        | Attr_string    ->
-          if k.name = "style"
-          then node##.style##.cssText := (Js.string v)
-          else if k.name = "value"
-          then Js.Unsafe.set node name_js (Js.string v)
-          else set_attr node name_js (Js.string v)
-        | Attr_space_sep -> set_attr node name_js (Js.string (String.concat " " v))
-        | Attr_comma_sep -> set_attr node name_js (Js.string (String.concat "," v))
-        | Attr_uri       -> set_attr node name_js (Js.string v)
-        | Attr_uris      -> set_attr node name_js (Js.string (String.concat " " v))
-      end
+  let event_handler_attrib n v =
+    Attrib.Event {name = n; value = v}
+
+  let mouse_event_handler_attrib n v =
+    Attrib.Event_mouse {name = n; value = v}
+
+  let keyboard_event_handler_attrib n v =
+    Attrib.Event_keyboard {name = n; value = v}
+
+  let touch_event_handler_attrib n v =
+    Attrib.Event_touch {name = n; value = v}
+
+  let uri_attrib n v = attrib n v
+      (fun v -> Some (Js.string v))
+
+  let uris_attrib n v = attrib n v
+      (fun v -> Some (Js.string (String.concat " " v)))
+
+  let attach_attrib (node: #Dom.element Js.t) name value =
+    let f = match name with
+      | "style" -> (function
+          | None -> node##.style##.cssText := Js.string ""
+          | Some v -> node##.style##.cssText := v
+        )
+      | "value" -> (function
+          | None -> (Obj.magic node : _ Js.t)##.value := Js.string ""
+          | Some v -> (Obj.magic node : _ Js.t)##.value := v
+        )
+      | name -> let name = Js.string name in (function
+          | None -> node##removeAttribute name
+          | Some v -> node##setAttribute name v
+        )
+    in
+    Lwd.map ~f value
+
+  let attach_event (node: #Dom.element Js.t) name value =
+    let name = Js.string name in
+    Lwd.map ~f:(function
+        | None -> Js.Unsafe.set node name Js.null
+        | Some v -> Js.Unsafe.set node name (fun ev -> Js.bool (v ev))
+      ) value
 
   (** Element *)
 
@@ -263,11 +263,17 @@ module Xml
 
   let attach_attribs node l =
     Lwd_utils.pack ((), fun () () -> ())
-      (List.map (fun (Attrib a) -> Lwd.map ~f:(attach node a) a.value) l)
+      (List.map (function
+           | Attrib.Attrib  {name; value} -> attach_attrib node name value
+           | Event          {name; value} -> attach_event node name value
+           | Event_mouse    {name; value} -> attach_event node name value
+           | Event_keyboard {name; value} -> attach_event node name value
+           | Event_touch    {name; value} -> attach_event node name value
+         ) l)
 
-  let rec find_ns : attrib list -> string option = function
+  let rec find_ns : attrib list -> Js.js_string Js.t option = function
     | [] -> None
-    | Attrib {name = "xmlns"; kind = Attr_string; value} :: _ ->
+    | Attrib {name = "xmlns"; value} :: _ ->
       begin
         (* The semantics should not differ whether an Lwd value is pure or not,
            but let's do an exception for xml namespaces (those are managed
@@ -284,7 +290,7 @@ module Xml
     let name = Js.string name in
     match ns with
     | None -> Dom_html.document##createElement name
-    | Some ns -> Dom_html.document##createElementNS (Js.string ns) name
+    | Some ns -> Dom_html.document##createElementNS ns name
 
   let leaf ?(a = []) name : elt =
     let e = createElement ~ns:(find_ns a) name in
@@ -309,7 +315,20 @@ end
 type +'a node = raw_node
 type +'a attrib = Xml.attrib
 
-module Raw_svg = Svg_f.Make(Xml)
+module Raw_svg = Svg_f.Make(struct
+    include Xml
+
+    let svg_xmlns = Attrib.Attrib {
+        name = "xmlns";
+        value = Lwd.pure (Some (Js.string "http://www.w3.org/2000/svg"));
+      }
+
+    let leaf ?(a = []) name =
+      leaf ~a:(svg_xmlns :: a) name
+
+    let node ?(a = []) name (children : elt list_wrap) =
+      node ~a:(svg_xmlns :: a) name children
+  end)
 
 open Svg_types
 module Svg : sig
