@@ -74,10 +74,11 @@ type +'a prim
     A primitive is a resource with [acquire] and [release] functions
     to manage its lifecycle. *)
 
-val prim : acquire:(unit -> 'a) -> release:('a -> unit) -> 'a prim
+val prim : acquire:('a prim -> 'a) -> release:('a prim -> 'a -> unit) -> 'a prim
 (** create a new primitive document.
     @param acquire is called when the document becomes observed (indirectly)
-    via at least one {!root}.
+    via at least one {!root}.  The resulting primitive is passed as an argument
+    to support certain recursive use cases.
     @param release is called when the document is no longer observed.
     Internal resources can be freed. *)
 
