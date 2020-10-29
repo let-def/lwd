@@ -762,8 +762,9 @@ module Html : sig
     ([<optgroup_attrib], [<optgroup_content_fun], [>optgroup]) star
   val option :
     ([<option_attrib], [<option_content_fun], [>selectoption]) unary
-  val textarea :
-    ([<textarea_attrib], [<textarea_content], [>textarea]) unary
+  val textarea : ?a:[<textarea_attrib] attrib list -> string Lwd.t -> [>textarea] elt
+  (* Textarea syntactically looks like it takes its content from its children
+     nodes, but dynamic semantics use the value attribute :-( *)
   val keygen :
     ([<keygen_attrib], [>keygen]) nullary
   val progress :

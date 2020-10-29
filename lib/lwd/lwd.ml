@@ -620,7 +620,7 @@ end
 
 (*$R
   let x = var 0 in
-  let y = map succ (get x) in
+  let y = map ~f:succ (get x) in
   let o_y = Lwd.observe y in
   assert_equal 1 (quick_sample o_y);
   set x 10;
