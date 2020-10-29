@@ -197,7 +197,9 @@ end
     in
     Lwd.map text ~f:(fun text ->
         begin match Lwd_seq.view node with
-          | Lwd_seq.Element elt -> elt##.data := Js.string text;
+          | Lwd_seq.Element elt ->
+            let text = Js.string text in
+            if elt##.data <> text then elt##.data := text
           | _ -> assert false
         end;
         (node : Dom.text Js.t Lwd_seq.t :> raw_node Lwd_seq.t)
