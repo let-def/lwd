@@ -1405,8 +1405,9 @@ module Html : sig
     ([<optgroup_attrib], [<optgroup_content_fun], [>optgroup]) star
   val option :
     ([<option_attrib], [<option_content_fun], [>selectoption]) unary
-  val textarea :
-    ([<textarea_attrib], [<textarea_content], [>textarea]) unary
+  val textarea : ?a:[<textarea_attrib] attrib list -> string Lwd.t -> [>textarea] elt
+  (* Textarea syntactically looks like it takes its content from its children
+     nodes, but dynamic semantics use the value attribute :-( *)
   val keygen :
     ([<keygen_attrib], [>keygen]) nullary
   val progress :
@@ -1801,7 +1802,12 @@ end = struct
     Raw_html.datalist ?children ?a ()
   let optgroup ~label ?a elts = Raw_html.optgroup ~label ?a (pures elts)
   let option                = unary Raw_html.option
-  let textarea              = unary Raw_html.textarea
+  let textarea ?(a=[]) txt =
+    let value = Lwd.map ~f:(fun txt -> Some (Js.string txt)) txt in
+    let attrib = Attrib.Attrib {name="value"; value} in
+    Raw_html.textarea ~a:(attrib :: a)
+      (Lwd.pure (Lwd.pure Lwd_seq.empty))
+  (*(Lwd.pure (Xml.pcdata txt))*)
   let keygen                = Raw_html.keygen
   let progress              = star Raw_html.progress
   let meter                 = star Raw_html.meter
