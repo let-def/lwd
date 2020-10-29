@@ -35,8 +35,8 @@ and _ desc =
   | App  : ('a -> 'b) t_ * 'a t_ -> 'b desc
   | Join : { child : 'a t_ t_; mutable intermediate : 'a t_ option } -> 'a desc
   | Var  : { mutable binding : 'a } -> 'a desc
-  | Prim : { acquire : unit -> 'a;
-             release : 'a -> unit } -> 'a desc
+  | Prim : { acquire : 'a t -> 'a;
+             release : 'a t -> 'a -> unit } -> 'a desc
 
 (* a set of (active) parents for a ['a t], used during invalidation *)
 and trace =
@@ -57,7 +57,7 @@ and trace_idx =
 
 (* The type system cannot see that t is covariant in its parameter.
    Use the Force to convince it. *)
-type +'a t
+and +'a t
 external inj : 'a t_ -> 'a t = "%identity"
 external prj : 'a t -> 'a t_ = "%identity"
 external prj2 : 'a t t -> 'a t_ t_ = "%identity"
@@ -270,7 +270,7 @@ let invalidate x = match prj x with
     invalidate_trace t.trace;
     begin match value with
       | Eval_none | Eval_progress -> ()
-      | Eval_some v -> p.release v
+      | Eval_some v -> p.release x v
     end
   | _ -> assert false
 
@@ -375,7 +375,7 @@ let rec sub_release
             begin match value with
               | Eval_none  | Eval_progress -> failures
               | Eval_some x ->
-                begin match t.release x with
+                begin match t.release (inj self) x with
                   | () -> failures
                   | exception exn ->
                     let bt = Printexc.get_raw_backtrace () in
@@ -514,7 +514,7 @@ let sub_sample queue =
             end;
             aux self intermediate
           | Var  x -> x.binding
-          | Prim t -> t.acquire ()
+          | Prim t -> t.acquire (inj self)
         in
         begin match t.value with
           | Eval_progress -> t.value <- Eval_some result;

@@ -335,7 +335,6 @@ type ('a, 'b) reduction = {
   mutable generation: unit ref;
   mapper: 'a row -> 'a -> 'b;
   monoid: 'b Lwd_utils.monoid;
-  primitive : ('a, 'b) reduction Lwd.prim lazy_t;
 }
 
 
@@ -477,31 +476,29 @@ let eval red =
 let opaque : 'a Lwd.prim -> Obj.t Lwd.prim = Obj.magic
 
 let map_reduce mapper monoid source =
-  let rec reduction = {
+  let reduction = {
     source; mapper; monoid;
     result = Red_leaf;
     generation = not_origin;
     version = 0;
-    primitive = lazy begin Lwd.prim
-        ~acquire:(fun () ->
-            let lazy node = reduction.primitive in
-            match reduction.source with
-            | Leaf | Node _ -> assert false
-            | Root root ->
-              root.on_invalidate <- opaque node :: root.on_invalidate;
-              reduction
-          )
-        ~release:(fun reduction ->
-            let lazy node = reduction.primitive in
-            match reduction.source with
-            | Leaf | Node _ -> assert false
-            | Root root ->
-              root.on_invalidate <-
-                List.filter ((!=) (opaque node)) root.on_invalidate
-          )
-    end
   } in
-  Lwd.map ~f:eval (Lwd.get_prim (Lazy.force reduction.primitive))
+  let prim = Lwd.prim
+      ~acquire:(fun self ->
+          match reduction.source with
+          | Leaf | Node _ -> assert false
+          | Root root ->
+            root.on_invalidate <- opaque self :: root.on_invalidate;
+            reduction
+        )
+      ~release:(fun self reduction ->
+          match reduction.source with
+          | Leaf | Node _ -> assert false
+          | Root root ->
+            root.on_invalidate <-
+              List.filter ((!=) (opaque self)) root.on_invalidate
+        )
+  in
+  Lwd.map ~f:eval (Lwd.get_prim prim)
 
 let reduce monoid source = map_reduce (fun _ x -> x) monoid source
 
