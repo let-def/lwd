@@ -91,11 +91,8 @@ module Trace : sig
   val invalidate : trace -> unit
 end = struct
 
-  let rec is_empty = function
+  let is_empty = function
     | T0 -> true
-    | TC1 t -> is_empty t.next
-    (* TODO: maybe [is_empty] is always [false] when there is a TC1 node:
-       a node without active parent should not have active children.  *)
     | _ -> false
 
   (* Management of trace indices *)
@@ -250,6 +247,11 @@ end = struct
       t.next <- remove_parent ~self ~parent t.next;
       t'
 
+  let remove_parent ~self ~parent = function
+    | T0 -> assert false
+    | TP1 x -> assert (t_equal x parent); T0
+    | trace -> remove_parent ~self ~parent trace
+
   let rec add_parent ~self ~parent = function
     | T0 -> TP1 parent
     | TP1 x -> TP2 (parent, x)
@@ -283,6 +285,11 @@ end = struct
       t.next <- add_parent ~self ~parent t.next;
       t'
 
+  let add_parent ~self ~parent = function
+    | T0 -> TP1 parent
+    | TP1 x -> TP2 (parent, x)
+    | trace -> add_parent ~self ~parent trace
+
   (* make sure that [parent] is in [self.trace_parent], passed as last arg. *)
   let rec activate ~self ~parent = function
     | TPn tn ->
@@ -303,6 +310,10 @@ end = struct
         mov_idx self idx active parent
       )
     | TC1 t -> activate ~self ~parent t.next
+    | _ -> ()
+
+  let activate ~self ~parent = function
+    | TPn _ | TC1 _ as trace -> activate ~self ~parent trace
     | _ -> ()
 end
 
