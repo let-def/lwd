@@ -109,12 +109,13 @@ module Reducer = struct
   let new_shared stats = stats.shared <- stats.shared + 1
   let new_blocked stats = stats.blocked <- stats.blocked + 1
 
-  let rec block stats = function
+  let rec block stats mask = function
     | Nil -> ()
     | Leaf t' ->
       let mark = t'.mark in
       if mark land both_mask <> both_mask && mark land both_mask <> 0
       then (
+        if mark land mask = 0 then new_marked stats else assert false;
         new_blocked stats;
         t'.mark <- mark lor both_mask
       )
@@ -122,10 +123,11 @@ module Reducer = struct
       let mark = t'.mark in
       if mark land both_mask <> both_mask && mark land both_mask <> 0
       then (
+        if mark land mask = 0 then new_marked stats else assert false;
         new_blocked stats;
         t'.mark <- mark lor both_mask;
-        block stats t'.l;
-        block stats t'.r;
+        block stats mask t'.l;
+        block stats mask t'.r;
       )
 
   let enqueue stats q mask = function
@@ -157,8 +159,8 @@ module Reducer = struct
           t'.mark <- -1;
           new_blocked stats;
           new_shared stats;
-          block stats t'.l;
-          block stats t'.r;
+          block stats mask t'.l;
+          block stats mask t'.r;
         ) else (
           (* First mark *)
           t'.mark <- mark lor mask;
