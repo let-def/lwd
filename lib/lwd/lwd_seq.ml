@@ -256,10 +256,10 @@ module Reducer = struct
     | XJoin {a = Join t' as a; l; r; b} as t ->
       let mark = t'.mark in
       if mark land both_mask = old_mask then (
-        let dropped_join = st.dropped_join in
-        if dropped_join > -1 then (
+        if st.dropped_join > -1 then (
+          let dropped_join = st.dropped_join - 1 in
           st.dropped.(dropped_join) <- b;
-          st.dropped_join <- dropped_join - 1;
+          st.dropped_join <- dropped_join;
           assert (st.dropped_leaf <= st.dropped_join);
         );
         t'.mark <- mark land lnot both_mask;
@@ -357,7 +357,7 @@ module Reducer = struct
       let st = {
         dropped = if get_dropped then Array.make nb_dropped None else [||];
         dropped_leaf = if get_dropped then 0 else - 1;
-        dropped_join = if get_dropped then nb_dropped - 1 else - 1;
+        dropped_join = if get_dropped then nb_dropped else - 1;
         shared = Array.make (sold.shared + snew.shared) Nil;
         shared_x = Array.make (sold.shared + snew.shared) [];
         shared_index = 0;
