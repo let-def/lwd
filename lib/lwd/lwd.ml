@@ -37,6 +37,7 @@ and _ desc =
   | Var  : { mutable binding : 'a } -> 'a desc
   | Prim : { acquire : 'a t -> 'a;
              release : 'a t -> 'a -> unit } -> 'a desc
+  | Fix : { doc : 'a t_; wrt : _ t_ } -> 'a desc
 
 (* a set of (active) parents for a ['a t], used during invalidation *)
 and trace =
@@ -199,45 +200,96 @@ let get_idx obj = function
   | Root t' -> get_idx_rec obj t'.trace_idx
   | Operator t' -> get_idx_rec obj t'.trace_idx
 
+type status =
+  | Neutral
+  | Safe
+  | Unsafe
+
+type sensitivity =
+  | Strong
+  | Fragile
+
 (* Propagating invalidation recursively.
    Each document is invalidated at most once,
    and only if it has [t.value = Some _]. *)
-let rec invalidate_node : type a . a t_ -> unit = function
-  | Pure _ -> assert false
-  | Root ({ value; _ } as t) ->
+let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
+  fun status sensitivity node ->
+  match node, sensitivity with
+  | Pure _, _ -> assert false
+  | Root ({value; _} as t), _ ->
     t.value <- Eval_none;
     begin match value with
-      | Eval_none | Eval_progress -> ()
+      | Eval_none -> ()
+      | Eval_progress ->
+        status := Unsafe
       | Eval_some x ->
+        begin match sensitivity with
+          | Strong -> ()
+          | Fragile -> status := Unsafe
+        end;
         t.on_invalidate x (* user callback that {i observes} this root. *)
     end
-  | Operator { value = Eval_none; _ } -> ()
-  | Operator t ->
+  | Operator {value = Eval_none; _}, Fragile ->
+    begin match !status with
+      | Unsafe | Safe -> ()
+      | _ -> status := Safe
+    end
+  | Operator {value = Eval_none; _}, _ -> ()
+  | Operator {desc = Fix {wrt = Operator {value = Eval_none; _}; _}; _}, Fragile ->
+    begin match !status with
+      | Safe | Unsafe -> ()
+      | Neutral -> status := Safe
+    end
+  | Operator {desc = Fix {wrt = Operator {value = Eval_some _; _}; _}; _}, Fragile ->
+    ()
+  | Operator t, _ ->
+    let sensitivity =
+      match t.value with Eval_progress -> Fragile | _ -> sensitivity
+    in
     t.value <- Eval_none;
-    invalidate_trace t.trace; (* invalidate parents recursively *)
+    (* invalidate parents recursively *)
+    invalidate_trace status sensitivity t.trace
 
 (* invalidate recursively documents in the given trace *)
-and invalidate_trace = function
+and invalidate_trace status sensitivity = function
   | T0 -> ()
-  | T1 x -> invalidate_node x
+  | T1 x -> invalidate_node status sensitivity x
   | T2 (x, y) ->
-    invalidate_node x;
-    invalidate_node y
+    invalidate_node status sensitivity x;
+    invalidate_node status sensitivity y
   | T3 (x, y, z) ->
-    invalidate_node x;
-    invalidate_node y;
-    invalidate_node z
+    invalidate_node status sensitivity x;
+    invalidate_node status sensitivity y;
+    invalidate_node status sensitivity z
   | T4 (x, y, z, w) ->
-    invalidate_node x;
-    invalidate_node y;
-    invalidate_node z;
-    invalidate_node w
+    invalidate_node status sensitivity x;
+    invalidate_node status sensitivity y;
+    invalidate_node status sensitivity z;
+    invalidate_node status sensitivity w
   | Tn t ->
     let active = t.active in
     t.active <- 0;
     for i = 0 to active - 1 do
-      invalidate_node t.entries.(i)
+      invalidate_node status sensitivity t.entries.(i)
     done
+
+let default_unsafe_mutation_logger () =
+  let callstack = Printexc.get_callstack 20 in
+  Printf.fprintf stderr
+    "Lwd: unsafe mutation (variable invalidated during evaluation) at\n%a"
+    Printexc.print_raw_backtrace callstack
+
+let unsafe_mutation_logger = ref default_unsafe_mutation_logger
+
+let do_invalidate sensitivity node =
+  let status = ref Neutral in
+  invalidate_node status sensitivity node;
+  let unsafe =
+    match !status with
+    | Neutral | Safe -> false
+    | Unsafe -> true
+  in
+  if unsafe then !unsafe_mutation_logger ()
 
 (* Variables *)
 type 'a var = 'a t_
@@ -248,7 +300,7 @@ let set (vx:_ var) x : unit =
   match vx with
   | Operator ({desc = Var v; _}) ->
     (* set the variable, and invalidate all observers *)
-    invalidate_node vx;
+    do_invalidate Strong vx;
     v.binding <- x
   | _ -> assert false
 
@@ -263,16 +315,23 @@ let prim ~acquire ~release =
 let get_prim x = x
 
 let invalidate x = match prj x with
-  | Operator ({ desc = Prim p; _ } as t) ->
-    let value = t.value in
-    t.value <- Eval_none;
+  | Operator {desc = Prim p; value; _} as t ->
     (* the value is invalidated, be sure to invalidate all parents as well *)
-    invalidate_trace t.trace;
     begin match value with
-      | Eval_none | Eval_progress -> ()
-      | Eval_some v -> p.release x v
+      | Eval_none -> ()
+      | Eval_progress -> do_invalidate Fragile t;
+      | Eval_some v ->
+        do_invalidate Strong t;
+        p.release x v
     end
   | _ -> assert false
+
+(* Fix point *)
+
+let fix doc ~wrt = match prj wrt with
+  | Root _ -> assert false
+  | Pure _ -> doc
+  | Operator _ as wrt -> inj (operator (Fix {doc = prj doc; wrt}))
 
 type release_list =
   | Release_done
@@ -371,6 +430,8 @@ let rec sub_release
                 sub_release failures self child'
             end
           | Var  _ -> failures
+          | Fix {doc; wrt} ->
+            sub_release (sub_release failures self wrt) self doc
           | Prim t ->
             begin match value with
               | Eval_none  | Eval_progress -> failures
@@ -438,6 +499,9 @@ let rec sub_acquire : type a b . a t_ -> b t_ -> unit = fun origin ->
       | App  (x, y) ->
         sub_acquire self x;
         sub_acquire self y
+      | Fix  {doc; wrt} ->
+        sub_acquire self doc;
+        sub_acquire self wrt
       | Join { child; intermediate } ->
         sub_acquire self child;
         begin match intermediate with
@@ -469,6 +533,15 @@ let activate_tracing self origin = function
     )
   | _ -> ()
 
+let sub_is_damaged = function
+  | Root _ -> assert false
+  | Pure _ -> false
+  | Operator {value; _} ->
+    match value with
+    | Eval_none -> true
+    | Eval_some _ -> false
+    | Eval_progress -> assert false
+
 (* [sub_sample origin self] computes a value for [self].
 
    [sub_sample] raise if any user-provided computation raises.
@@ -492,6 +565,16 @@ let sub_sample queue =
           | Map2 (x, y, f) -> f (aux self x) (aux self y)
           | Pair (x, y) -> (aux self x, aux self y)
           | App  (f, x) -> (aux self f) (aux self x)
+          | Fix {doc; wrt} ->
+            let _ = aux self wrt in
+            let result = aux self doc in
+            if sub_is_damaged wrt then
+              aux origin self
+            else (
+              if sub_is_damaged doc then
+                do_invalidate Fragile self;
+              result
+            )
           | Join x ->
             let intermediate =
               (* We haven't touched any state yet,
