@@ -85,6 +85,18 @@ val prim : acquire:('a prim -> 'a) -> release:('a prim -> 'a -> unit) -> 'a prim
 val get_prim : 'a prim -> 'a t
 val invalidate : 'a prim -> unit
 
+(** Some document might change variables during their evaluation.
+    These are called "unstable" documents.
+
+    Evaluating these might need many passes to eventually converge to a value.
+    The `fix` operator tries to stabilize a sub-document by repeating
+    evaluation until a stable condition is reached.
+*)
+val fix : 'a t -> wrt:_ t -> 'a t
+
+val default_unsafe_mutation_logger : unit -> unit
+val unsafe_mutation_logger : (unit -> unit) ref
+
 (** Releasing unused graphs *)
 type release_failure = exn * Printexc.raw_backtrace
 
