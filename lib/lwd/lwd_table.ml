@@ -44,7 +44,7 @@ let reparent ~parent ~oldchild ~newchild =
     n.right <- newchild
   | Leaf | Node _ -> assert false
 
-let make_node ?set ~left ~right ~parent =
+let make_node set ~left ~right ~parent =
   let binding = match set with
     | None -> Unbound
     | Some value -> Bound { value ; valid = true }
@@ -66,7 +66,7 @@ let rec raw_invalidate = function
 let prepend ?set = function
   | Root r as parent ->
     raw_invalidate parent;
-    let node = make_node ?set ~left:Leaf ~right:r.child ~parent in
+    let node = make_node set ~left:Leaf ~right:r.child ~parent in
     r.child <- node;
     node
   | Leaf | Node _ -> assert false
@@ -76,7 +76,7 @@ let prepend' x set = ignore (prepend x ~set)
 let append ?set = function
   | Root r as parent ->
     raw_invalidate parent;
-    let node = make_node ?set ~left:r.child ~right:Leaf ~parent in
+    let node = make_node set ~left:r.child ~right:Leaf ~parent in
     r.child <- node;
     node
   | Leaf | Node _ -> assert false
@@ -87,7 +87,7 @@ let before ?set = function
   | Node { parent = Leaf ; _ } | Leaf -> Leaf
   | Node n as parent ->
     raw_invalidate parent;
-    let node = make_node ?set ~left:n.left ~right:Leaf ~parent in
+    let node = make_node set ~left:n.left ~right:Leaf ~parent in
     n.left <- node;
     node
   | Root _ -> assert false
@@ -96,7 +96,7 @@ let after ?set = function
   | Node { parent = Leaf ; _ } | Leaf -> Leaf
   | Node n as parent ->
     raw_invalidate parent;
-    let node = make_node ?set ~left:Leaf ~right:n.right ~parent in
+    let node = make_node set ~left:Leaf ~right:n.right ~parent in
     n.right <- node;
     node
   | Root _ -> assert false
