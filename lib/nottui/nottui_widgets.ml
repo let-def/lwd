@@ -272,51 +272,11 @@ let sub_entry text f =
   in
   Ui.mouse_area on_click text
 
-let v_pane left right =
-  let w = ref 10 in
-  let h = ref 10 in
-  let split = ref 0.5 in
-  let splitter = Lwd.var empty_lwd in
-  let splitter_bg = Lwd.var Ui.empty in
-  let left_pane = Lwd.var empty_lwd in
-  let right_pane = Lwd.var empty_lwd in
-  let node = Lwd_utils.pack Ui.pack_y [!$left_pane; !$splitter; !$right_pane] in
-  let render () =
-    let split = int_of_float (!split *. float !h) in
-    let split = min (!h - 1) (max split 0) in
-    left_pane $= Lwd.map left
-      ~f:(fun t -> Ui.resize ~w:!w ~h:split t);
-    right_pane $= Lwd.map right
-      ~f:(fun t -> Ui.resize ~w:!w ~h:(!h - split - 1) t);
-    splitter_bg $= Ui.atom (I.char A.(bg lightyellow) ' ' !w 1);
-  in
-  let action ~x:_ ~y:_ = function
-    | `Left ->
-      let y0 = int_of_float (!split *. float !h) in
-      `Grab ((fun ~x:_ ~y ->
-          let y0' = y0 + y in
-          split := min 1.0 (max 0.0 (float y0' /. float !h));
-          render ()
-        ), (fun ~x:_ ~y:_ -> ()))
-    | _ -> `Unhandled
-  in
-  splitter $= Lwd.map ~f:(Ui.mouse_area action) (Lwd.get splitter_bg);
-  render ();
-  let on_resize ~w:ew ~h:eh =
-    if !w <> ew || !h <> eh then (
-      w := ew; h := eh;
-      render ()
-    )
-  in
-  Lwd.map node ~f:begin fun t ->
-    Ui.size_sensor on_resize (Ui.resize ~w:10 ~h:10 ~sw:1 ~sh:1 t)
-  end
-
 type pane_state =
   | Split of { pos: int; max: int }
   | Re_split of { pos: int; max: int; at: int }
 
-let h_pane l r =
+let h_pane left right =
   let state_var = Lwd.var (Split {pos = 5; max = 10}) in
   let render state (l, r) =
     let (Split {pos; max} | Re_split {pos; max; _}) = state in
@@ -353,7 +313,46 @@ let h_pane l r =
     in
     ui
   in
-  Lwd.map2 ~f:render (Lwd.get state_var) (Lwd.pair l r)
+  Lwd.map2 ~f:render (Lwd.get state_var) (Lwd.pair left right)
+
+let v_pane top bot =
+  let state_var = Lwd.var (Split {pos = 5; max = 10}) in
+  let render state (top, bot) =
+    let (Split {pos; max} | Re_split {pos; max; _}) = state in
+    let top = Ui.resize ~w:0 ~h:0 ~sw:1 ~sh:pos top in
+    let bot = Ui.resize ~w:0 ~h:0 ~sw:1 ~sh:(max - pos) bot in
+    let splitter =
+      Ui.resize ~bg:Notty.A.(bg lightyellow) ~w:0 ~h:1 ~sw:1 ~sh:0 Ui.empty
+    in
+    let splitter =
+      Ui.mouse_area (fun ~x:_ ~y:_ -> function
+          | `Left ->
+            `Grab (
+              (fun ~x:_ ~y ->
+                 match Lwd.peek state_var with
+                 | Split {pos; max} ->
+                   Lwd.set state_var (Re_split {pos; max; at = y})
+                 | Re_split {pos; max; at} ->
+                   if at <> y then
+                     Lwd.set state_var (Re_split {pos; max; at = y})
+              ),
+              (fun ~x:_ ~y:_ -> ())
+            )
+          | _ -> `Unhandled
+        ) splitter
+    in
+    let ui = Ui.join_y top (Ui.join_y splitter bot) in
+    let ui = Ui.resize ~w:10 ~h:10 ~sw:1 ~sh:1 ui in
+    let ui = match state with
+      | Split _ -> ui
+      | Re_split {at; _} ->
+        Ui.transient_sensor (fun ~x:_ ~y ~w:_ ~h () ->
+            Lwd.set state_var (Split {pos = (at - y); max = h})
+          ) ui
+    in
+    ui
+  in
+  Lwd.map2 ~f:render (Lwd.get state_var) (Lwd.pair top bot)
 
 let sub' str p l =
   if p = 0 && l = String.length str
