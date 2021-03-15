@@ -196,6 +196,40 @@ let vscroll_area ~state ~change t =
     |> Ui.keyboard_area (focus_handler state)
   end
 
+let scroll_hbar_width = 1
+let scroll_vbar_height = 1
+let mk_hbar () = Ui.resize ~sw:1 ~h:scroll_vbar_height ~bg:attr_menu_main Ui.empty
+let mk_vbar () = Ui.resize ~sh:1 ~w:scroll_hbar_width ~bg:attr_menu_main Ui.empty
+
+let scroll_box t =
+  (*let offset = Lwd.var (0, 0) in*)
+  let status = Lwd.var (false, false) in
+  let sensor layout ~w ~h =
+    let hbar = layout.Ui.w > w in
+    let vbar = layout.Ui.h > h in
+    let status' = (
+      hbar || (vbar && layout.Ui.w > w - scroll_hbar_width),
+      vbar || (hbar && layout.Ui.h > h - scroll_vbar_height)
+    ) in
+    if status' <> Lwd.peek status then
+      Lwd.set status status'
+  in
+  Lwd.map2 t (Lwd.get status) ~f:(fun ui (hbar, vbar) ->
+      let layout = Ui.layout_spec ui in
+      let ui = Ui.resize ~sw:1 ~sh:1 ui in
+      let ui = match hbar, vbar with
+        | false, false -> ui
+        | true, false ->
+          Ui.join_y ui (mk_hbar ())
+        | false, true ->
+          Ui.join_x ui (mk_vbar ())
+        | true, true ->
+          Ui.join_x (Ui.join_y ui (mk_hbar ()))
+                    (Ui.join_y (mk_vbar()) (Ui.space scroll_hbar_width scroll_vbar_height))
+      in
+      Ui.size_sensor (sensor layout) (Ui.resize_to ~crop:(Gravity.make ~h:`Positive ~v:`Positive) layout ui)
+    )
+
 let scroll_area ?(offset=0,0) t =
   let offset = Lwd.var offset in
   let scroll d_x d_y =

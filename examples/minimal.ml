@@ -73,11 +73,13 @@ let celsius_edit =
     ~on_submit:ignore
 
 let root =
+  Nottui_widgets.scroll_box (
     Lwd_utils.pack Ui.pack_y [
       Lwd.pure (Nottui_widgets.string "Celsius:");
       celsius_edit;
       Lwd.pure (Nottui_widgets.string "Farenheight:");
       farenheit_edit;
     ]
+  )
 
 let () = Ui_loop.run ~tick_period:0.2 root

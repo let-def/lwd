@@ -100,3 +100,5 @@ val file_select :
 val toggle : ?init:bool -> string Lwd.t -> (bool -> unit) -> ui Lwd.t
 
 val toggle' : string Lwd.t -> bool Lwd.var -> ui Lwd.t
+
+val scroll_box : ui Lwd.t -> ui Lwd.t
