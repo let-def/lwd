@@ -1,9 +1,7 @@
-open Lwd_infix
 open Lwd.Infix
 open Notty
 open Nottui
 
-let (!$) x = Lwd.join (Lwd.get x)
 let empty_lwd = Lwd.return Ui.empty
 
 let string ?(attr=A.empty) str =
