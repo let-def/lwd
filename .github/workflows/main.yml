@@ -33,6 +33,8 @@ jobs:
         with:
           ocaml-version: ${{ matrix.ocaml-version }}
       - run: opam pin -n .
+      # more recent dune breaks the inline tests… because of warn-error 😱
+      - run: opam pin dune 2.7.1 -y -n
       - run: opam depext -yt lwd nottui nottui-lwt
       - run: opam install -t . --deps-only
       - run: opam install -y containers cbor js_of_ocaml js_of_ocaml-lwt
