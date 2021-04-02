@@ -9,7 +9,7 @@ jobs:
         os:
           - macos-latest
           - ubuntu-latest
-          - windows-latest
+            #- windows-latest
         ocaml-version:
           - 4.11.1
           - 4.10.1
@@ -28,5 +28,6 @@ jobs:
       - run: opam pin -n .
       - run: opam depext -yt lwd nottui nottui-lwt
       - run: opam install -t . --deps-only
+      - run: opam install -y containers cbor js_of_ocaml js_of_ocaml-lwt
       - run: opam exec -- dune build
       - run: opam exec -- dune runtest
