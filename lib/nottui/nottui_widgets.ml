@@ -138,6 +138,94 @@ let menu_overlay wm g ?(dx=0) ?(dy=0) body around =
     Ui.transient_sensor sensor ui
   ) else ui*)
 
+let scroll_step = 1
+
+type scroll_state = {
+  position: int;
+  bound : int;
+  visible : int;
+  total : int;
+}
+
+let default_scroll_state = { position = 0; bound = 0; visible = 0; total = 0 }
+
+let vscroll_area ~state ~change t =
+  let visible = ref (-1) in
+  let total = ref (-1) in
+  let scroll state delta =
+    let position = state.position + delta in
+    let position = max 0 (min state.bound position) in
+    if position <> state.position then
+      change `Action {state with position};
+    `Handled
+  in
+  let focus_handler state = function
+    (*| `Arrow `Left , _ -> scroll (-scroll_step) 0*)
+    (*| `Arrow `Right, _ -> scroll (+scroll_step) 0*)
+    | `Arrow `Up   , [] -> scroll state (-scroll_step)
+    | `Arrow `Down , [] -> scroll state (+scroll_step)
+    | `Page `Up, [] -> scroll state ((-scroll_step) * 8)
+    | `Page `Down, [] -> scroll state ((+scroll_step) * 8)
+    | _ -> `Unhandled
+  in
+  let scroll_handler state ~x:_ ~y:_ = function
+    | `Scroll `Up   -> scroll state (-scroll_step)
+    | `Scroll `Down -> scroll state (+scroll_step)
+    | _ -> `Unhandled
+  in
+  Lwd.map2 t state ~f:begin fun t state ->
+    t
+    |> Ui.shift_area 0 state.position
+    |> Ui.resize ~h:0 ~sh:1
+    |> Ui.size_sensor (fun ~w:_ ~h ->
+        let tchange =
+          if !total <> (Ui.layout_spec t).Ui.h
+          then (total := (Ui.layout_spec t).Ui.h; true)
+          else false
+        in
+        let vchange =
+          if !visible <> h
+          then (visible := h; true)
+          else false
+        in
+        if tchange || vchange then
+          change `Content {state with visible = !visible; total = !total;
+                                      bound = max 0 (!total - !visible); }
+      )
+    |> Ui.mouse_area (scroll_handler state)
+    |> Ui.keyboard_area (focus_handler state)
+  end
+
+let scroll_area ?(offset=0,0) t =
+  let offset = Lwd.var offset in
+  let scroll d_x d_y =
+    let s_x, s_y = Lwd.peek offset in
+    let s_x = max 0 (s_x + d_x) in
+    let s_y = max 0 (s_y + d_y) in
+    Lwd.set offset (s_x, s_y);
+    `Handled
+  in
+  let focus_handler = function
+    | `Arrow `Left , [] -> scroll (-scroll_step) 0
+    | `Arrow `Right, [] -> scroll (+scroll_step) 0
+    | `Arrow `Up   , [] -> scroll 0 (-scroll_step)
+    | `Arrow `Down , [] -> scroll 0 (+scroll_step)
+    | `Page `Up, [] -> scroll 0 ((-scroll_step) * 8)
+    | `Page `Down, [] -> scroll 0 ((+scroll_step) * 8)
+    | _ -> `Unhandled
+  in
+  let scroll_handler ~x:_ ~y:_ = function
+    | `Scroll `Up   -> scroll 0 (-scroll_step)
+    | `Scroll `Down -> scroll 0 (+scroll_step)
+    | _ -> `Unhandled
+  in
+  Lwd.map2 t (Lwd.get offset) ~f:begin fun t (s_x, s_y) ->
+    t
+    |> Ui.shift_area s_x s_y
+    |> Ui.mouse_area scroll_handler
+    |> Ui.keyboard_area focus_handler
+  end
+
 let main_menu_item wm text f =
   let text = string ~attr:attr_menu_main (" " ^ text ^ " ") in
   let refresh = Lwd.var () in
@@ -610,364 +698,125 @@ let toggle, toggle' =
   in
   toggle, toggle'
 
-module Scrolling = struct
 
-  let scroll_step = 1
-  let scroll_horizontal_thickness = 1
-  let scroll_vertical_thickness = 1
+type scrollbox_state = { w: int; h: int; x: int; y: int; }
 
-  (** Configuration of a scrollbar.
+let adjust_offset visible total off =
+  let off = if off + visible > total then total - visible else off in
+  let off = if off < 0 then 0 else off in
+  off
 
-      [position] represents the current position of the scrollbar and ranges from
-      [0] to [bound] included.
+let decr_if x cond = if cond then x - 1 else x
 
-      [visible] and [total] are used to determine the size of the scrollbar
-      handle: the bar will be sized such that the ratio between the handle and
-      the total space will be [visible / total].
+let scrollbar_bg = Notty.A.gray 4
+let scrollbar_fg = Notty.A.gray 7
+let scrollbar_click_step = 3 (* Clicking scrolls one third of the screen *)
+let scrollbar_wheel_step = 8 (* Wheel event scrolls 1/8th of the screen *)
 
-      Wellformed conditions:
-      - [0 <= position <= bound]
-      - [0 <= visible <= total]
-  *)
-  type scrollbar_config = {
-    position : int;
-    bound    : int;
-    visible  : int;
-    total    : int;
-  }
-
-  let default_scrollbar_config = {
-    position = 0;
-    bound    = 0;
-    visible  = 0;
-    total    = 0;
-  }
-
-  let scrollbar_generic ~set_scroll (st : scrollbar_config) ~coord ~render =
-    if st.visible = 0 then
-      Ui.atom Notty.I.empty
-    else if st.total > st.visible then
-      (* Compute size of the handle inside the bar *)
-      let ratio = max 1 (st.visible * st.visible / st.total) in
-      let rest = st.visible - ratio in
-      let prefix = rest * st.position / st.bound in
-      let suffix = rest - prefix in
-      ignore (set_scroll, coord);
-      (* React to mouse events on the scroll bar *)
-      (*let mouse_handler ~x ~y = function
-        | `Left ->
-          let c = coord x y in
-          if c < prefix then
-            let position = ref st.position in
-            position := max 0 (!position - (st.visible / 2));
-            set_scroll { st with position = !position };
-            `Handled
-          else if c > prefix + ratio then
-            let position = ref st.position in
-            position := min st.bound (!position + (st.visible / 2));
-            set_scroll { st with position = !position };
-            `Handled
-          else
-            let move ~x ~y =
-              let dc = coord x y - c in
-              let position =
-                float st.position +.
-                (float dc /. float st.visible *. float st.total)
-              in
-              let position = max 0 (min st.bound (int_of_float position)) in
-              set_scroll { st with position }
-            in
-            `Grab (move, fun ~x:_ ~y:_ -> ())
-        | _ -> `Unhandled
-      in
-      Ui.mouse_area mouse_handler*)
-        (Ui.atom (render prefix ratio suffix))
-    else Ui.atom (render 0 st.visible 0)
-
-  let scrollbar ~set_scroll (st : scrollbar_config) = function
-    | `H ->
-      scrollbar_generic ~set_scroll st ~coord:(fun x _ -> x) ~render:(
-        fun prefix ratio suffix ->
-          let bar color w =
-            Notty.(I.char A.(bg color) ' ' w scroll_horizontal_thickness)
-          in
-          let gray = Notty.A.gray 1 in
-          let light = Notty.A.white in
-          Notty.I.(bar gray prefix <|> bar light ratio <|> bar gray suffix)
-      )
-    | `V ->
-      scrollbar_generic ~set_scroll st ~coord:(fun x _ -> x) ~render:(
-        fun prefix ratio suffix ->
-          let bar color h =
-            Notty.(I.char A.(bg color) ' ' scroll_vertical_thickness h)
-          in
-          let gray = Notty.A.gray 1 in
-          let light = Notty.A.white in
-          Notty.I.(bar gray prefix <-> bar light ratio <-> bar gray suffix)
-      )
-
-  (*let hscrollbar position max size =
-    let gray = Notty.A.(bg (gray 1)) in
-    let light = Notty.A.(bg white) in
-    let prefix = Ui.resize ~sw:position ~h:1 ~bg:gray Ui.empty in
-    let handle = Ui.resize ~sw:size ~h:1 ~w:1 ~bg:light Ui.empty in
-    let suffix = Ui.resize ~sw:(max - position - size) ~h:1 ~bg:gray Ui.empty in
-    Ui.join_x prefix (Ui.join_x handle suffix)
-
-    let vscrollbar position max size =
-    let gray = Notty.A.(bg (gray 1)) in
-    let light = Notty.A.(bg white) in
-    let prefix = Ui.resize ~sh:position ~w:1 ~bg:gray Ui.empty in
-    let handle = Ui.resize ~sh:size ~w:1 ~h:1 ~bg:light Ui.empty in
-    let suffix = Ui.resize ~sh:(max - position - size) ~w:1 ~bg:gray Ui.empty in
-    Ui.join_y prefix (Ui.join_y handle suffix)
-  *)
-
-  type scrollbox_state = { w: int; h: int; x: int; y: int; }
-
-  let adjust_offset visible total off =
-    let off = if off + visible > total then total - visible else off in
-    let off = if off < 0 then 0 else off in
-    off
-
-  let decr_if x cond = if cond then x - 1 else x
-
-  let scrollbar_bg = Notty.A.gray 4
-  let scrollbar_fg = Notty.A.gray 7
-  let scrollbar_click_step = 3 (* Clicking scrolls one third of the screen *)
-  let scrollbar_wheel_step = 8 (* Wheel event scrolls 1/8th of the screen *)
-
-  let hscrollbar visible total offset ~set =
-    let prefix = offset * visible / total in
-    let suffix = (total - offset - visible) * visible / total in
-    let handle = visible - prefix - suffix in
-    let render size color = Ui.atom Notty.(I.char (A.bg color) ' ' size 1) in
-    let mouse_handler ~x ~y:_ = function
-      | `Left ->
-        if x < prefix then
-          (set (offset - max 1 (visible / scrollbar_click_step)); `Handled)
-        else if x > prefix + handle then
-          (set (offset + max 1 (visible / scrollbar_click_step)); `Handled)
-        else `Grab (
-            (fun ~x:x' ~y:_ -> set (offset + (x' - x) * total / visible)),
-            (fun ~x:_ ~y:_ -> ())
+let hscrollbar visible total offset ~set =
+  let prefix = offset * visible / total in
+  let suffix = (total - offset - visible) * visible / total in
+  let handle = visible - prefix - suffix in
+  let render size color = Ui.atom Notty.(I.char (A.bg color) ' ' size 1) in
+  let mouse_handler ~x ~y:_ = function
+    | `Left ->
+      if x < prefix then
+        (set (offset - max 1 (visible / scrollbar_click_step)); `Handled)
+      else if x > prefix + handle then
+        (set (offset + max 1 (visible / scrollbar_click_step)); `Handled)
+      else `Grab (
+          (fun ~x:x' ~y:_ -> set (offset + (x' - x) * total / visible)),
+          (fun ~x:_ ~y:_ -> ())
         )
-      | `Scroll dir ->
-        let dir = match dir with `Down -> +1 | `Up -> -1 in
-        set (offset + dir * (max 1 (visible / scrollbar_wheel_step)));
-        `Handled
-      | _ -> `Unhandled
-    in
-    let (++) = Ui.join_x in
-    Ui.mouse_area mouse_handler (
-      render prefix scrollbar_bg ++
-      render handle scrollbar_fg ++
-      render suffix scrollbar_bg
-    )
+    | `Scroll dir ->
+      let dir = match dir with `Down -> +1 | `Up -> -1 in
+      set (offset + dir * (max 1 (visible / scrollbar_wheel_step)));
+      `Handled
+    | _ -> `Unhandled
+  in
+  let (++) = Ui.join_x in
+  Ui.mouse_area mouse_handler (
+    render prefix scrollbar_bg ++
+    render handle scrollbar_fg ++
+    render suffix scrollbar_bg
+  )
 
-  let vscrollbar visible total offset ~set =
-    let prefix = offset * visible / total in
-    let suffix = (total - offset - visible) * visible / total in
-    let handle = visible - prefix - suffix in
-    let render size color = Ui.atom Notty.(I.char (A.bg color) ' ' 1 size) in
-    let mouse_handler ~x:_ ~y = function
-      | `Left ->
-        if y < prefix then
-          (set (offset - max 1 (visible / scrollbar_click_step)); `Handled)
-        else if y > prefix + handle then
-          (set (offset + max 1 (visible / scrollbar_click_step)); `Handled)
-        else `Grab (
-            (fun ~x:_ ~y:y' -> set (offset + (y' - y) * total / visible)),
-            (fun ~x:_ ~y:_ -> ())
+let vscrollbar visible total offset ~set =
+  let prefix = offset * visible / total in
+  let suffix = (total - offset - visible) * visible / total in
+  let handle = visible - prefix - suffix in
+  let render size color = Ui.atom Notty.(I.char (A.bg color) ' ' 1 size) in
+  let mouse_handler ~x:_ ~y = function
+    | `Left ->
+      if y < prefix then
+        (set (offset - max 1 (visible / scrollbar_click_step)); `Handled)
+      else if y > prefix + handle then
+        (set (offset + max 1 (visible / scrollbar_click_step)); `Handled)
+      else `Grab (
+          (fun ~x:_ ~y:y' -> set (offset + (y' - y) * total / visible)),
+          (fun ~x:_ ~y:_ -> ())
         )
-      | `Scroll dir ->
-        let dir = match dir with `Down -> +1 | `Up -> -1 in
-        set (offset + dir * (max 1 (visible / scrollbar_wheel_step)));
-        `Handled
-      | _ -> `Unhandled
-    in
-    let (++) = Ui.join_y in
-    Ui.mouse_area mouse_handler (
-      render prefix scrollbar_bg ++
-      render handle scrollbar_fg ++
-      render suffix scrollbar_bg
-    )
+    | `Scroll dir ->
+      let dir = match dir with `Down -> +1 | `Up -> -1 in
+      set (offset + dir * (max 1 (visible / scrollbar_wheel_step)));
+      `Handled
+    | _ -> `Unhandled
+  in
+  let (++) = Ui.join_y in
+  Ui.mouse_area mouse_handler (
+    render prefix scrollbar_bg ++
+    render handle scrollbar_fg ++
+    render suffix scrollbar_bg
+  )
 
-  let scrollbox t =
-    (* Keep track of scroll state *)
-    let state_var = Lwd.var {w = 0; h = 0; x = 0; y = 0} in
-    (* Keep track of size available for display *)
-    let update_size ~w ~h =
+let scrollbox t =
+  (* Keep track of scroll state *)
+  let state_var = Lwd.var {w = 0; h = 0; x = 0; y = 0} in
+  (* Keep track of size available for display *)
+  let update_size ~w ~h =
+    let state = Lwd.peek state_var in
+    if state.w <> w || state.h <> h then Lwd.set state_var {state with w; h}
+  in
+  let measure_size body =
+    Ui.size_sensor update_size (Ui.resize ~w:0 ~h:0 ~sw:1 ~sh:1 body)
+  in
+  (* Given body and state, composite scroll bars *)
+  let compose_bars body state =
+    let (bw, bh) = Ui.layout_width body, Ui.layout_height body in
+    (* Logic to determine which scroll bar should be visible *)
+    let hvisible = state.w < bw and vvisible = state.h < bh in
+    let hvisible = hvisible || (vvisible && state.w = bw) in
+    let vvisible = vvisible || (hvisible && state.h = bh) in
+    (* Compute size and offsets based on visibility *)
+    let state_w = decr_if state.w vvisible in
+    let state_h = decr_if state.h hvisible in
+    let state_x = adjust_offset state_w bw state.x in
+    let state_y = adjust_offset state_h bh state.y in
+    (* Composite visible scroll bars *)
+    let crop b =
+      Ui.resize ~sw:1 ~sh:1 ~w:0 ~h:0
+        (Ui.shift_area state_x state_y b)
+    in
+    let set_vscroll y =
       let state = Lwd.peek state_var in
-      if state.w <> w || state.h <> h then Lwd.set state_var {state with w; h}
+      if state.y <> y then Lwd.set state_var {state with y}
     in
-    let measure_size body =
-      Ui.size_sensor update_size (Ui.resize ~w:0 ~h:0 ~sw:1 ~sh:1 body)
+    let set_hscroll x =
+      let state = Lwd.peek state_var in
+      if state.x <> x then Lwd.set state_var {state with x}
     in
-    (* Given body and state, composite scroll bars *)
-    let compose_bars body state =
-      let (bw, bh) = Ui.layout_width body, Ui.layout_height body in
-      (* Logic to determine which scroll bar should be visible *)
-      let hvisible = state.w < bw and vvisible = state.h < bh in
-      let hvisible = hvisible || (vvisible && state.w = bw) in
-      let vvisible = vvisible || (hvisible && state.h = bh) in
-      (* Compute size and offsets based on visibility *)
-      let state_w = decr_if state.w vvisible in
-      let state_h = decr_if state.h hvisible in
-      let state_x = adjust_offset state_w bw state.x in
-      let state_y = adjust_offset state_h bh state.y in
-      (* Composite visible scroll bars *)
-      let crop b =
-        Ui.resize ~sw:1 ~sh:1 ~w:0 ~h:0
-          (Ui.shift_area state_x state_y b)
-      in
-      let set_vscroll y =
-        let state = Lwd.peek state_var in
-        if state.y <> y then Lwd.set state_var {state with y}
-      in
-      let set_hscroll x =
-        let state = Lwd.peek state_var in
-        if state.x <> x then Lwd.set state_var {state with x}
-      in
-      let (<->) = Ui.join_y and (<|>) = Ui.join_x in
-      match hvisible, vvisible with
-      | false , false -> body
-      | false , true  ->
-        crop body <|> vscrollbar state_h bh state_y ~set:set_vscroll
-      | true  , false ->
-        crop body <-> hscrollbar state_w bw state_x ~set:set_hscroll
-      | true  , true  ->
-        (crop body <|> vscrollbar state_h bh state_y ~set:set_vscroll)
-        <->
-        (hscrollbar state_w bw state_x ~set:set_hscroll <|> Ui.space 1 1)
-    in
-    (* Render final box *)
-    Lwd.map2 t (Lwd.get state_var)
-      ~f:(fun ui size -> measure_size (compose_bars ui size))
-
-  (*let scrollbox t =
-    (*let offset = Lwd.var (0, 0) in*)
-    let status = Lwd.var (false, false) in
-    let hconfig = Lwd.var default_scrollbar_config in
-    let vconfig = Lwd.var default_scrollbar_config in
-    let update_config var visible total =
-      let config = Lwd.peek var in
-      let bound = total - visible in
-      let position = max 0 (min config.position bound) in
-      let config' = { bound; position; visible; total } in
-      if config <> config' then Lwd.set var config'
-    in
-    let sensor layout ~w ~h =
-      let hbar = layout.Ui.w > w in
-      let vbar = layout.Ui.h > h in
-      let status' = (
-        hbar || (vbar && layout.Ui.w > w - scroll_vertical_thickness),
-        vbar || (hbar && layout.Ui.h > h - scroll_horizontal_thickness)
-      ) in
-      if status' <> Lwd.peek status then
-        Lwd.set status status';
-      update_config hconfig h layout.Ui.h;
-      update_config vconfig w layout.Ui.w;
-    in
-    Lwd.map2 t (Lwd.get status) ~f:(fun ui (hbar, vbar) ->
-        let layout = Ui.layout_spec ui in
-        let ui = Ui.resize ~sw:1 ~sh:1 ui in
-        let scrollbar var dir =
-          scrollbar ~set_scroll:(Lwd.set var) (Lwd.peek var) dir
-        in
-        let ui = match hbar, vbar with
-          (*| false, false -> ui
-          | true, false ->
-            Ui.join_y ui (scrollbar hconfig `H)
-          | false, true ->
-            Ui.join_x ui (scrollbar vconfig `V)
-            | true, true ->*)
-          | _ ->
-            let holder =
-              Ui.space scroll_vertical_thickness scroll_horizontal_thickness
-            in
-            Ui.join_x (Ui.join_y ui (scrollbar hconfig `V))
-                      (Ui.join_y (scrollbar vconfig `H) holder)
-        in
-        Ui.size_sensor (sensor layout)
-          (Ui.resize ui ~w:0 ~h:0
-             ~sw:1 ~sh:1 ~crop:(Gravity.make ~h:`Positive ~v:`Positive))
-      )*)
-
-  let vscroll_area ~state ~change t =
-    let visible = ref (-1) in
-    let total = ref (-1) in
-    let scroll state delta =
-      let position = state.position + delta in
-      let position = max 0 (min state.bound position) in
-      if position <> state.position then
-        change `Action {state with position};
-      `Handled
-    in
-    let focus_handler state = function
-      (*| `Arrow `Left , _ -> scroll (-scroll_step) 0*)
-      (*| `Arrow `Right, _ -> scroll (+scroll_step) 0*)
-      | `Arrow `Up   , [] -> scroll state (-scroll_step)
-      | `Arrow `Down , [] -> scroll state (+scroll_step)
-      | `Page `Up, [] -> scroll state ((-scroll_step) * 8)
-      | `Page `Down, [] -> scroll state ((+scroll_step) * 8)
-      | _ -> `Unhandled
-    in
-    let scroll_handler state ~x:_ ~y:_ = function
-      | `Scroll `Up   -> scroll state (-scroll_step)
-      | `Scroll `Down -> scroll state (+scroll_step)
-      | _ -> `Unhandled
-    in
-    Lwd.map2 t state ~f:begin fun t state ->
-      t
-      |> Ui.shift_area 0 state.position
-      |> Ui.resize ~h:0 ~sh:1
-      |> Ui.size_sensor (fun ~w:_ ~h ->
-          let tchange =
-            if !total <> (Ui.layout_spec t).Ui.h
-            then (total := (Ui.layout_spec t).Ui.h; true)
-            else false
-          in
-          let vchange =
-            if !visible <> h
-            then (visible := h; true)
-            else false
-          in
-          if tchange || vchange then
-            change `Content {state with visible = !visible; total = !total;
-                                        bound = max 0 (!total - !visible); }
-        )
-      |> Ui.mouse_area (scroll_handler state)
-      |> Ui.keyboard_area (focus_handler state)
-    end
-
-  let scroll_area ?(offset=0,0) t =
-    let offset = Lwd.var offset in
-    let scroll d_x d_y =
-      let s_x, s_y = Lwd.peek offset in
-      let s_x = max 0 (s_x + d_x) in
-      let s_y = max 0 (s_y + d_y) in
-      Lwd.set offset (s_x, s_y);
-      `Handled
-    in
-    let focus_handler = function
-      | `Arrow `Left , [] -> scroll (-scroll_step) 0
-      | `Arrow `Right, [] -> scroll (+scroll_step) 0
-      | `Arrow `Up   , [] -> scroll 0 (-scroll_step)
-      | `Arrow `Down , [] -> scroll 0 (+scroll_step)
-      | `Page `Up, [] -> scroll 0 ((-scroll_step) * 8)
-      | `Page `Down, [] -> scroll 0 ((+scroll_step) * 8)
-      | _ -> `Unhandled
-    in
-    let scroll_handler ~x:_ ~y:_ = function
-      | `Scroll `Up   -> scroll 0 (-scroll_step)
-      | `Scroll `Down -> scroll 0 (+scroll_step)
-      | _ -> `Unhandled
-    in
-    Lwd.map2 t (Lwd.get offset) ~f:begin fun t (s_x, s_y) ->
-      t
-      |> Ui.shift_area s_x s_y
-      |> Ui.mouse_area scroll_handler
-      |> Ui.keyboard_area focus_handler
-    end
-end
+    let (<->) = Ui.join_y and (<|>) = Ui.join_x in
+    match hvisible, vvisible with
+    | false , false -> body
+    | false , true  ->
+      crop body <|> vscrollbar state_h bh state_y ~set:set_vscroll
+    | true  , false ->
+      crop body <-> hscrollbar state_w bw state_x ~set:set_hscroll
+    | true  , true  ->
+      (crop body <|> vscrollbar state_h bh state_y ~set:set_vscroll)
+      <->
+      (hscrollbar state_w bw state_x ~set:set_hscroll <|> Ui.space 1 1)
+  in
+  (* Render final box *)
+  Lwd.map2 t (Lwd.get state_var)
+    ~f:(fun ui size -> measure_size (compose_bars ui size))

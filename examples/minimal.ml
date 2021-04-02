@@ -94,6 +94,6 @@ let root =
     root; root; root; root; root; root;
   ]
 
-let root = Nottui_widgets.Scrolling.scrollbox root
+let root = Nottui_widgets.scrollbox root
 
 let () = Ui_loop.run ~tick_period:0.2 root

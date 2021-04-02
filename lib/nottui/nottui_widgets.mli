@@ -30,7 +30,7 @@ val sub_menu_item : window_manager -> string -> (unit -> ui Lwd.t) -> ui Lwd.t
 val sub_entry : string -> (unit -> unit) -> ui
 
 (* FIXME Explain how scrolling works *)
-(*val scroll_step : int
+val scroll_step : int
 type scroll_state = { position : int; bound : int; visible : int; total : int }
 val default_scroll_state : scroll_state
 val vscroll_area :
@@ -39,33 +39,9 @@ val vscroll_area :
   ui Lwd.t -> ui Lwd.t
 
 val scroll_area :
-  ?offset:int * int -> ui Lwd.t -> ui Lwd.t*)
+  ?offset:int * int -> ui Lwd.t -> ui Lwd.t
 
-module Scrolling : sig
-  val scroll_step : int
-  val scroll_horizontal_thickness : int
-  val scroll_vertical_thickness : int
-  type scrollbar_config = {
-    position : int;
-    bound : int;
-    visible : int;
-    total : int;
-  }
-  val default_scrollbar_config : scrollbar_config
-  val scrollbar_generic :
-    set_scroll:(scrollbar_config -> unit) ->
-    scrollbar_config ->
-    coord:(int -> int -> int) -> render:(int -> int -> int -> image) -> ui
-  val scrollbar :
-    set_scroll:(scrollbar_config -> unit) ->
-    scrollbar_config -> [< `H | `V ] -> ui
-  val vscroll_area :
-    state:scrollbar_config Lwd.t ->
-    change:([> `Action | `Content ] -> scrollbar_config -> unit) ->
-    ui Lwd.t -> ui Lwd.t
-  val scrollbox : ui Lwd.t -> ui Lwd.t
-  val scroll_area : ?offset:int * int -> ui Lwd.t -> ui Lwd.t
-end
+val scrollbox: ui Lwd.t -> ui Lwd.t
 
 (* FIXME Explain panes *)
 val v_pane : ui Lwd.t -> ui Lwd.t -> ui Lwd.t
