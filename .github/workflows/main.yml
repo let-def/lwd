@@ -3,27 +3,30 @@ on: [push, pull_request]
 jobs:
   run:
     name: Build
-    runs-on: ${{ matrix.operating-system }}
     strategy:
+      fail-fast: false
       matrix:
-        operating-system: [ubuntu-latest]
-        # operating-system: [macos-latest, ubuntu-latest, windows-latest]
-        ocaml-version: [ '4.03.0', '4.04.2', '4.05.0', '4.06.1', '4.07.1', '4.08.1', '4.09.1', '4.10.1', '4.11.1' ]
+        os:
+          - macos-latest
+          - ubuntu-latest
+          - windows-latest
+        ocaml-version:
+          - 4.11.1
+          - 4.10.1
+          - 4.09.1
+          - 4.08.1
+
+    runs-on: ${{ matrix.os }}
+
     steps:
-    - uses: actions/checkout@v2
-    - name: Cache
-      uses: actions/cache@v2
-      with:
-        # A directory to store and save the cache
-        path: ~/.opam
-        # An explicit key for restoring and saving the cache
-        key: ${{ matrix.os }}-${{ matrix.ocaml-version }}-${{ hashFiles('*.opam') }}-build
-    - name: Set up OCaml ${{ matrix.ocaml-version }}
-      uses: avsm/setup-ocaml@v1
-      with:
-        ocaml-version: ${{ matrix.ocaml-version }}
-    - run: opam pin -n .
-    - run: opam depext -yt lwd nottui nottui-lwt
-    - run: opam install -t . --deps-only
-    - run: opam exec -- dune build
-    - run: opam exec -- dune runtest
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Use OCaml ${{ matrix.ocaml-version }}
+        uses: avsm/setup-ocaml@v1
+        with:
+          ocaml-version: ${{ matrix.ocaml-version }}
+      - run: opam pin -n .
+      - run: opam depext -yt lwd nottui nottui-lwt
+      - run: opam install -t . --deps-only
+      - run: opam exec -- dune build
+      - run: opam exec -- dune runtest
