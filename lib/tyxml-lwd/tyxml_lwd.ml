@@ -35,6 +35,9 @@ let child_node node = Leaf node
 
 let child_join left right = Inner { bound = Js.null; left; right }
 
+let js_lwd_to_remove =
+  Js.string "lwd-to-remove" (* HACK Could be turned into a Javascript symbol *)
+
 let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
   let reducer =
     ref (Lwd_seq.Reducer.make ~map:child_node ~reduce:child_join)
@@ -43,16 +46,17 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
     let dropped, reducer' =
       Lwd_seq.Reducer.update_and_get_dropped !reducer children in
     reducer := reducer';
-    let remove_child child () = match child with
-      | Leaf node -> ignore (self##removeChild node)
+    let schedule_for_removal child () = match child with
+      | Leaf node -> Js.Unsafe.set node js_lwd_to_remove Js._true
       | Inner _ -> ()
     in
-    Lwd_seq.Reducer.fold_dropped `Map remove_child dropped ();
+    Lwd_seq.Reducer.fold_dropped `Map schedule_for_removal dropped ();
     begin match Lwd_seq.Reducer.reduce reducer' with
       | None -> ()
       | Some tree ->
         let rec update acc = function
           | Leaf x ->
+            Js.Unsafe.delete x js_lwd_to_remove;
             if x##.nextSibling != acc || x##.parentNode != Js.some self then
               ignore (self##insertBefore x acc);
             Js.some x
@@ -65,7 +69,14 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
             )
         in
         ignore (update Js.null tree)
-    end
+    end;
+    let remove_child child () = match child with
+      | Leaf node ->
+        if Js.Opt.test (Js.Unsafe.get node js_lwd_to_remove) then
+          ignore (self##removeChild node)
+      | Inner _ -> ()
+    in
+    Lwd_seq.Reducer.fold_dropped `Map remove_child dropped ();
   end
 
 let update_children_list self children =
