@@ -54,8 +54,8 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
       | Leaf node -> Js.Unsafe.set node js_lwd_to_remove Js._true
       | Inner _ -> ()
     in
-    let preserve_focus = contains_focus self in
     Lwd_seq.Reducer.fold_dropped `Map schedule_for_removal dropped ();
+    let preserve_focus = contains_focus self in
     begin match Lwd_seq.Reducer.reduce reducer' with
       | None -> ()
       | Some tree ->

@@ -76,9 +76,16 @@ let jv_nextSibling = Jstr.v "nextSibling"
 let jv_append = Jstr.v "append"
 let jv_before = Jstr.v "before"
 let jv_remove = Jstr.v "remove"
+let jv_contains = Jstr.v "contains"
 
 let jv_toRemove =
   Jstr.v "lwd-to-remove" (* HACK Could be turned into a Javascript symbol *)
+
+let contains_focus node =
+  match Brr.Document.active_el (Brr.El.document node) with
+  | None -> false
+  | Some el ->
+    Jv.to_bool (Jv.call' (El.to_jv node) jv_contains [|El.to_jv el|])
 
 let update_children
     (self : El.t)
@@ -91,29 +98,38 @@ let update_children
       Lwd_seq.Reducer.update_and_get_dropped !reducer children in
     reducer := reducer';
     let schedule_for_removal child () = match child with
-      | Leaf node ->
-        Jv.set' (El.to_jv node) jv_toRemove Jv.true';
+      | Leaf node -> Jv.set' (El.to_jv node) jv_toRemove Jv.true';
       | Inner _ -> ()
     in
     Lwd_seq.Reducer.fold_dropped `Map schedule_for_removal dropped ();
+    let preserve_focus = contains_focus self in
     begin match Lwd_seq.Reducer.reduce reducer' with
       | None -> ()
       | Some tree ->
         let rec update acc = function
           | Leaf node ->
-            let node = El.to_jv node in
-            Jv.delete' node jv_toRemove;
-            if Jv.is_null acc then (
-              (*Brr.Console.log ["Appending "; node];*)
-              if not (Jv.get' node jv_parentNode == El.to_jv self &&
-                      Jv.is_null (Jv.get' node jv_nextSibling))
-              then ignore (Jv.call' (El.to_jv self) jv_append [|node|])
-            ) else (
-              (*Brr.Console.log ["Inserting "; node];*)
-              if Jv.get' node jv_nextSibling != acc then
-                ignore (Jv.call' acc jv_before [|node|])
-            );
-            node
+            let node' = El.to_jv node in
+            Jv.delete' node' jv_toRemove;
+            (*Brr.Console.log ["Updating "; node];*)
+            if Jv.get' node' jv_parentNode != El.to_jv self then (
+              if Jv.is_null acc
+              then ignore (Jv.call' (El.to_jv self) jv_append [|node'|])
+              else ignore (Jv.call' acc jv_before [|node'|])
+            ) else if preserve_focus && contains_focus node then (
+              let rec shift_siblings () =
+                let sibling = Jv.get' node' jv_nextSibling in
+                if sibling == acc then true
+                else if Jv.is_null sibling then false
+                else (
+                  ignore (Jv.call' node' jv_before [|sibling|]);
+                  shift_siblings ()
+                )
+              in
+              if not (shift_siblings ()) then
+                ignore (Jv.call' acc jv_before [|node'|]);
+            ) else if Jv.get' node' jv_nextSibling != acc then
+              ignore (Jv.call' acc jv_before [|node'|]);
+            node'
           | Inner t ->
             if Jv.is_null t.bound then (
               let acc = update acc t.right in
