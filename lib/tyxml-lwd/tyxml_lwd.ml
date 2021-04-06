@@ -38,6 +38,10 @@ let child_join left right = Inner { bound = Js.null; left; right }
 let js_lwd_to_remove =
   Js.string "lwd-to-remove" (* HACK Could be turned into a Javascript symbol *)
 
+let contains_focus node =
+  Js.to_bool (Js.Unsafe.meth_call (node : raw_node) "contains"
+                [|Js.Unsafe.inject Dom_html.document##.activeElement|])
+
 let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
   let reducer =
     ref (Lwd_seq.Reducer.make ~map:child_node ~reduce:child_join)
@@ -50,6 +54,7 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
       | Leaf node -> Js.Unsafe.set node js_lwd_to_remove Js._true
       | Inner _ -> ()
     in
+    let preserve_focus = contains_focus self in
     Lwd_seq.Reducer.fold_dropped `Map schedule_for_removal dropped ();
     begin match Lwd_seq.Reducer.reduce reducer' with
       | None -> ()
@@ -57,8 +62,28 @@ let update_children (self : raw_node) (children : raw_node live) : unit Lwd.t =
         let rec update acc = function
           | Leaf x ->
             Js.Unsafe.delete x js_lwd_to_remove;
-            if x##.nextSibling != acc || x##.parentNode != Js.some self then
-              ignore (self##insertBefore x acc);
+            if x##.parentNode != Js.some self then
+              ignore (self##insertBefore x acc)
+            else if x##.nextSibling != acc then begin
+              (* Parent is correct but sibling is not: swap nodes, but be
+                 cautious with focus *)
+              if preserve_focus && contains_focus x then (
+                let rec shift_siblings () =
+                  let sibling = x##.nextSibling in
+                  if sibling == acc then
+                    true
+                  else match Js.Opt.to_option sibling with
+                    | None -> false
+                    | Some sibling ->
+                      ignore (self##insertBefore sibling (Js.some x));
+                      shift_siblings ()
+                in
+                if not (shift_siblings ()) then
+                  ignore (self##insertBefore x acc)
+              )
+              else
+                ignore (self##insertBefore x acc)
+            end;
             Js.some x
           | Inner t ->
             if Js.Opt.test t.bound then t.bound else (
