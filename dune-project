@@ -28,6 +28,12 @@
  (depends dune lwd tyxml js_of_ocaml js_of_ocaml-ppx))
 
 (package
+ (name brr-lwd)
+ (synopsis "Make reactive webpages in Js_of_ocaml using Brr and Lwd")
+ (documentation "https://let-def.github.io/lwd/doc")
+ (depends dune lwd brr js_of_ocaml))
+
+(package
  (name nottui-pretty)
  (synopsis "A pretty-printer based on PPrint rendering UIs")
  (documentation "https://let-def.github.io/lwd/doc")
