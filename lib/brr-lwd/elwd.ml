@@ -64,12 +64,21 @@ let consume_children = function
 
 type child_tree =
   | Leaf of El.t
-  | Inner of { mutable bound: El.t option;
+  | Inner of { mutable bound: Jv.t;
                left: child_tree; right: child_tree; }
 
 let child_node node = Leaf node
 
-let child_join left right = Inner { bound = None; left; right }
+let child_join left right = Inner { bound = Jv.null; left; right }
+
+let jv_parentNode = Jstr.v "parentNode"
+let jv_nextSibling = Jstr.v "nextSibling"
+let jv_append = Jstr.v "append"
+let jv_before = Jstr.v "before"
+let jv_remove = Jstr.v "remove"
+
+let jv_toRemove =
+  Jstr.v "lwd-to-remove" (* HACK Could be turned into a Javascript symbol *)
 
 let update_children
     (self : El.t)
@@ -81,32 +90,52 @@ let update_children
     let dropped, reducer' =
       Lwd_seq.Reducer.update_and_get_dropped !reducer children in
     reducer := reducer';
-    let remove_child child () = match child with
-      | Leaf node -> El.remove node
+    let schedule_for_removal child () = match child with
+      | Leaf node ->
+        Jv.set' (El.to_jv node) jv_toRemove Jv.true';
       | Inner _ -> ()
     in
-    Lwd_seq.Reducer.fold_dropped `Map remove_child dropped ();
+    Lwd_seq.Reducer.fold_dropped `Map schedule_for_removal dropped ();
     begin match Lwd_seq.Reducer.reduce reducer' with
       | None -> ()
       | Some tree ->
         let rec update acc = function
-          | Leaf x ->
-            begin match acc with
-              | None -> El.append_children self [x]
-              | Some sibling ->
-                El.insert_siblings `Before sibling [x]
-            end;
-            Some x
+          | Leaf node ->
+            let node = El.to_jv node in
+            Jv.delete' node jv_toRemove;
+            if Jv.is_null acc then (
+              (*Brr.Console.log ["Appending "; node];*)
+              if not (Jv.get' node jv_parentNode == El.to_jv self &&
+                      Jv.is_null (Jv.get' node jv_nextSibling))
+              then ignore (Jv.call' (El.to_jv self) jv_append [|node|])
+            ) else (
+              (*Brr.Console.log ["Inserting "; node];*)
+              if Jv.get' node jv_nextSibling != acc then
+                ignore (Jv.call' acc jv_before [|node|])
+            );
+            node
           | Inner t ->
-            if Option.is_some t.bound then t.bound else (
+            if Jv.is_null t.bound then (
               let acc = update acc t.right in
               let acc = update acc t.left in
               t.bound <- acc;
               acc
-            )
+            ) else
+              t.bound
         in
-        ignore (update None tree)
+        ignore (update Jv.null tree)
     end;
+    let remove_child child () = match child with
+      | Leaf node ->
+        let node = El.to_jv node in
+        if Jv.is_some (Jv.get' node jv_toRemove) then (
+          (*Brr.Console.log ["Removing "; node];*)
+          Jv.delete' node jv_toRemove;
+          ignore (Jv.call' node jv_remove [||])
+        )
+      | Inner _ -> ()
+    in
+    Lwd_seq.Reducer.fold_dropped `Map remove_child dropped ();
     self
   end
 
