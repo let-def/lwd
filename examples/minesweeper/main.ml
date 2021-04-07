@@ -70,14 +70,8 @@ let onload _ =
       Lwd.join (Lwd_table.reduce Lwd_seq.lwd_monoid boards);
     ]
   in
-  (*let root = Lwd.observe (Lwdom.to_fragment doc) in*)
-  let root = Lwd.observe doc in
-  Lwd.set_on_invalidate root (fun _ ->
-      ignore (Dom_html.window##requestAnimationFrame
-                (Js.wrap_callback (fun _ -> ignore (Lwd.quick_sample root)))
-             ));
-  List.iter (Dom.appendChild main)
-    (Lwd_seq.to_list (Lwd.quick_sample root) : _ node list :> raw_node list);
+  let _ : Lwdom.Scheduler.job =
+    Lwdom.Scheduler.append_to_dom doc main in
   Js._false
 
 let _ = Dom_html.window##.onload := Dom_html.handler onload

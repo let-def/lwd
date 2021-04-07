@@ -1870,4 +1870,145 @@ module Lwdom = struct
     | xs -> Lwd_seq.bind (Lwd.pure (Lwd_seq.of_array xs)) (fun x -> x)
 
   let to_node x = x
+
+  module Scheduler = struct
+
+    type limit = {
+      cycles_warning: int; (* 5 *)
+      cycles_max: int;     (* 15 *)
+      time_budget: float;  (* 16.6 *)
+      time_warning: bool;  (* true *)
+    }
+
+    type job = {
+      root: unit Lwd.root;
+      mutable limit: limit;
+      mutable queued: bool;
+      mutable enabled: bool;
+    }
+
+    module Next_frame = struct
+      let scheduled = ref false
+      let todo_cb = ref []
+      let todo_jobs = ref []
+
+      let process_cb queue =
+        let todo_cb' = List.rev !todo_cb in
+        todo_cb := [];
+        List.iter (fun f ->
+            try f queue
+            with _exn ->
+              prerr_endline
+                "Lwdom.Scheduler: next frame callback raised an exception"
+          ) todo_cb'
+
+      let process_jobs_step queue time cycle ~acc ~jobs =
+        List.fold_left (fun acc job ->
+            match () with
+            | () when not (job.enabled && Lwd.is_damaged job.root) ->
+              job.queued <- false;
+              acc
+            | () when cycle > job.limit.cycles_max ->
+              prerr_endline (
+                "Job exceeded maximum number of cycles (" ^
+                string_of_int job.limit.cycles_max ^
+                ")"
+              );
+              (job :: acc)
+            | () when time > job.limit.time_budget ->
+              if job.limit.time_warning then
+                prerr_endline (
+                  "Job exceeded time budget (" ^
+                  string_of_float job.limit.time_budget ^
+                  " ms)"
+                );
+              (job :: acc)
+            | () ->
+              if cycle = job.limit.cycles_warning then (
+                prerr_endline (
+                  "Warning: Job has been running for " ^
+                  string_of_int cycle ^
+                  " cycles"
+                );
+              );
+              job.queued <- false;
+              Lwd.sample queue job.root;
+              acc
+          ) acc jobs
+
+      let rec process_jobs_loop queue start_time cycle acc =
+        match !todo_jobs with
+        | [] -> acc
+        | jobs ->
+          let time = Sys.time () in
+          todo_jobs := [];
+          let acc =
+            process_jobs_step
+              queue ((start_time -. time) *. 1000.0) cycle
+              ~acc ~jobs
+          in
+          process_jobs_loop queue start_time (cycle + 1) acc
+
+      let rec schedule =
+        let process _ =
+          scheduled := false;
+          (* TODO: print runtime information on exception *)
+          let queue = Lwd.make_release_queue () in
+          process_cb queue;
+          begin match process_jobs_loop queue (Sys.time ()) 0 [] with
+            | [] -> ()
+            | leftover -> todo_jobs := leftover; schedule ()
+          end;
+          List.iter
+            (fun _ -> prerr_endline "Error while flushing release queue")
+            (Lwd.flush_release_queue queue)
+        in
+        fun () ->
+          if not !scheduled then (
+            let cb = Js.wrap_callback process in
+            ignore (Dom_html.window##requestAnimationFrame cb);
+            scheduled := true
+          )
+
+      let register f =
+        todo_cb := f :: !todo_cb;
+        schedule ()
+
+      let queue_job job =
+        if not job.queued then (
+          job.queued <- true;
+          todo_jobs := job :: !todo_jobs;
+          schedule ()
+        )
+
+      let invalidate_job job () =
+        if job.enabled then queue_job job
+    end
+
+    let on_next_frame = Next_frame.register
+
+    let reenable job =
+      job.enabled <- true;
+      if Lwd.is_damaged job.root then Next_frame.queue_job job
+
+    let disable job =
+      job.enabled <- false
+
+    let default_limit = {
+      cycles_warning = 5;
+      cycles_max     = 15;
+      time_budget    = 16.6;
+      time_warning   = true;
+    }
+
+    let append_to_dom nodes dom_node =
+      let dom_node = (dom_node : #Dom.node Js.t :> Dom.node Js.t) in
+      let root = Lwd.observe (update_children dom_node nodes) in
+      let job = { root; limit = default_limit; queued = false; enabled = true } in
+      Lwd.set_on_invalidate root (Next_frame.invalidate_job job);
+      Next_frame.queue_job job;
+      job
+
+    let set_limit job limit = job.limit <- limit
+  end
 end
