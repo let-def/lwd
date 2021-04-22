@@ -115,20 +115,29 @@ let update_children
               if Jv.is_null acc
               then ignore (Jv.call' (El.to_jv self) jv_append [|node'|])
               else ignore (Jv.call' acc jv_before [|node'|])
-            ) else if preserve_focus && contains_focus node then (
-              let rec shift_siblings () =
-                let sibling = Jv.get' node' jv_nextSibling in
-                if sibling == acc then true
-                else if Jv.is_null sibling then false
-                else (
-                  ignore (Jv.call' node' jv_before [|sibling|]);
-                  shift_siblings ()
-                )
-              in
-              if not (shift_siblings ()) then
-                ignore (Jv.call' acc jv_before [|node'|]);
-            ) else if Jv.get' node' jv_nextSibling != acc then
-              ignore (Jv.call' acc jv_before [|node'|]);
+            ) else if (
+              (* Check if there is not any work to do *)
+              Jv.get' node' jv_nextSibling != acc &&
+              (* Check if we are in the focus case and try to "bubble sort" to
+                 preserve focus *)
+              not (
+                preserve_focus && contains_focus node &&
+                let rec shift_siblings () =
+                  let sibling = Jv.get' node' jv_nextSibling in
+                  if sibling == acc then true
+                  else if Jv.is_null sibling then false
+                  else (
+                    ignore (Jv.call' node' jv_before [|sibling|]);
+                    shift_siblings ()
+                  )
+                in
+                shift_siblings ()
+              )
+            ) then (
+              if Jv.is_null acc
+              then ignore (Jv.call' (El.to_jv self) jv_append [|node'|])
+              else ignore (Jv.call' acc jv_before [|node'|])
+            );
             node'
           | Inner t ->
             if Jv.is_null t.bound then (
@@ -165,7 +174,28 @@ let attach_attribs el attribs =
   Lwd_utils.map_reduce (function
       | `P at -> set_at at; pure_unit
       | `R at -> Lwd.map ~f:set_at at
-      | `S ats -> Lwd.map ~f:ignore (Lwd_seq.map set_at ats)
+      | `S ats ->
+        let set_at' at =
+          let k, v = At.to_pair at in
+          El.set_at k (Some v) el;
+          Some k
+        in
+        let reducer =
+          ref (Lwd_seq.Reducer.make ~map:set_at' ~reduce:(fun _ _ -> None))
+        in
+        let update ats =
+          let dropped, reducer' =
+            Lwd_seq.Reducer.update_and_get_dropped !reducer ats
+          in
+          reducer := reducer';
+          Lwd_seq.Reducer.fold_dropped `Map (fun at () ->
+              match at with
+              | Some k -> El.set_at k None el
+              | None -> assert false
+            ) dropped ();
+          ignore (Lwd_seq.Reducer.reduce reducer': _ option option)
+        in
+        Lwd.map ~f:update ats
     ) (pure_unit, fun _ _ -> pure_unit)
     attribs
 
