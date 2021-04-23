@@ -484,6 +484,7 @@ let map_reduce mapper monoid source =
             root.on_invalidate <- opaque self :: root.on_invalidate;
             reduction
         )
+      ~invalidate:(fun _ x -> x)
       ~release:(fun self reduction ->
           match reduction.source with
           | Leaf | Node _ -> assert false

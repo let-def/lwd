@@ -34,6 +34,7 @@ and _ desc =
            } -> 'a desc
   | Var  : 'a desc
   | Prim : { acquire : 'a t -> 'a -> 'a;
+             invalidate : 'a t -> 'a -> 'a;
              release : 'a t -> 'a -> 'a } -> 'a desc
 
 (* a set of (active) parents for a ['a t], used during invalidation *)
@@ -276,13 +277,18 @@ let peek_any x = peek (prj x)
 
 type 'a prim = 'a t
 
-let prim ~acquire ~release value =
-  inj (operator 0 value (Prim { acquire; release }))
+let prim ~acquire ~release ~invalidate value =
+  inj (operator 0 value (Prim { acquire; release; invalidate }))
 
 let get_prim x = x
 
-let invalidate x =
-  invalidate_node (prj x)
+let invalidate x = match prj x with
+  | Operator ({ desc = Prim p; _ } as t) ->
+    (* the value is invalidated, be sure to invalidate all parents as well *)
+    invalidate_trace t.trace;
+    t.value <- p.invalidate x t.value;
+    t.validity <- max_int;
+  | _ -> assert false
 
 type release_list =
   | Release_done
@@ -388,6 +394,26 @@ let rec sub_release
         end
       | _ -> failures
 
+(* make sure that [origin] is in [self.trace], passed as last arg. *)
+let activate_tracing (self : _ t_) (origin : _ t__) = function
+  | Tn tn ->
+    let idx = get_idx self origin in (* index of [self] in [origin.trace_idx] *)
+    let active = tn.active in
+    (* [idx < active] means [self] is already traced by [origin].
+       We only have to add [self] to the entries if [idx >= active]. *)
+    if idx >= active then (
+      tn.active <- active + 1;
+    );
+    if idx > active then (
+      (* swap with last entry in [tn.entries] *)
+      let old = tn.entries.(active) in
+      tn.entries.(idx) <- old;
+      tn.entries.(active) <- obj_t origin;
+      mov_idx self active idx old;
+      mov_idx self idx active origin
+    )
+  | _ -> ()
+
 (* [sub_acquire] cannot raise *)
 let rec sub_acquire : type a a' b . (a, a') t__ -> b t_ -> int =
   fun origin ->
@@ -425,6 +451,7 @@ let rec sub_acquire : type a a' b . (a, a') t__ -> b t_ -> int =
         let obj_origin = obj_t origin in
         entries.(index) <- obj_origin;
         add_idx self index obj_origin;
+        activate_tracing self origin trace;
         trace
     in
     t.trace <- trace;
@@ -448,40 +475,21 @@ let rec sub_acquire : type a a' b . (a, a') t__ -> b t_ -> int =
             (sub_acquire self y)
         | Join x ->
           assert (not x.acquired);
-          let _v = sub_acquire self x.child in
-          max_int
-          (*if v < max_int then (
+          let v = sub_acquire self x.child in
+          if v < max_int then (
             x.acquired <- true;
             join_validity v (sub_acquire self x.intermediate)
           ) else
-            max_int*)
+            max_int
         | Var -> t.validity
-        | Prim _ -> t.validity
+        | Prim p ->
+          t.value <- p.acquire (inj self) t.value;
+          t.validity
       in
       if validity' > t.validity then
         t.validity <- max_int
     );
     t.validity
-
-(* make sure that [origin] is in [self.trace], passed as last arg. *)
-let activate_tracing self origin = function
-  | Tn tn ->
-    let idx = get_idx self origin in (* index of [self] in [origin.trace_idx] *)
-    let active = tn.active in
-    (* [idx < active] means [self] is already traced by [origin].
-       We only have to add [self] to the entries if [idx >= active]. *)
-    if idx >= active then (
-      tn.active <- active + 1;
-    );
-    if idx > active then (
-      (* swap with last entry in [tn.entries] *)
-      let old = tn.entries.(active) in
-      tn.entries.(idx) <- old;
-      tn.entries.(active) <- obj_t origin;
-      mov_idx self active idx old;
-      mov_idx self idx active origin
-    )
-  | _ -> ()
 
 (* [sub_sample origin self] computes a value for [self].
 
@@ -527,12 +535,12 @@ let sub_sample queue =
             );
             aux self intermediate
           | Var -> t.value
-          | Prim p -> p.acquire (inj self) t.value
+          | Prim _ -> t.value
         in
-        (*if t.validity = evaluating then ( *)
+        if t.validity = evaluating then (
           t.value <- result;
           t.validity <- !clock;
-        (* ); *)
+        );
         (* [self] just became active, so it may invalidate [origin] in case its
            value changes because of [t.desc], like if it's a variable and gets
            mutated, or if it's a primitive that gets invalidated.

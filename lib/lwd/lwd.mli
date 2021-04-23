@@ -78,6 +78,7 @@ type +'a prim
 val prim :
   acquire:('a prim -> 'a -> 'a) ->
   release:('a prim -> 'a -> 'a) ->
+  invalidate:('a prim -> 'a -> 'a) ->
   'a -> 'a prim
 (** create a new primitive document.
     @param acquire is called when the document becomes observed (indirectly)
