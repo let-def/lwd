@@ -476,14 +476,8 @@ let eval red =
 let opaque : 'a Lwd.prim -> Obj.t Lwd.prim = Obj.magic
 
 let map_reduce mapper monoid source =
-  let reduction = {
-    source; mapper; monoid;
-    result = Red_leaf;
-    generation = not_origin;
-    version = 0;
-  } in
   let prim = Lwd.prim
-      ~acquire:(fun self ->
+      ~acquire:(fun self reduction ->
           match reduction.source with
           | Leaf | Node _ -> assert false
           | Root root ->
@@ -495,8 +489,15 @@ let map_reduce mapper monoid source =
           | Leaf | Node _ -> assert false
           | Root root ->
             root.on_invalidate <-
-              List.filter ((!=) (opaque self)) root.on_invalidate
+              List.filter ((!=) (opaque self)) root.on_invalidate;
+            reduction
         )
+      {
+        source; mapper; monoid;
+        result = Red_leaf;
+        generation = not_origin;
+        version = 0;
+      }
   in
   Lwd.map ~f:eval (Lwd.get_prim prim)
 

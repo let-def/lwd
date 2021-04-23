@@ -64,6 +64,7 @@ val set : 'a var -> 'a -> unit
     on it. *)
 
 val peek : 'a var -> 'a
+val peek_any : 'a t -> 'a
 (** Observe the current value of the variable, without any dependency
     tracking. *)
 
@@ -74,7 +75,10 @@ type +'a prim
     A primitive is a resource with [acquire] and [release] functions
     to manage its lifecycle. *)
 
-val prim : acquire:('a prim -> 'a) -> release:('a prim -> 'a -> unit) -> 'a prim
+val prim :
+  acquire:('a prim -> 'a -> 'a) ->
+  release:('a prim -> 'a -> 'a) ->
+  'a -> 'a prim
 (** create a new primitive document.
     @param acquire is called when the document becomes observed (indirectly)
     via at least one {!root}.  The resulting primitive is passed as an argument
@@ -97,13 +101,13 @@ val flush_release_queue : release_queue -> release_failure list
 type +'a root
 (** A root of computation, whose value(s) over time we're interested in. *)
 
-val observe : ?on_invalidate:('a -> unit) -> 'a t -> 'a root
+val observe : ?on_invalidate:(unit -> unit) -> 'a t -> 'a root
 (** [observe x] creates a root that contains document [x].
     @param on_invalidate is called whenever the root is invalidated
     because the content of [x] has changed. This can be useful to
     perform side-effects such as re-rendering some UI. *)
 
-val set_on_invalidate : 'a root -> ('a -> unit) -> unit
+val set_on_invalidate : 'a root -> (unit -> unit) -> unit
 (** Change the callback for the root.
     See [observe] for more details. *)
 
