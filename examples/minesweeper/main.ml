@@ -63,7 +63,7 @@ let onload _ =
         Html.br ();
         button "nouvelle partie" (fun _ ->
             Lwd_table.append' boards
-              (Minesweeper.run (Lwd.peek nbc) (Lwd.peek nbr) (Lwd.peek nbm));
+              (Minesweeper.run (Lwd.peek_var nbc) (Lwd.peek_var nbr) (Lwd.peek_var nbm));
             false
           );
       ];

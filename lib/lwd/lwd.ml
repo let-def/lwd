@@ -33,9 +33,12 @@ and _ desc =
              mutable acquired : bool;
            } -> 'a desc
   | Var  : 'a desc
-  | Prim : { acquire : 'a t -> 'a -> 'a;
-             invalidate : 'a t -> 'a -> 'a;
-             release : 'a t -> 'a -> 'a } -> 'a desc
+  | Prim : 'a resource -> 'a desc
+
+and 'a resource = {
+  acquire: 'a t_ -> release_queue -> unit;
+  release: 'a t_ -> release_queue -> unit;
+}
 
 (* a set of (active) parents for a ['a t], used during invalidation *)
 and trace =
@@ -54,9 +57,24 @@ and trace_idx =
            obj : 'a t_;
            mutable next : trace_idx } -> trace_idx
 
+and release_list =
+  | Release_done
+  | Release_more :
+      { origin : _ t__; element : _ t_; next : release_list } -> release_list
+
+and resource_failure =
+  | Release of exn * Printexc.raw_backtrace
+  | Acquire of exn * Printexc.raw_backtrace
+
+and release_queue = {
+  mutable todo: release_list;
+  mutable failures: resource_failure list;
+}
+
 (* The type system cannot see that t is covariant in its parameter.
    Use the Force to convince it. *)
 and +'a t
+
 external inj : 'a t_ -> 'a t = "%identity"
 external prj : 'a t -> 'a t_ = "%identity"
 external prj2 : 'a t t -> 'a t_ t_ = "%identity"
@@ -256,49 +274,29 @@ and invalidate_trace = function
 
 (* Variables *)
 type 'a var = 'a t_
-let var x = operator 0 x Var
+let var ?resource x =
+  match resource with
+  | None -> operator 0 x Var
+  | Some resource -> operator 0 x (Prim resource)
 let get x = inj x
 
 let set (vx : _ var) x : unit =
   match vx with
-  | Operator ({desc = Var; _} as op) ->
+  | Operator ({desc = (Var | Prim _); _} as op) ->
     (* set the variable, and invalidate all observers *)
     op.value <- x;
     invalidate_node vx;
   | _ -> assert false
 
-let peek = function
+let peek_any = function
   | Pure x -> x
   | Operator op -> op.value
 
-let peek_any x = peek (prj x)
+let peek x = peek_any (prj x)
 
-(* Primitives *)
+let peek_var x = peek_any x
 
-type 'a prim = 'a t
-
-let prim ~acquire ~release ~invalidate value =
-  inj (operator 0 value (Prim { acquire; release; invalidate }))
-
-let get_prim x = x
-
-let invalidate x = match prj x with
-  | Operator ({ desc = Prim p; _ } as t) ->
-    (* the value is invalidated, be sure to invalidate all parents as well *)
-    invalidate_trace t.trace;
-    t.value <- p.invalidate x t.value;
-    t.validity <- max_int;
-  | _ -> assert false
-
-type release_list =
-  | Release_done
-  | Release_more :
-      { origin : _ t__; element : _ t_; next : release_list } -> release_list
-
-type release_queue = release_list ref
-let make_release_queue () = ref Release_done
-
-type release_failure = exn * Printexc.raw_backtrace
+let make_release_queue () = { todo = Release_done; failures = [] }
 
 (* [sub_release [] origin self] is called when [origin] is released,
    where [origin] is reachable from [self]'s trace.
@@ -307,9 +305,9 @@ type release_failure = exn * Printexc.raw_backtrace
    [sub_release] cannot raise.
    If a primitive raises, the exception is caught and a warning is emitted. *)
 let rec sub_release
-  : type a a' b . release_failure list -> (a, a') t__ -> b t_ -> release_failure list
-  = fun failures origin -> function
-    | Pure _ -> failures
+  : type a a' b . release_queue -> (a, a') t__ -> b t_ -> unit
+  = fun queue origin -> function
+    | Pure _ -> ()
     | Operator t as self ->
       (* compute [t.trace \ {origin}] *)
       let trace = match t.trace with
@@ -368,31 +366,32 @@ let rec sub_release
            from any root. We can release its cached value and
            recursively release its subtree. *)
         begin match t.desc with
-          | Map  (x, _) -> sub_release failures self x
+          | Map  (x, _) -> sub_release queue self x
           | Map2 (x, y, _) ->
-            sub_release (sub_release failures self x) self y
+            sub_release queue self x;
+            sub_release queue self y
           | Pair (x, y) ->
-            sub_release (sub_release failures self x) self y
+            sub_release queue self x;
+            sub_release queue self y
           | App  (x, y) ->
-            sub_release (sub_release failures self x) self y
+            sub_release queue self x;
+            sub_release queue self y
           | Join t ->
-            let failures = sub_release failures self t.child in
+            sub_release queue self t.child;
             if t.acquired then (
               t.acquired <- false;
-              sub_release failures self t.intermediate
-            ) else failures
-          | Var -> failures
+              sub_release queue self t.intermediate
+            )
+          | Var -> ()
           | Prim p ->
-            begin match p.release (inj self) t.value with
-              | value' ->
-                t.value <- value';
-                failures
-              | exception exn ->
+            begin
+              try p.release self queue
+              with exn ->
                 let bt = Printexc.get_raw_backtrace () in
-                (exn, bt) :: failures
+                queue.failures <- Release (exn, bt) :: queue.failures
             end
         end
-      | _ -> failures
+      | _ -> ()
 
 (* make sure that [origin] is in [self.trace], passed as last arg. *)
 let activate_tracing (self : _ t_) (origin : _ t__) = function
@@ -415,14 +414,29 @@ let activate_tracing (self : _ t_) (origin : _ t__) = function
   | _ -> ()
 
 (* [sub_acquire] cannot raise *)
-let rec sub_acquire : type a a' b . (a, a') t__ -> b t_ -> int =
-  fun origin ->
+let rec sub_acquire : type a a' b . release_queue -> (a, a') t__ -> b t_ -> int =
+  fun queue origin ->
   function
   | Pure _ -> 0
   | Operator t as self ->
     (* [acquire] is true if this is the first time this operator
        is used, in which case we need to acquire its children *)
-    let acquire = match t.trace with T0 -> true | _ -> false in
+    let acquire =
+      match t.trace with
+      | T0 ->
+        begin match t.desc with
+          | Prim p ->
+            begin
+              try p.acquire self queue
+              with exn ->
+                let bt = Printexc.get_raw_backtrace () in
+                queue.failures <- Acquire (exn, bt) :: queue.failures
+            end
+          | _ -> ()
+        end;
+        true
+      | _ -> false
+    in
     let trace = match t.trace with
       | T0 -> T1 origin
       | T1 x -> T2 (origin, x)
@@ -460,31 +474,28 @@ let rec sub_acquire : type a a' b . (a, a') t__ -> b t_ -> int =
       let validity' =
         match t.desc with
         | Map  (x, _) ->
-          sub_acquire self x
+          sub_acquire queue self x
         | Map2 (x, y, _) ->
           join_validity
-            (sub_acquire self x)
-            (sub_acquire self y)
+            (sub_acquire queue self x)
+            (sub_acquire queue self y)
         | Pair (x, y) ->
           join_validity
-            (sub_acquire self x)
-            (sub_acquire self y)
+            (sub_acquire queue self x)
+            (sub_acquire queue self y)
         | App  (x, y) ->
           join_validity
-            (sub_acquire self x)
-            (sub_acquire self y)
+            (sub_acquire queue self x)
+            (sub_acquire queue self y)
         | Join x ->
           assert (not x.acquired);
-          let v = sub_acquire self x.child in
+          let v = sub_acquire queue self x.child in
           if v < max_int then (
             x.acquired <- true;
-            join_validity v (sub_acquire self x.intermediate)
+            join_validity v (sub_acquire queue self x.intermediate)
           ) else
             max_int
-        | Var -> t.validity
-        | Prim p ->
-          t.value <- p.acquire (inj self) t.value;
-          t.validity
+        | Var | Prim _ -> t.validity
       in
       if validity' > t.validity then
         t.validity <- max_int
@@ -520,10 +531,10 @@ let sub_sample queue =
             in
             if intermediate != x.intermediate then (
               if x.acquired then (
-                queue := Release_more {
+                queue.todo <- Release_more {
                     origin = self;
                     element = x.intermediate;
-                    next = !queue;
+                    next = queue.todo;
                   };
                 x.acquired <- false;
               );
@@ -531,7 +542,7 @@ let sub_sample queue =
             );
             if not x.acquired then (
               x.acquired <- true;
-              ignore (sub_acquire self intermediate : int)
+              ignore (sub_acquire queue self intermediate : int)
             );
             aux self intermediate
           | Var -> t.value
@@ -563,28 +574,34 @@ let observe ?(on_invalidate=ignore) child : _ root =
     acquired = false;
   })
 
-exception Release_failure of exn option * release_failure list
-
-let raw_flush_release_queue queue =
-  let rec aux failures = function
-    | Release_done -> failures
-    | Release_more t ->
-      let failures = sub_release failures t.origin t.element in
-      aux failures t.next
-  in
-  aux [] queue
+exception Resource_failure of exn option * resource_failure list
 
 let flush_release_queue queue =
-  let queue' = !queue in
-  queue := Release_done;
-  raw_flush_release_queue queue'
+  let rec loop_todo queue = function
+    | Release_done -> ()
+    | Release_more t ->
+      sub_release queue t.origin t.element;
+      loop_todo queue t.next
+  in
+  let rec loop_queue queue =
+    match queue.todo with
+    | Release_done -> ()
+    | todo ->
+      queue.todo <- Release_done;
+      loop_todo queue todo;
+      loop_queue queue
+  in
+  loop_queue queue;
+  let failures = queue.failures in
+  queue.failures <- [];
+  failures
 
 let sample queue x =
   let Root t as self = prj_root x in
   (* no cached value, compute it now *)
   if not t.acquired then (
     t.acquired <- true;
-    ignore (sub_acquire self t.child : int);
+    ignore (sub_acquire queue self t.child : int);
   );
   let validity, _ = unpack t.child in
   if validity = max_int then incr clock;
@@ -600,7 +617,8 @@ let release queue x =
   if t.acquired then (
     (* release subtree *)
     t.acquired <- false;
-    queue := Release_more { origin = self; element = t.child; next = !queue }
+    queue.todo <-
+      Release_more { origin = self; element = t.child; next = queue.todo }
   )
 
 let set_on_invalidate x f =
@@ -610,16 +628,16 @@ let set_on_invalidate x f =
 let flush_or_fail main_exn queue =
   match flush_release_queue queue with
   | [] -> ()
-  | failures -> raise (Release_failure (main_exn, failures))
+  | failures -> raise (Resource_failure (main_exn, failures))
 
 let quick_sample root =
-  let queue = ref Release_done in
+  let queue = make_release_queue () in
   match sample queue root with
   | result -> flush_or_fail None queue; result
   | exception exn -> flush_or_fail (Some exn) queue; raise exn
 
 let quick_release root =
-  let queue = ref Release_done in
+  let queue = make_release_queue () in
   release queue root;
   flush_or_fail None queue
 

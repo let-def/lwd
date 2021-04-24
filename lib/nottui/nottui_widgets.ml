@@ -199,7 +199,7 @@ let vscroll_area ~state ~change t =
 let scroll_area ?(offset=0,0) t =
   let offset = Lwd.var offset in
   let scroll d_x d_y =
-    let s_x, s_y = Lwd.peek offset in
+    let s_x, s_y = Lwd.peek_var offset in
     let s_x = max 0 (s_x + d_x) in
     let s_y = max 0 (s_y + d_y) in
     Lwd.set offset (s_x, s_y);
@@ -290,7 +290,7 @@ let h_pane left right =
           | `Left ->
             `Grab (
               (fun ~x ~y:_ ->
-                 match Lwd.peek state_var with
+                 match Lwd.peek_var state_var with
                  | Split {pos; max} ->
                    Lwd.set state_var (Re_split {pos; max; at = x})
                  | Re_split {pos; max; at} ->
@@ -329,7 +329,7 @@ let v_pane top bot =
           | `Left ->
             `Grab (
               (fun ~x:_ ~y ->
-                 match Lwd.peek state_var with
+                 match Lwd.peek_var state_var with
                  | Split {pos; max} ->
                    Lwd.set state_var (Re_split {pos; max; at = y})
                  | Re_split {pos; max; at} ->
@@ -501,7 +501,7 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
     Ui.hcat [string ~attr:attr_clickable (if op then "v" else ">"); string " "; s]
   in
   let cursor ~x:_ ~y:_ = function
-     | `Left when Lwd.peek opened -> Lwd.set opened false; `Handled
+     | `Left when Lwd.peek_var opened -> Lwd.set opened false; `Handled
      | `Left -> Lwd.set opened true; `Handled
      | _ -> `Unhandled
   in
@@ -774,7 +774,7 @@ let scrollbox t =
   let state_var = Lwd.var {w = 0; h = 0; x = 0; y = 0} in
   (* Keep track of size available for display *)
   let update_size ~w ~h =
-    let state = Lwd.peek state_var in
+    let state = Lwd.peek_var state_var in
     if state.w <> w || state.h <> h then Lwd.set state_var {state with w; h}
   in
   let measure_size body =
@@ -798,11 +798,11 @@ let scrollbox t =
         (Ui.shift_area state_x state_y b)
     in
     let set_vscroll y =
-      let state = Lwd.peek state_var in
+      let state = Lwd.peek_var state_var in
       if state.y <> y then Lwd.set state_var {state with y}
     in
     let set_hscroll x =
-      let state = Lwd.peek state_var in
+      let state = Lwd.peek_var state_var in
       if state.x <> x then Lwd.set state_var {state with x}
     in
     let (<->) = Ui.join_y and (<|>) = Ui.join_x in

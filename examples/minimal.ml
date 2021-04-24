@@ -47,7 +47,7 @@ let farenheit_edit =
     farenheit_text
     ~on_change:(fun (text, _ as state) ->
         let d = match float_of_string_opt text with
-          | None -> Lwd.peek degrees
+          | None -> Lwd.peek_var degrees
           | Some d -> let d = f_to_c d in Lwd.set degrees d; d
         in
         Lwd.set farenheit (d, state)
@@ -65,7 +65,7 @@ let celsius_edit =
     celsius_text
     ~on_change:(fun (text, _ as state) ->
         let d = match float_of_string_opt text with
-          | None -> Lwd.peek degrees
+          | None -> Lwd.peek_var degrees
           | Some d -> Lwd.set degrees d; d
         in
         Lwd.set celsius (d, state)

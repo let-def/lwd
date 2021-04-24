@@ -18,7 +18,8 @@ val pure : 'a -> 'a t
 (** Alias to {!return} *)
 
 val map : 'a t -> f:('a -> 'b) -> 'b t
-(** [map d ~f] is the document that has value [f x] whenever [d] has value [x] *)
+(** [map d ~f] is the document that has value [f x] whenever
+    [d] has value [x] *)
 
 val map2 : 'a t -> 'b t -> f:('a -> 'b -> 'c) -> 'c t
 (** [map2 d1 d2 ~f] is the document that has value [f x1 x2] whenever
@@ -26,8 +27,7 @@ val map2 : 'a t -> 'b t -> f:('a -> 'b -> 'c) -> 'c t
 
 val join : 'a t t -> 'a t
 (** Monadic operator [join d] is the document pointed to by document [d].
-    This is powerful but potentially costly in case of recomputation.
-*)
+    This is powerful but potentially costly in case of recomputation.  *)
 
 val bind : 'a t -> f:('a -> 'b t) -> 'b t
 (** Monadic bind, a mix of {!join} and {!map} *)
@@ -37,7 +37,7 @@ val app : ('a -> 'b) t -> 'a t -> 'b t
     whenever [df] has value [f] and [dx] has value [x] *)
 
 val pair : 'a t -> 'b t -> ('a * 'b) t
-(** [pair a b] is [map2 (fun x y->x,y) a b] *)
+(** [pair a b] is [map2 ~f:(fun x y -> (x, y)) a b] *)
 
 val is_pure : 'a t -> 'a option
 (** [is_pure x] will return [Some v] if [x] was built with [pure v] or
@@ -53,7 +53,16 @@ type 'a var
     via {!map}, {!bind}, etc. will be at least partially invalidated
     and will be recomputed incrementally on demand. *)
 
-val var : 'a -> 'a var
+type release_queue
+
+type 'a resource = {
+  acquire: 'a var -> release_queue -> unit;
+  release: 'a var -> release_queue -> unit;
+}
+(** Resources associate code to the action of acquiring and releasing a
+    variable. *)
+
+val var : ?resource:'a resource -> 'a -> 'a var
 (** Create a new variable with the given initial value *)
 
 val get : 'a var -> 'a t
@@ -63,41 +72,22 @@ val set : 'a var -> 'a -> unit
 (** Change the variable's content, invalidating all documents depending
     on it. *)
 
-val peek : 'a var -> 'a
-val peek_any : 'a t -> 'a
+val peek : 'a t -> 'a
 (** Observe the current value of the variable, without any dependency
     tracking. *)
 
-type +'a prim
-(** A primitive document. It can correspond, for example, to
-    a primitive UI element.
-
-    A primitive is a resource with [acquire] and [release] functions
-    to manage its lifecycle. *)
-
-val prim :
-  acquire:('a prim -> 'a -> 'a) ->
-  release:('a prim -> 'a -> 'a) ->
-  invalidate:('a prim -> 'a -> 'a) ->
-  'a -> 'a prim
-(** create a new primitive document.
-    @param acquire is called when the document becomes observed (indirectly)
-    via at least one {!root}.  The resulting primitive is passed as an argument
-    to support certain recursive use cases.
-    @param release is called when the document is no longer observed.
-    Internal resources can be freed. *)
-
-val get_prim : 'a prim -> 'a t
-val invalidate : 'a prim -> unit
+val peek_var : 'a var -> 'a
+(** [peek_var v] is [peek (get v)] *)
 
 (** Releasing unused graphs *)
-type release_failure = exn * Printexc.raw_backtrace
+type resource_failure =
+  | Release of exn * Printexc.raw_backtrace
+  | Acquire of exn * Printexc.raw_backtrace
 
-exception Release_failure of exn option * release_failure list
+exception Resource_failure of exn option * resource_failure list
 
-type release_queue
 val make_release_queue : unit -> release_queue
-val flush_release_queue : release_queue -> release_failure list
+val flush_release_queue : release_queue -> resource_failure list
 
 type +'a root
 (** A root of computation, whose value(s) over time we're interested in. *)

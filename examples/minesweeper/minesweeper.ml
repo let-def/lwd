@@ -65,7 +65,7 @@ let neighbours cf (x, y) =
   in
   List.filter (valid cf) ngb
 
-let update v f = Lwd.set v (f (Lwd.peek v))
+let update v f = Lwd.set v (f (Lwd.peek_var v))
 
 let initialize_board cf =
   let initial = { mined = false; seen = false; flag = false; nbm = 0 } in
@@ -76,13 +76,13 @@ let initialize_board cf =
   in
   let count_mined_adj b (i, j) =
     let x = ref 0 in
-    let inc_if_mined (i, j) = if (Lwd.peek b.(i).(j)).mined then incr x in
+    let inc_if_mined (i, j) = if (Lwd.peek_var b.(i).(j)).mined then incr x in
     List.iter inc_if_mined (neighbours cf (i, j));
     !x
   in
   let set_count b (i, j) =
     let cell = b.(i).(j) in
-    if not (Lwd.peek cell).mined then
+    if not (Lwd.peek_var cell).mined then
       update cell (fun c -> {c with nbm = count_mined_adj b (i, j)})
   in
   let list_mined = random_list_mines (cf.nbcols * cf.nbrows) cf.nbmines in
@@ -101,7 +101,7 @@ let cells_to_see bd cf (i, j) =
   let rec relevant = function
     | [] -> [], []
     | ((x, y) as c) :: l ->
-        let cell = Lwd.peek bd.(x).(y) in
+        let cell = Lwd.peek_var bd.(x).(y) in
         if cell.mined || cell.flag || cell.seen || visited.(x).(y)
         then relevant l
         else
@@ -112,7 +112,7 @@ let cells_to_see bd cf (i, j) =
   let rec cells_to_see_rec = function
     | [] -> []
     | ((x, y) as c) :: l ->
-        if (Lwd.peek bd.(x).(y)).nbm <> 0
+        if (Lwd.peek_var bd.(x).(y)).nbm <> 0
         then c :: cells_to_see_rec l
         else
           let l1, l2 = relevant (neighbours cf c) in
@@ -174,7 +174,7 @@ let cell_image cell ~on_click =
     ()
 
 let mark_cell d cell =
-  let cell' = Lwd.peek cell in
+  let cell' = Lwd.peek_var cell in
   if cell'.flag then (
     d.nb_marked_cells <- d.nb_marked_cells - 1;
     Lwd.set cell {cell' with flag = false}
@@ -185,7 +185,7 @@ let mark_cell d cell =
 
 let reveal d i j =
   let reveal_cell (i, j) =
-    Lwd.set d.bd.(i).(j) {(Lwd.peek d.bd.(i).(j)) with seen = true};
+    Lwd.set d.bd.(i).(j) {(Lwd.peek_var d.bd.(i).(j)) with seen = true};
     d.nb_hidden_cells <- d.nb_hidden_cells - 1
   in
   List.iter reveal_cell (cells_to_see d.bd d.cf (i, j));
@@ -232,7 +232,7 @@ let init_table d =
         cell_image (Lwd.get cell) ~on_click:(fun () ->
             begin match !mode with
               | Normal ->
-                let cell' = Lwd.peek cell in
+                let cell' = Lwd.peek_var cell in
                 if cell'.seen
                 then ()
                 else if d.flag_switch_on

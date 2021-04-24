@@ -59,7 +59,7 @@ let varying_width f =
   let width = Lwd.var 0 in
   Lwd.map (f (Lwd.get width)) ~f:(fun ui ->
       Ui.size_sensor
-        (fun ~w ~h:_ -> if Lwd.peek width <> w then Lwd.set width w)
+        (fun ~w ~h:_ -> if Lwd.peek_var width <> w then Lwd.set width w)
         (Ui.resize ~sw:1 ~sh:1 ~w:0 ui)
     )
 

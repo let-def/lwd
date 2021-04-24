@@ -16,7 +16,7 @@ type 'a tree =
       mutable version : int;
       mutable child : 'a tree;
       mutable generation : unit ref;
-      mutable on_invalidate : Obj.t Lwd.prim list;
+      mutable on_invalidate : Obj.t Lwd.var list;
     }
 
 type 'a t = 'a tree
@@ -60,7 +60,7 @@ let rec raw_invalidate = function
     t.size <- 0;
     raw_invalidate t.parent
   | Root r ->
-    List.iter Lwd.invalidate r.on_invalidate
+    List.iter (fun var -> Lwd.set var (Lwd.peek_var var)) r.on_invalidate
   | Leaf -> assert false
 
 let prepend ?set = function
@@ -473,26 +473,28 @@ let eval red =
     | Red_leaf -> fst red.monoid
     | Red_node r -> r.aggregate
 
-let opaque : 'a Lwd.prim -> Obj.t Lwd.prim = Obj.magic
+let opaque : 'a Lwd.var -> Obj.t Lwd.var = Obj.magic
+
+let table_resource = {
+  Lwd.
+  acquire = begin fun self _queue ->
+    let reduction = Lwd.peek_var self in
+    match reduction.source with
+    | Leaf | Node _ -> assert false
+    | Root root ->
+      root.on_invalidate <- opaque self :: root.on_invalidate
+  end;
+  release = begin fun self _queue ->
+    let reduction = Lwd.peek_var self in
+    match reduction.source with
+    | Leaf | Node _ -> assert false
+    | Root root ->
+      root.on_invalidate <- List.filter ((!=) (opaque self)) root.on_invalidate
+  end;
+}
 
 let map_reduce mapper monoid source =
-  let prim = Lwd.prim
-      ~acquire:(fun self reduction ->
-          match reduction.source with
-          | Leaf | Node _ -> assert false
-          | Root root ->
-            root.on_invalidate <- opaque self :: root.on_invalidate;
-            reduction
-        )
-      ~invalidate:(fun _ x -> x)
-      ~release:(fun self reduction ->
-          match reduction.source with
-          | Leaf | Node _ -> assert false
-          | Root root ->
-            root.on_invalidate <-
-              List.filter ((!=) (opaque self)) root.on_invalidate;
-            reduction
-        )
+  let prim = Lwd.var ~resource:table_resource
       {
         source; mapper; monoid;
         result = Red_leaf;
@@ -500,7 +502,7 @@ let map_reduce mapper monoid source =
         version = 0;
       }
   in
-  Lwd.map ~f:eval (Lwd.get_prim prim)
+  Lwd.map ~f:eval (Lwd.get prim)
 
 let reduce monoid source = map_reduce (fun _ x -> x) monoid source
 
