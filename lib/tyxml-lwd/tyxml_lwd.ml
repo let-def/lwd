@@ -1210,8 +1210,7 @@ module Html : sig
   val a_min : float Lwd.t -> [>`Min] attrib
   val a_input_min : number_or_datetime Lwd.t -> [>`Input_Min] attrib
   val a_inputmode :
-    [<`Email|`Full_width_latin|`Kana|`Katakana|`Latin
-    |`Latin_name|`Latin_prose|`Numeric|`Tel|`Url|`Verbatim] Lwd.t ->
+    [<`Decimal|`Email|`None|`Numeric|`Search|`Tel|`Text|`Url] Lwd.t ->
     [>`Inputmode] attrib
   val a_novalidate : unit -> [>`Novalidate] attrib
   val a_open : unit -> [>`Open] attrib
