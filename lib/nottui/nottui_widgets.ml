@@ -308,7 +308,8 @@ let h_pane left right =
       | Split _ -> ui
       | Re_split {at; _} ->
         Ui.transient_sensor (fun ~x ~y:_ ~w ~h:_ () ->
-            Lwd.set state_var (Split {pos = (at - x); max = w})
+            let newpos = at - x |> Stdlib.min w |> Stdlib.max 0 in
+            Lwd.set state_var (Split {pos = newpos; max = w})
           ) ui
     in
     ui
@@ -347,7 +348,8 @@ let v_pane top bot =
       | Split _ -> ui
       | Re_split {at; _} ->
         Ui.transient_sensor (fun ~x:_ ~y ~w:_ ~h () ->
-            Lwd.set state_var (Split {pos = (at - y); max = h})
+            let newpos = at - y |> Stdlib.min h |> Stdlib.max 0 in
+            Lwd.set state_var (Split {pos = newpos; max = h})
           ) ui
     in
     ui
