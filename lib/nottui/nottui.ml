@@ -441,9 +441,9 @@ struct
     if has_transient_sensor ui.flags || (
         has_permanent_sensor ui.flags &&
         match ui.sensor_cache with
-        | None -> false
+        | None -> true
         | Some (ox', oy', sw', sh') ->
-          ox = ox' && oy = oy' && sw = sw' && sh = sh'
+          not (ox = ox' && oy = oy' && sw = sw' && sh = sh')
       )
     then (
       ui.flags <- ui.flags land lnot flag_transient_sensor;
