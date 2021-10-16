@@ -714,6 +714,8 @@ let scrollbar_click_step = 3 (* Clicking scrolls one third of the screen *)
 let scrollbar_wheel_step = 8 (* Wheel event scrolls 1/8th of the screen *)
 
 let hscrollbar visible total offset ~set =
+  let origin_x = ref 0 in
+  let update_origin ~x ~y:_ ~w:_ ~h:_ () = origin_x := x in
   let prefix = offset * visible / total in
   let suffix = (total - offset - visible) * visible / total in
   let handle = visible - prefix - suffix in
@@ -725,7 +727,7 @@ let hscrollbar visible total offset ~set =
       else if x > prefix + handle then
         (set (offset + max 1 (visible / scrollbar_click_step)); `Handled)
       else `Grab (
-          (fun ~x:x' ~y:_ -> set (offset + (x' - x) * total / visible)),
+          (fun ~x:x' ~y:_ -> set (offset + (x' - x - !origin_x) * total / visible)),
           (fun ~x:_ ~y:_ -> ())
         )
     | `Scroll dir ->
@@ -735,13 +737,15 @@ let hscrollbar visible total offset ~set =
     | _ -> `Unhandled
   in
   let (++) = Ui.join_x in
-  Ui.mouse_area mouse_handler (
-    render prefix scrollbar_bg ++
-    render handle scrollbar_fg ++
-    render suffix scrollbar_bg
-  )
+  render prefix scrollbar_bg ++
+  render handle scrollbar_fg ++
+  render suffix scrollbar_bg
+  |> Ui.mouse_area mouse_handler
+  |> Ui.permanent_sensor update_origin
 
 let vscrollbar visible total offset ~set =
+  let origin_y = ref 0 in
+  let update_origin ~x:_ ~y ~w:_ ~h:_ () = origin_y := y in
   let prefix = offset * visible / total in
   let suffix = (total - offset - visible) * visible / total in
   let handle = visible - prefix - suffix in
@@ -753,7 +757,7 @@ let vscrollbar visible total offset ~set =
       else if y > prefix + handle then
         (set (offset + max 1 (visible / scrollbar_click_step)); `Handled)
       else `Grab (
-          (fun ~x:_ ~y:y' -> set (offset + (y' - y) * total / visible)),
+          (fun ~x:_ ~y:y' -> set (offset + (y' - y - !origin_y) * total / visible)),
           (fun ~x:_ ~y:_ -> ())
         )
     | `Scroll dir ->
@@ -763,11 +767,11 @@ let vscrollbar visible total offset ~set =
     | _ -> `Unhandled
   in
   let (++) = Ui.join_y in
-  Ui.mouse_area mouse_handler (
-    render prefix scrollbar_bg ++
-    render handle scrollbar_fg ++
-    render suffix scrollbar_bg
-  )
+  render prefix scrollbar_bg ++
+  render handle scrollbar_fg ++
+  render suffix scrollbar_bg
+  |> Ui.mouse_area mouse_handler
+  |> Ui.permanent_sensor update_origin
 
 let scrollbox t =
   (* Keep track of scroll state *)
