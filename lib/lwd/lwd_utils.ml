@@ -44,3 +44,33 @@ let rec map_l (f:'a -> 'b Lwd.t) (l:'a list) : 'b list Lwd.t =
 
 let flatten_l (l:'a Lwd.t list) : 'a list Lwd.t =
   map_l (fun x->x) l
+
+(** {1 Miscellaneous functions}
+
+    I don't know where to put these, but they are useful, especially for
+    UI-related computations.
+*)
+
+let mini a b : int = if b < a then b else a
+
+let maxi a b : int = if b > a then b else a
+
+let clampi x ~min ~max : int =
+  if x < min then
+    min
+  else if x > max then
+    max
+  else
+    x
+
+let minf a b : float = if b < a then b else a
+
+let maxf a b : float = if b > a then b else a
+
+let clampf x ~min ~max : float =
+  if x < min then
+    min
+  else if x > max then
+    max
+  else
+    x

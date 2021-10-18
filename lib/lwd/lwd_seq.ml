@@ -14,13 +14,15 @@ let old_mask = 1
 let new_mask = 2
 let both_mask = 3
 
+let maxi a b : int = if b > a then b else a
+
 let rank = function
   | Nil | Leaf _ -> 0
   | Join t -> t.mark lsr mask_bits
 
 let concat a b = match a, b with
   | Nil, x | x, Nil -> x
-  | l, r -> Join { mark = (max (rank l) (rank r) + 1) lsl mask_bits; l; r }
+  | l, r -> Join { mark = (maxi (rank l) (rank r) + 1) lsl mask_bits; l; r }
 
 type ('a, 'b) view =
   | Empty
@@ -59,7 +61,7 @@ end = struct
           | Nil | Leaf _ -> assert false
           | Join tr ->
             let trr = node_left tr.r r in
-            if check (1 + max (rank t.l) (rank tr.l)) (rank trr)
+            if check (1 + maxi (rank t.l) (rank tr.l)) (rank trr)
             then concat (concat t.l tr.l) trr
             else concat t.l (concat tr.l trr)
 
@@ -75,7 +77,7 @@ end = struct
           | Nil | Leaf _ -> assert false
           | Join tl ->
             let tll = node_right l tl.l in
-            if check (1 + max (rank tl.r) (rank t.r)) (rank tll)
+            if check (1 + maxi (rank tl.r) (rank t.r)) (rank tll)
             then concat tll (concat tl.r t.r)
             else concat (concat tll tl.r) t.r
 
@@ -375,7 +377,7 @@ module Reducer = struct
         | Nil -> assert false
         | Leaf t -> t.mark <- 0
         | Join t ->
-          t.mark <- (max (rank t.l) (rank t.r) + 1) lsl mask_bits
+          t.mark <- (maxi (rank t.l) (rank t.r) + 1) lsl mask_bits
       in
       for i = st.shared_index - 1 downto 0 do
         restore_rank st.shared.(i)

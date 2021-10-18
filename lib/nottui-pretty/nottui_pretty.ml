@@ -267,8 +267,8 @@ let rec pretty_flat = function
    this ugly 100-lines long implementation.
 *)
 
-let maxi i j : int = if i < j then j else i
-let mini i j : int = if i < j then i else j
+let mini, maxi = Lwd_utils.(mini, maxi)
+
 let (+++) i j = let result = i + j in if result < 0 then max_int else result
 
 let nonflat_line ui =

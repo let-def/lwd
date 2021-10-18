@@ -3,6 +3,7 @@ open Notty
 open Nottui
 
 let empty_lwd = Lwd.return Ui.empty
+let (mini, maxi, clampi) = Lwd_utils.(mini, maxi, clampi)
 
 let string ?(attr=A.empty) str =
   let control_character_index str i =
@@ -154,7 +155,7 @@ let vscroll_area ~state ~change t =
   let total = ref (-1) in
   let scroll state delta =
     let position = state.position + delta in
-    let position = max 0 (min state.bound position) in
+    let position = clampi position ~min:0 ~max:state.bound in
     if position <> state.position then
       change `Action {state with position};
     `Handled
@@ -190,7 +191,7 @@ let vscroll_area ~state ~change t =
         in
         if tchange || vchange then
           change `Content {state with visible = !visible; total = !total;
-                                      bound = max 0 (!total - !visible); }
+                                      bound = maxi 0 (!total - !visible); }
       )
     |> Ui.mouse_area (scroll_handler state)
     |> Ui.keyboard_area (focus_handler state)
@@ -200,8 +201,8 @@ let scroll_area ?(offset=0,0) t =
   let offset = Lwd.var offset in
   let scroll d_x d_y =
     let s_x, s_y = Lwd.peek offset in
-    let s_x = max 0 (s_x + d_x) in
-    let s_y = max 0 (s_y + d_y) in
+    let s_x = maxi 0 (s_x + d_x) in
+    let s_y = maxi 0 (s_y + d_y) in
     Lwd.set offset (s_x, s_y);
     `Handled
   in
@@ -308,7 +309,7 @@ let h_pane left right =
       | Split _ -> ui
       | Re_split {at; _} ->
         Ui.transient_sensor (fun ~x ~y:_ ~w ~h:_ () ->
-            let newpos = at - x |> Stdlib.min w |> Stdlib.max 0 in
+            let newpos = clampi (at - x) ~min:0 ~max:w in
             Lwd.set state_var (Split {pos = newpos; max = w})
           ) ui
     in
@@ -348,7 +349,7 @@ let v_pane top bot =
       | Split _ -> ui
       | Re_split {at; _} ->
         Ui.transient_sensor (fun ~x:_ ~y ~w:_ ~h () ->
-            let newpos = at - y |> Stdlib.min h |> Stdlib.max 0 in
+            let newpos = clampi (at - y) ~min:0 ~max:h in
             Lwd.set state_var (Split {pos = newpos; max = h})
           ) ui
     in
@@ -363,7 +364,7 @@ let sub' str p l =
 
 let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
   let update focus_h focus (text, pos) =
-    let pos = min (max 0 pos) (String.length text) in
+    let pos = clampi pos ~min:0 ~max:(String.length text) in
     let content =
       Ui.atom @@ I.hcat @@
       if Focus.has_focus focus then (
@@ -405,12 +406,12 @@ let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
             ) else text
           ) else text
         in
-        let pos = max 0 (pos - 1) in
+        let pos = maxi 0 (pos - 1) in
         on_change (text, pos);
         `Handled
       | `Enter, _ -> on_submit (text, pos); `Handled
       | `Arrow `Left, [] ->
-        let pos = min (String.length text) pos in
+        let pos = mini (String.length text) pos in
         if pos > 0 then (
           on_change (text, pos - 1);
           `Handled
@@ -588,21 +589,21 @@ let grid
     Lwd_utils.map_l (fun r -> Lwd_utils.flatten_l r) rows
   end >>= fun (rows:Ui.t list list) ->
   (* determine width of each column and height of each row *)
-  let n_cols = List.fold_left (fun n r -> max n (List.length r)) 0 rows in
+  let n_cols = List.fold_left (fun n r -> maxi n (List.length r)) 0 rows in
   let col_widths = Array.make n_cols 1 in
   List.iter
     (fun row ->
        List.iteri
          (fun col_j cell ->
            let w = (Ui.layout_spec cell).Ui.w in
-           col_widths.(col_j) <- max col_widths.(col_j) w)
+           col_widths.(col_j) <- maxi col_widths.(col_j) w)
          row)
     rows;
   begin match max_w with
     | None -> ()
     | Some max_w ->
       (* limit width *)
-      Array.iteri (fun i x -> col_widths.(i) <- min x max_w) col_widths
+      Array.iteri (fun i x -> col_widths.(i) <- mini x max_w) col_widths
   end;
   (* now render, with some padding *)
   let pack_pad_x =
@@ -616,11 +617,11 @@ let grid
     List.map
       (fun row ->
          let row_h =
-           List.fold_left (fun n c -> max n (Ui.layout_spec c).Ui.h) 0 row
+           List.fold_left (fun n c -> maxi n (Ui.layout_spec c).Ui.h) 0 row
          in
          let row_h = match max_h with
            | None -> row_h
-           | Some max_h -> min row_h max_h
+           | Some max_h -> mini row_h max_h
          in
          let row =
            List.mapi
@@ -723,16 +724,16 @@ let hscrollbar visible total offset ~set =
   let mouse_handler ~x ~y:_ = function
     | `Left ->
       if x < prefix then
-        (set (offset - max 1 (visible / scrollbar_click_step)); `Handled)
+        (set (offset - maxi 1 (visible / scrollbar_click_step)); `Handled)
       else if x > prefix + handle then
-        (set (offset + max 1 (visible / scrollbar_click_step)); `Handled)
+        (set (offset + maxi 1 (visible / scrollbar_click_step)); `Handled)
       else `Grab (
           (fun ~x:x' ~y:_ -> set (offset + (x' - x) * total / visible)),
           (fun ~x:_ ~y:_ -> ())
         )
     | `Scroll dir ->
       let dir = match dir with `Down -> +1 | `Up -> -1 in
-      set (offset + dir * (max 1 (visible / scrollbar_wheel_step)));
+      set (offset + dir * (maxi 1 (visible / scrollbar_wheel_step)));
       `Handled
     | _ -> `Unhandled
   in
@@ -751,16 +752,16 @@ let vscrollbar visible total offset ~set =
   let mouse_handler ~x:_ ~y = function
     | `Left ->
       if y < prefix then
-        (set (offset - max 1 (visible / scrollbar_click_step)); `Handled)
+        (set (offset - maxi 1 (visible / scrollbar_click_step)); `Handled)
       else if y > prefix + handle then
-        (set (offset + max 1 (visible / scrollbar_click_step)); `Handled)
+        (set (offset + maxi 1 (visible / scrollbar_click_step)); `Handled)
       else `Grab (
           (fun ~x:_ ~y:y' -> set (offset + (y' - y) * total / visible)),
           (fun ~x:_ ~y:_ -> ())
         )
     | `Scroll dir ->
       let dir = match dir with `Down -> +1 | `Up -> -1 in
-      set (offset + dir * (max 1 (visible / scrollbar_wheel_step)));
+      set (offset + dir * (maxi 1 (visible / scrollbar_wheel_step)));
       `Handled
     | _ -> `Unhandled
   in

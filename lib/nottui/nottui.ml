@@ -1,7 +1,5 @@
 open Notty
-
-let maxi x y : int = if x > y then x else y
-let mini x y : int = if x < y then x else y
+open Lwd_utils
 
 module Focus :
 sig

@@ -36,3 +36,27 @@ val map_l : ('a -> 'b Lwd.t) -> 'a list -> 'b list Lwd.t
 
 val flatten_l : 'a Lwd.t list -> 'a list Lwd.t
 (** Commute [Lwd] and [list] *)
+
+(** {1 Miscellaneous functions}
+
+    I don't know where to put these, but they are useful, especially for
+    UI-related computations.
+*)
+
+val mini : int -> int -> int
+(** Minimum of two integers *)
+
+val maxi : int -> int -> int
+(** Maximum of two integers *)
+
+val clampi : int -> min:int -> max:int -> int
+(** Clamp an integer between two bounds. *)
+
+val minf : float -> float -> float
+(** Minimum of two floats *)
+
+val maxf : float -> float -> float
+(** Maximum of two floats *)
+
+val clampf : float -> min:float -> max:float -> float
+(** Clamp a float between two bounds. *)
