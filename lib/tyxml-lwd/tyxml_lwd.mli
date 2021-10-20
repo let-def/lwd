@@ -830,5 +830,23 @@ module Lwdom : sig
   (** Make a reactive attribute *)
 
   val to_node : _ node -> raw_node
+
+  module Scheduler : sig
+    val on_next_frame : (Lwd.release_queue -> unit) -> unit
+
+    type job
+    val append_to_dom : 'a node live -> #Dom.node Js.t -> job
+    val disable : job -> unit
+    val reenable : job -> unit
+
+    type limit = {
+      cycles_warning: int; (* 5 *)
+      cycles_max: int;     (* 15 *)
+      time_budget: float;  (* 16.6 *)
+      time_warning: bool;  (* true *)
+    }
+
+    val set_limit : job -> limit -> unit
+  end
 end
 
