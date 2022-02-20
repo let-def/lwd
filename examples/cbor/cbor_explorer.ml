@@ -48,6 +48,8 @@ let ui_of_cbor (c:C.t) =
                Lwd_table.set row kv)
              l;
            Lwd.join @@ Lwd_table.reduce (Lwd_utils.lift_monoid Ui.Ui.pack_y) tbl)
+    | `Tag (tag, payload) ->
+      Lwd.map ~f:(Ui.Ui.join_y (W.printf "tag(%d)" tag)) (traverse payload)
   and mk_k_v x y =
     let tr_x = traverse x in
     let summary = match y with
