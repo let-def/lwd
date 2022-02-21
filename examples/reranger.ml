@@ -1,6 +1,5 @@
 open Nottui
 open Nottui_widgets
-open Lwd_infix
 
 let is_double_click =
   let k = ref 0 in
@@ -50,7 +49,7 @@ let rec dir ?(initial_path = []) ?after_width:(wref = ref 0) path =
       if constrain then Lwd.map ~f:(Ui.resize ~w:12) t
       else Lwd.map ~f:(remember_width ~wref) t
     in
-    column $= Lwd_utils.pack Ui.pack_x [ t; Lwd.join (Lwd.get after) ]
+    Lwd.set column (Lwd_utils.pack Ui.pack_x [ t; Lwd.join (Lwd.get after) ])
   in
   set_constrain false;
   let after_width = ref 0 in
@@ -61,7 +60,7 @@ let rec dir ?(initial_path = []) ?after_width:(wref = ref 0) path =
       with exn ->
         Lwd.return (string ~attr:Notty.(A.bg A.red) (Printexc.to_string exn))
     in
-    after $= Lwd.map ~f:(Ui.join_x (string " ")) t
+    Lwd.set after (Lwd.map ~f:(Ui.join_x (string " ")) t)
   in
   let highlighted_cell = ref None in
   let rec render_directory ?(highlight = false) cell name =

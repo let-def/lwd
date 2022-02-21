@@ -1,5 +1,4 @@
 open Nottui
-open Lwd_infix
 open Nottui_widgets
 
 (* App-specific widgets *)
@@ -97,36 +96,36 @@ let wm =
 (*let () = Statmemprof_emacs.start 1E-4 30 5*)
 
 let () =
-  top
-  $= Lwd_utils.pack Ui.pack_x
-       [
-         main_menu_item wm "File" (fun () ->
-             Lwd_utils.pack Ui.pack_y
-               [
-                 Lwd.return @@ sub_entry "New" ignore;
-                 Lwd.return @@ sub_entry "Open" ignore;
-                 sub_menu_item wm "Recent" (fun () ->
-                     Lwd_utils.pack Ui.pack_y
-                       [
-                         Lwd.return @@ sub_entry "A" ignore;
-                         Lwd.return @@ sub_entry "B" ignore;
-                         Lwd.return @@ sub_entry "CD" ignore;
-                       ]);
-                 Lwd.return @@ sub_entry "Quit" (fun () -> raise Exit);
-               ]);
-         main_menu_item wm "View" (fun _ ->
-             bot $= Lwd.return (string "<View>");
-             Lwd.return Ui.empty);
-         main_menu_item wm "Edit" (fun _ ->
-             bot $= Lwd.return (string "<Edit>");
-             Lwd.return Ui.empty);
-       ];
-  bot
-  $= Lwd_utils.pack Ui.pack_y
-       [
-         simple_edit "Hello world";
-         v_pane (strict_table ()) (Lwd.return @@ string "B");
-         h_pane (Lwd.return (string "A")) (Lwd.return (string "B"));
-       ];
+  Lwd.set top @@
+  Lwd_utils.pack Ui.pack_x
+    [
+      main_menu_item wm "File" (fun () ->
+          Lwd_utils.pack Ui.pack_y
+            [
+              Lwd.return @@ sub_entry "New" ignore;
+              Lwd.return @@ sub_entry "Open" ignore;
+              sub_menu_item wm "Recent" (fun () ->
+                  Lwd_utils.pack Ui.pack_y
+                    [
+                      Lwd.return @@ sub_entry "A" ignore;
+                      Lwd.return @@ sub_entry "B" ignore;
+                      Lwd.return @@ sub_entry "CD" ignore;
+                    ]);
+              Lwd.return @@ sub_entry "Quit" (fun () -> raise Exit);
+            ]);
+      main_menu_item wm "View" (fun _ ->
+          Lwd.set bot (Lwd.return (string "<View>"));
+          Lwd.return Ui.empty);
+      main_menu_item wm "Edit" (fun _ ->
+          Lwd.set bot (Lwd.return (string "<Edit>"));
+          Lwd.return Ui.empty);
+    ];
+  Lwd.set bot @@
+  Lwd_utils.pack Ui.pack_y
+    [
+      simple_edit "Hello world";
+      v_pane (strict_table ()) (Lwd.return @@ string "B");
+      h_pane (Lwd.return (string "A")) (Lwd.return (string "B"));
+    ];
   try Ui_loop.run ~tick_period:0.2 (window_manager_view wm)
   with Exit -> ()
