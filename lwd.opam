@@ -8,14 +8,15 @@ homepage: "https://github.com/let-def/lwd"
 doc: "https://let-def.github.io/lwd/doc"
 bug-reports: "https://github.com/let-def/lwd/issues"
 depends: [
-  "dune" {>= "2.0"}
+  "dune" {>= "2.7" & >= "2.7"}
   "seq"
   "ocaml" {>= "4.03"}
   "qtest" {with-test}
   "qcheck" {with-test}
+  "odoc" {with-doc}
 ]
 build: [
-  ["dune" "subst"] {pinned}
+  ["dune" "subst"] {dev}
   [
     "dune"
     "build"

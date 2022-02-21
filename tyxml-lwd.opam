@@ -8,14 +8,15 @@ homepage: "https://github.com/let-def/lwd"
 doc: "https://let-def.github.io/lwd/doc"
 bug-reports: "https://github.com/let-def/lwd/issues"
 depends: [
-  "dune"
+  "dune" {>= "2.7" & >= "2.7"}
   "lwd"
   "tyxml" {>= "4.5.0"}
   "js_of_ocaml"
   "js_of_ocaml-ppx"
+  "odoc" {with-doc}
 ]
 build: [
-  ["dune" "subst"] {pinned}
+  ["dune" "subst"] {dev}
   [
     "dune"
     "build"

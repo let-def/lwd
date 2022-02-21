@@ -7,9 +7,15 @@ license: "MIT"
 homepage: "https://github.com/let-def/lwd"
 doc: "https://let-def.github.io/lwd/doc"
 bug-reports: "https://github.com/let-def/lwd/issues"
-depends: ["dune" "lwd" "brr" "js_of_ocaml"]
+depends: [
+  "dune" {>= "2.7" & >= "2.7"}
+  "lwd"
+  "brr"
+  "js_of_ocaml"
+  "odoc" {with-doc}
+]
 build: [
-  ["dune" "subst"] {pinned}
+  ["dune" "subst"] {dev}
   [
     "dune"
     "build"
