@@ -8,8 +8,8 @@ homepage: "https://github.com/let-def/lwd"
 doc: "https://let-def.github.io/lwd/doc"
 bug-reports: "https://github.com/let-def/lwd/issues"
 depends: [
-  "dune" {>= "2.7" & >= "2.7"}
-  "lwd"
+  "dune" {>= "2.7"}
+  "lwd" {>= "0.2"}
   "notty"
   "odoc" {with-doc}
 ]
