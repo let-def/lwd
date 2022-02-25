@@ -19,7 +19,7 @@
  (name nottui)
  (synopsis "UI toolkit for the terminal built on top of Notty and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (lwd (>= 0.2)) notty))
+ (depends (lwd (>= 0.2)) (notty (>= 0.2))))
 
 (package
  (name tyxml-lwd)
@@ -37,10 +37,10 @@
  (name nottui-pretty)
  (synopsis "A pretty-printer based on PPrint rendering UIs")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends notty (nottui (>= 0.2))))
+ (depends (nottui (>= 0.2)) (notty (>= 0.2))))
 
 (package
  (name nottui-lwt)
  (synopsis "Run Nottui UIs in Lwt")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends notty lwt (nottui (>= 0.2))))
+ (depends lwt (nottui (>= 0.2)) (notty (>= 0.2))))

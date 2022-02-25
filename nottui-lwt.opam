@@ -9,9 +9,9 @@ doc: "https://let-def.github.io/lwd/doc"
 bug-reports: "https://github.com/let-def/lwd/issues"
 depends: [
   "dune" {>= "2.7"}
-  "notty"
   "lwt"
   "nottui" {>= "0.2"}
+  "notty" {>= "0.2"}
   "odoc" {with-doc}
 ]
 build: [
