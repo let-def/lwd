@@ -155,6 +155,8 @@ val monoid : 'a t Lwd_utils.monoid
 val lwd_monoid : 'a t Lwd.t Lwd_utils.monoid
 (** Monoid instance for reactive sequences *)
 
+val sort_uniq : ('a -> 'a -> int) -> 'a seq Lwd.t -> 'a seq Lwd.t
+
 (** {2 Low-level interface for observing changes} *)
 
 module Reducer : sig
@@ -199,4 +201,3 @@ module Reducer : sig
   val fold_dropped :
     [<`All|`Map|`Reduce] -> ('a -> 'b -> 'b) -> 'a dropped -> 'b -> 'b
 end
-
