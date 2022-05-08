@@ -75,7 +75,7 @@ let on_click () = Lwd.set counter (Lwd.peek counter + 1)
 let button clicks =
   Link (on_click, Text ("Clicked " ^ string_of_int clicks ^ " times"))
 
-let document = Lwd.map button (Lwd.get counter)
+let document = Lwd.map ~f:button (Lwd.get counter)
 ```
 
 We make use of the following `Lwd` functions:
@@ -97,7 +97,7 @@ val Lwd.get : 'a Lwd.var -> 'a Lwd.t
 
 `Lwd` lets you build graph of computations with mutable inputs. The inputs or sources of the graph are made of `Lwd.var` while the inner nodes are built using combinators.
 
-Here `Lwd.map : ('a -> 'b) -> 'a Lwd.t -> 'b Lwd.t` apply a transformation to a varying value. That value might depend on arbitrary inputs, and if one of these input changes, the transformation will be recomputed too.
+Here `Lwd.map : ~f:('a -> 'b) -> 'a Lwd.t -> 'b Lwd.t` apply a transformation to a varying value. That value might depend on arbitrary inputs, and if one of these input changes, the transformation will be recomputed too.
 
 When the `Link` is triggered, the counter is incremented. Because `document` depends on the value of the counter it is invalidated. 
 
@@ -105,8 +105,8 @@ When the `Link` is triggered, the counter is incremented. Because `document` dep
 
 `Lwd.t` implements a few abstractions that should be familiar to seasoned functional programmers:
 
-- it is a _functor_. With `Lwd.map : ('a -> 'b) -> 'a Lwd.t -> 'b Lwd.t` you can transform values and chain the transformations
-- it is an _applicative functor_. With `Lwd.map2 : ('a -> 'b -> 'c) -> 'a Lwd.t -> 'b Lwd.t > 'c Lwd.t`  you can connect two different chains (making the computation tree shaped, actually with sharing it will form a DAG) 
+- it is a _functor_. With `Lwd.map : ~f:('a -> 'b) -> 'a Lwd.t -> 'b Lwd.t` you can transform values and chain the transformations
+- it is an _applicative functor_. With `Lwd.map2 : ~f:('a -> 'b -> 'c) -> 'a Lwd.t -> 'b Lwd.t > 'c Lwd.t`  you can connect two different chains (making the computation tree shaped, actually with sharing it will form a DAG) 
 - and, although this should in general be avoided, a _monad_. With `Lwd.join : 'a Lwd.t Lwd.t -> 'a Lwd.t` you can have a first pipeline that computes another pipeline and inject the inner one.
 
 ### Consuming computation graph
@@ -214,7 +214,7 @@ let focus = Focus.make () in
 let color status =
   if Focus.has_focus status then blue else black
 in
-button ~focus ~color:(Lwd.map color (Focus.status focus)))
+button ~focus ~color:(Lwd.map ~f:color (Focus.status focus)))
 ```
 
 The color of the button is defined declaratively: it cannot be changed elsewhere, no other part of the code can mutate it. It is this explicit declaration of dependencies that make it possible to reason about the code, to enforce invariants and to encapsulate behaviors.
