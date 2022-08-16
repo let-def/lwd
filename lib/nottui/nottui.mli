@@ -353,11 +353,13 @@ sig
   val run :
     ?tick_period:float -> ?tick:(unit -> unit) ->
     ?term:Term.t -> ?renderer:Renderer.t ->
-    ?quit:bool Lwd.var -> ui Lwd.t -> unit
+    ?quit:bool Lwd.var -> ?quit_on_escape:bool ->
+    ?quit_on_ctrl_q:bool -> ui Lwd.t -> unit
   (** Repeatedly run steps of the main loop, until either:
       - [quit] becomes true,
       - the ui computation raises an exception,
-      - if [quit] was not provided, wait for Ctrl-Q event
+      - if [quit_on_ctrl_q] was true or not provided, wait for Ctrl-Q event
+      - if [quit_on_escape] was true or not provided, wait for Escape event
 
       Specific [term] or [renderer] instances can be provided, otherwise new
       ones will be allocated and released.

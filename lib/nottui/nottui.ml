@@ -849,13 +849,15 @@ struct
     ignore (Lwd.quick_release quit)
 
   let run ?tick_period ?tick ?term ?(renderer=Renderer.make ())
-          ?quit t =
+          ?quit ?(quit_on_escape=true) ?(quit_on_ctrl_q=true) t =
     let quit = match quit with
       | Some quit -> quit
       | None -> Lwd.var false
     in
     let t = Lwd.map t ~f:(Ui.event_filter (function
-        | `Key (`ASCII 'Q', [`Ctrl]) | `Key (`Escape, []) ->
+        | `Key (`ASCII 'Q', [`Ctrl]) when quit_on_ctrl_q ->
+          Lwd.set quit true; `Handled
+        | `Key (`Escape, []) when quit_on_escape ->
           Lwd.set quit true; `Handled
         | _ -> `Unhandled
       ))
