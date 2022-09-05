@@ -12,8 +12,8 @@
     element.
 *)
 
-type +'a t
-type +'a seq = 'a t
+type !+'a t
+type !+'a seq = 'a t
 (** The type of sequences *)
 
 (** {2 Primitive constructors} *)
