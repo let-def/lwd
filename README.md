@@ -148,9 +148,9 @@ graph TD;
     R[Released]
     S[Sampled]
     D[Damaged]
-    s{{call to sample}}
-    i{{graph input change, call <tt>on_invalidate</tt>}}
-    r{{call to release}}
+    s{"call to sample"}
+    i{"graph input change,<br/>call <tt>on_invalidate</tt>"}
+    r{"call to release"}
     R-->s
     s-->S
     D-->s
