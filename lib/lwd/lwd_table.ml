@@ -129,13 +129,9 @@ let rec join left = function
   | Node ({ left = Leaf; _ } as n) as self ->
     n.left <- left;
     set_parent left ~parent:self;
-    raw_invalidate self
+    self
   | Node node ->
     join left node.left
-
-let join left = function
-  | Leaf -> left
-  | right -> join left right; right
 
 let remove = function
   | Root _ | Leaf | Node {parent = Leaf; _} -> ()
@@ -146,10 +142,13 @@ let remove = function
     n.parent <- Leaf;
     n.binding <- Unbound;
     n.version <- max_int;
-    raw_invalidate parent;
-    let join = join left right in
+    let join, invalid = match left, right with
+      | Leaf, other | other, Leaf -> (other, parent)
+      | _ -> (right, join left right)
+    in
     reparent ~parent ~oldchild:t ~newchild:join;
-    set_parent join ~parent
+    set_parent join ~parent;
+    raw_invalidate invalid
 
 let rec clear = function
   | Leaf -> ()
