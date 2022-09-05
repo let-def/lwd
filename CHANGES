@@ -1,3 +1,13 @@
+v0.3 - Alpha 0.3
+======
+Mon Sep  5 10:57:53 JST 2022
+
+- Add [Lwd_seq.sort_uniq] function
+- Make [Lwd_seq.t] injective
+- Fix a bug breaking invariants in Lwd_table.remove
+- Documentation update contributed by @shubhamkumar13
+- Option to disable the default Quit behavior of Nottui contributed by @OhadRau 
+
 v0.2 - Alpha 0.2
 ======
 Sun Feb 20 20:49:47 JST 2022
