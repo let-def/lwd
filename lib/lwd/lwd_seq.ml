@@ -1,4 +1,8 @@
+(*BEGIN INJECTIVITY*)
 type !+'a t =
+(*ELSE*)
+type +'a t =
+(*END*)
   | Nil
   | Leaf of { mutable mark: int; v: 'a; }
   | Join of { mutable mark: int; l: 'a t; r: 'a t; }
