@@ -31,7 +31,7 @@
  (name brr-lwd)
  (synopsis "Make reactive webpages in Js_of_ocaml using Brr and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (lwd (= :version)) brr js_of_ocaml))
+ (depends (lwd (= :version)) (brr (>= 0.0.4)) js_of_ocaml))
 
 (package
  (name nottui-pretty)
