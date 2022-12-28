@@ -6,9 +6,7 @@
   (inline_tests (backend qtest.lib))
   (wrapped false)
   (preprocess (per_module 
-                ; use full to path to pp.exe to work around
-                ; https://github.com/ocaml/dune/issues/6106
-               ((action (run lib/lwd/pp.exe %{input-file})) lwd_infix lwd_seq))))
+               ((action (run %{dep:pp.exe} %{input-file})) lwd_infix lwd_seq))))
 
 (executable 
   (name pp)
