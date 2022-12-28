@@ -8,7 +8,7 @@ homepage: "https://github.com/let-def/lwd"
 doc: "https://let-def.github.io/lwd/doc"
 bug-reports: "https://github.com/let-def/lwd/issues"
 depends: [
-  "dune" {>= "2.7"}
+  "dune" {>= "3.5"}
   "lwd" {= version}
   "brr" {>= "0.0.4"}
   "js_of_ocaml"
