@@ -12,8 +12,6 @@ open Lwdom
 
 let js = Js.string
 
-let children' ls = Lwd_utils.pack Lwd_seq.monoid ls
-
 let event_input event =
   let target = Js.Opt.bind event##.target Dom_html.CoerceTo.input in
   match Js.Opt.to_option target with
