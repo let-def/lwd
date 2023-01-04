@@ -20,7 +20,9 @@
  (name nottui)
  (synopsis "UI toolkit for the terminal built on top of Notty and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (lwd (= :version)) (notty (>= 0.2))))
+ (depends (lwd (= :version)) (notty (>= 0.2))
+          (cbor :with-test) ; for the examples
+          (containers :with-test))) ; for the examples
 
 (package
  (name tyxml-lwd)
@@ -32,7 +34,8 @@
  (name brr-lwd)
  (synopsis "Make reactive webpages in Js_of_ocaml using Brr and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (lwd (= :version)) (brr (>= 0.0.4)) js_of_ocaml))
+ (depends (lwd (= :version)) (brr (>= 0.0.4)) js_of_ocaml
+          (js_of_ocaml-lwt :with-test))) ; for the examples
 
 (package
  (name nottui-pretty)

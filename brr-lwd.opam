@@ -12,6 +12,7 @@ depends: [
   "lwd" {= version}
   "brr" {>= "0.0.4"}
   "js_of_ocaml"
+  "js_of_ocaml-lwt" {with-test}
   "odoc" {with-doc}
 ]
 build: [
