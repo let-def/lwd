@@ -1,5 +1,6 @@
 (lang dune 3.5)
 (generate_opam_files true)
+(formatting (enabled_for dune))
 
 (name lwd)
 (source (github let-def/lwd))
