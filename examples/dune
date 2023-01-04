@@ -27,4 +27,3 @@
  (modules pretty)
  (modes byte exe)
  (libraries nottui-pretty notty notty.unix nottui))
-
