@@ -1,42 +1,39 @@
-name: build
-on: [push, pull_request]
+name: Main workflow
+
+on:
+  pull_request:
+  push:
+  schedule:
+    # Prime the caches every Monday
+    - cron: 0 1 * * MON
+
 jobs:
-  run:
-    name: Build
+  build:
     strategy:
       fail-fast: false
       matrix:
         os:
           - macos-latest
           - ubuntu-latest
-            #- windows-latest
-        ocaml-version:
-          - 4.11.1
-          - 4.10.1
-          - 4.09.1
-          - 4.08.1
+          # - windows-latest
+        ocaml-compiler:
+          - 5.0.0
+          - 4.14.x
+          - 4.08.x
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Cache
-        uses: actions/cache@v2
+        uses: actions/checkout@v3
+
+      - name: Use OCaml ${{ matrix.ocaml-compiler }}
+        uses: ocaml/setup-ocaml@v2
         with:
-          # A directory to store and save the cache
-          path: ~/.opam
-          # An explicit key for restoring and saving the cache
-          key: ${{ matrix.os }}-${{ matrix.ocaml-version }}-${{ hashFiles('*.opam') }}-build
-      - name: Use OCaml ${{ matrix.ocaml-version }}
-        uses: avsm/setup-ocaml@v1
-        with:
-          ocaml-version: ${{ matrix.ocaml-version }}
-      - run: opam pin -n .
-      # more recent dune breaks the inline tests… because of warn-error 😱
-      - run: opam pin dune 2.7.1 -y -n
-      - run: opam depext -yt lwd nottui nottui-lwt
-      - run: opam install -t . --deps-only
-      - run: opam install -y containers cbor js_of_ocaml js_of_ocaml-lwt
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+
+      - run: opam install . --deps-only --with-test
+
       - run: opam exec -- dune build
+
       - run: opam exec -- dune runtest
