@@ -553,6 +553,16 @@ module Reducer = struct
       | None -> ()
       | Some x -> acc := f x !acc
     done;
+    begin match kind with
+      | `All | `Map ->
+        List.iter (fun x -> acc := f x !acc) dropped.extra_leaf
+      | `Reduce -> ()
+    end;
+    begin match kind with
+      | `All | `Reduce ->
+        List.iter (fun x -> acc := f x !acc) dropped.extra_join
+      | `Map -> ()
+    end;
     !acc
 end
 
