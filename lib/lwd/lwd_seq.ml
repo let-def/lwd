@@ -442,6 +442,9 @@ module Reducer = struct
     extra_join: 'b list;
   }
 
+  let extra_leaf { extra_leaf; _ } = extra_leaf
+  let extra_join { extra_join; _ } = extra_join
+
   let no_dropped =
     { leaves = 0; table = [||]; extra_leaf = []; extra_join = [] }
 

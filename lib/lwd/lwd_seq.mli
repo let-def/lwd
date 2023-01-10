@@ -206,4 +206,8 @@ module Reducer : sig
 
   val fold_dropped :
     [<`All|`Map|`Reduce] -> ('a -> 'b -> 'b) -> 'a dropped -> 'b -> 'b
+
+  (** Observe which values were removed from a sequence. *)
+  val extra_leaf : 'b dropped -> 'b list
+  val extra_join : 'b dropped -> 'b list
 end
