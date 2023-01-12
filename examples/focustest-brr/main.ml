@@ -18,15 +18,14 @@ let ui =
   let edit _ =
     let row = Lwd_table.append values in
     Lwd.map (Elwd.input ()) ~f:(fun el ->
-        Ev.listen Ev.input
-          (fun _ ->
-             let txt = Jstr.to_string (El.prop El.Prop.value el) in
-             Console.log ["shuffle"; txt];
-             Lwd_table.set row txt;
-             shuffle ()
-          )
-          (El.as_target el)
-        |> ignore;
+        ignore (
+          Ev.listen Ev.input (fun _ ->
+            let txt = Jstr.to_string (El.prop El.Prop.value el) in
+            Console.log ["shuffle"; txt];
+            Lwd_table.set row txt;
+            shuffle ()
+          ) (El.as_target el)
+        );
         el
       )
   in
@@ -64,5 +63,5 @@ let () =
     El.append_children (Document.body G.document) [Lwd.quick_sample ui];
     Lwd.set_on_invalidate ui on_invalidate
   in
-  Ev.listen Ev.dom_content_loaded on_load (Window.as_target G.window) |> ignore;
+  ignore (Ev.listen Ev.dom_content_loaded on_load (Window.as_target G.window));
   ()
