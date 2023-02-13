@@ -800,7 +800,7 @@ struct
   (* FIXME Uses of [quick_sample] and [quick_release] should be replaced by
            [sample] and [release] with the appropriate release management. *)
 
-  let step ?(process_event=true) ?(timeout=(-1.0)) ~renderer term root =
+  let step ?cursor ?(process_event=true) ?(timeout=(-1.0)) ~renderer term root =
     let size = Term.size term in
     let image =
       let rec stabilize () =
@@ -813,7 +813,10 @@ struct
       in
       stabilize ()
     in
+    let cursor = cursor |> Option.map @@ fun cursor ->
+      Lwd.quick_sample (Lwd.observe (Lwd.get cursor)) in
     Term.image term image;
+    Term.cursor term cursor;
     if process_event then
       let i, _ = Term.fds term in
       let has_event =
@@ -833,13 +836,13 @@ struct
           let event = (event : Unescape.event :> Ui.event) in
           ignore (Renderer.dispatch_event renderer event : [`Handled | `Unhandled])
 
-  let run_with_term term ?tick_period ?(tick=ignore) ~renderer quit t =
+  let run_with_term term ?cursor ?tick_period ?(tick=ignore) ~renderer quit t =
     let quit = Lwd.observe (Lwd.get quit) in
     let root = Lwd.observe t in
     let rec loop () =
       let quit = Lwd.quick_sample quit in
       if not quit then (
-        step ~process_event:true ?timeout:tick_period ~renderer term root;
+        step ?cursor ~process_event:true ?timeout:tick_period ~renderer term root;
         tick ();
         loop ()
       )
@@ -848,7 +851,7 @@ struct
     ignore (Lwd.quick_release root);
     ignore (Lwd.quick_release quit)
 
-  let run ?tick_period ?tick ?term ?(renderer=Renderer.make ())
+  let run ?cursor ?tick_period ?tick ?term ?(renderer=Renderer.make ())
           ?quit ?(quit_on_escape=true) ?(quit_on_ctrl_q=true) t =
     let quit = match quit with
       | Some quit -> quit
@@ -863,10 +866,10 @@ struct
       ))
     in
     match term with
-    | Some term -> run_with_term term ?tick_period ?tick ~renderer quit t
+    | Some term -> run_with_term term ?cursor ?tick_period ?tick ~renderer quit t
     | None ->
       let term = Term.create () in
-      run_with_term term ?tick_period ?tick ~renderer quit t;
+      run_with_term term ?cursor ?tick_period ?tick ~renderer quit t;
       Term.release term
 
 end
