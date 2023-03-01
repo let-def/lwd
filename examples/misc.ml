@@ -127,5 +127,5 @@ let () =
       v_pane (strict_table ()) (Lwd.return @@ string "B");
       h_pane (Lwd.return (string "A")) (Lwd.return (string "B"));
     ];
-  try Ui_loop.run ~tick_period:0.2 (window_manager_view wm)
+  try Nottui_unix.run ~tick_period:0.2 (window_manager_view wm)
   with Exit -> ()
