@@ -25,6 +25,14 @@
           (containers :with-test))) ; for the examples
 
 (package
+ (name nottui-unix)
+ (synopsis "UI toolkit for the UNIX terminal built on top of Notty and Lwd")
+ (documentation "https://let-def.github.io/lwd/doc")
+ (depends (lwd (= :version)) (notty (>= 0.2)) (nottui (= :version))
+          (cbor :with-test) ; for the examples
+          (containers :with-test)))
+
+(package
  (name tyxml-lwd)
  (synopsis "Make reactive webpages in Js_of_ocaml using Tyxml and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
