@@ -815,16 +815,17 @@ struct
     in
     Term.image term image;
     if process_event then
-      let i, _ = Term.fds term in
-      let has_event =
+      let wait_for_event () =
+        let i, _ = Term.fds term in
         let rec select () =
           match Unix.select [i] [] [i] timeout with
-          | [], [], [] -> false
+          | [], [], [] -> Term.pending term
           | _ -> true
           | exception (Unix.Unix_error (Unix.EINTR, _, _)) -> select ()
         in
         select ()
       in
+      let has_event = timeout < 0.0 || Term.pending term || wait_for_event () in
       if has_event then
         match Term.event term with
         | `End -> ()
