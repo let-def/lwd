@@ -724,8 +724,9 @@ module Svg : sig
   val a : ([<a_attr], [<a_content], [>a]) star
   val view : ([<view_attr], [<descriptive_element], [>view]) star
   val script : ([<script_attr], [<script_content], [>script]) unary
-  val animation :
-    ([<animation_attr], [<descriptive_element], [>animation]) star
+  val animate : ([<animate_attr], [<descriptive_element], [>animate]) star
+  val animation : ([<animation_attr], [<descriptive_element], [>animation]) star
+  [@@ocaml.warning "-3"]
   val set : ([<set_attr], [<descriptive_element], [>set]) star
   val animateMotion :
     ([<animatemotion_attr], [<animatemotion_content], [>animatemotion]) star
@@ -1064,7 +1065,9 @@ end = struct
   let a                            = star Raw_svg.a
   let view                         = star Raw_svg.view
   let script                       = unary Raw_svg.script
+  let animate                      = star Raw_svg.animate
   let animation                    = star Raw_svg.animation
+  [@@ocaml.warning "-3"]
   let set                          = star Raw_svg.set
   let animateMotion                = star Raw_svg.animateMotion
   let mpath                        = star Raw_svg.mpath
@@ -1177,7 +1180,7 @@ module Html : sig
   val a_onkeyup : Xml.keyboard_event_handler -> [>`OnKeyUp] attrib
   val a_allowfullscreen : unit -> [>`Allowfullscreen] attrib
   val a_allowpaymentrequest : unit -> [>`Allowpaymentrequest] attrib
-  val a_autocomplete : bool Lwd.t -> [>`Autocomplete] attrib
+  val a_autocomplete : autocomplete_option Lwd.t -> [>`Autocomplete] attrib
   val a_async : unit -> [>`Async] attrib
   val a_autofocus : unit -> [>`Autofocus] attrib
   val a_autoplay : unit -> [>`Autoplay] attrib
