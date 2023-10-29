@@ -166,34 +166,52 @@ let update_children
 
 let pure_unit = Lwd.pure ()
 
+let dummy_kv_at = (Jstr.empty, Jstr.empty)
+
 let attach_attribs el attribs =
-  let set_at at =
-    let k, v = At.to_pair at in
-    El.set_at k (Some v) el
+  let set_kv (k, v) =
+    if Jstr.equal k At.Name.class'
+    then El.set_class v true el
+    else El.set_at k (Some v) el
+  in
+  let unset_kv (k, v) =
+    if Jstr.equal k At.Name.class'
+    then El.set_class v false el
+    else El.set_at k None el
+  in
+  let set_at at = set_kv (At.to_pair at) in
+  let set_lwd_at () =
+    let prev = ref dummy_kv_at in
+    fun at ->
+      if !prev != dummy_kv_at then
+        unset_kv !prev;
+      let pair = At.to_pair at in
+      set_kv pair;
+      prev := pair
   in
   Lwd_utils.map_reduce (function
       | `P at -> set_at at; pure_unit
-      | `R at -> Lwd.map ~f:set_at at
+      | `R at -> Lwd.map ~f:(set_lwd_at ()) at
       | `S ats ->
         let set_at' at =
           let k, v = At.to_pair at in
-          El.set_at k (Some v) el;
-          Some k
+          set_kv (k, v);
+          (k, v)
         in
         let reducer =
-          ref (Lwd_seq.Reducer.make ~map:set_at' ~reduce:(fun _ _ -> None))
+          ref (Lwd_seq.Reducer.make
+                 ~map:set_at'
+                 ~reduce:(fun _ _ -> dummy_kv_at))
         in
         let update ats =
           let dropped, reducer' =
             Lwd_seq.Reducer.update_and_get_dropped !reducer ats
           in
           reducer := reducer';
-          Lwd_seq.Reducer.fold_dropped `Map (fun at () ->
-              match at with
-              | Some k -> El.set_at k None el
-              | None -> assert false
-            ) dropped ();
-          ignore (Lwd_seq.Reducer.reduce reducer': _ option option)
+          Lwd_seq.Reducer.fold_dropped `Map
+            (fun kv () -> unset_kv kv)
+            dropped ();
+          ignore (Lwd_seq.Reducer.reduce reducer': _ option)
         in
         Lwd.map ~f:update ats
     ) (pure_unit, fun _ _ -> pure_unit)
