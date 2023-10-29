@@ -13,6 +13,15 @@ type 'a col = [
 ] list
 (** Describing collections of elements *)
 
+type handler = Handler : {
+    opts: Ev.listen_opts option;
+    type': 'a Ev.type';
+    func: 'a Ev.t -> unit;
+  } -> handler
+
+let handler ?opts type' func =
+  Handler {opts; type'; func}
+
 let is_pure_element = function
   | `P _ -> true
   | `R x -> Option.is_some (Lwd.is_pure x)
@@ -29,10 +38,10 @@ let extract_pure_elements xs =
       ) xs
   )
 
-let consume_attribs : _ col -> _ = function
+let prepare_col : _ col -> _ = function
   | [] -> [], []
-  | attribs ->
-    let pure, impure = List.partition is_pure_element attribs in
+  | col ->
+    let pure, impure = List.partition is_pure_element col in
     extract_pure_elements pure, impure
 
 (** Reactive sequence of elements *)
@@ -179,7 +188,6 @@ let attach_attribs el attribs =
     then El.set_class v false el
     else El.set_at k None el
   in
-  let set_at at = set_kv (At.to_pair at) in
   let set_lwd_at () =
     let prev = ref dummy_kv_at in
     fun at ->
@@ -190,13 +198,13 @@ let attach_attribs el attribs =
       prev := pair
   in
   Lwd_utils.map_reduce (function
-      | `P at -> set_at at; pure_unit
+      | `P _ -> assert false
       | `R at -> Lwd.map ~f:(set_lwd_at ()) at
       | `S ats ->
         let set_at' at =
-          let k, v = At.to_pair at in
-          set_kv (k, v);
-          (k, v)
+          let kv = At.to_pair at in
+          set_kv kv;
+          kv
         in
         let reducer =
           ref (Lwd_seq.Reducer.make
@@ -217,33 +225,81 @@ let attach_attribs el attribs =
     ) (pure_unit, fun _ _ -> pure_unit)
     attribs
 
-let v ?d ?(at=[]) tag children =
-  let at, impure_at = consume_attribs at in
+let listen el (Handler {opts; type'; func}) =
+  Ev.listen ?opts type' func (El.as_target el)
+
+let attach_events el events =
+  Lwd_utils.map_reduce (function
+      | `P _ -> assert false
+      | `R at ->
+        let cached = ref None in
+        Lwd.map ~f:(fun h ->
+            begin match !cached with
+              | None -> ()
+              | Some l -> Ev.unlisten l
+            end;
+            cached := Some (listen el h)
+          ) at
+      | `S ats ->
+        let reducer =
+          ref (Lwd_seq.Reducer.make
+                 ~map:(listen el)
+                 ~reduce:(fun x _y -> x))
+        in
+        let update ats =
+          let dropped, reducer' =
+            Lwd_seq.Reducer.update_and_get_dropped !reducer ats
+          in
+          reducer := reducer';
+          Lwd_seq.Reducer.fold_dropped `Map
+            (fun l () -> Ev.unlisten l)
+            dropped ();
+          ignore (Lwd_seq.Reducer.reduce reducer': _ option)
+        in
+        Lwd.map ~f:update ats
+    ) (pure_unit, fun _ _ -> pure_unit)
+    events
+
+let v ?d ?(at=[]) ?(ev=[]) tag children =
+  let at, impure_at = prepare_col at in
+  let ev, impure_ev = prepare_col ev in
   let children, impure_children = consume_children children in
   let el = El.v ?d ~at tag children in
-  match impure_at, impure_children with
-  | [], None -> Lwd.pure el
-  | [], Some children ->
-    update_children el children
-  | at, None ->
-    Lwd.map ~f:(fun () -> el) (attach_attribs el at)
-  | at, Some children ->
-    Lwd.map2 ~f:(fun () el -> el)
-      (attach_attribs el at)
-      (update_children el children)
+  let result =
+    match impure_at, impure_children with
+    | [], None -> Lwd.pure el
+    | [], Some children ->
+      update_children el children
+    | at, None ->
+      Lwd.map ~f:(fun () -> el) (attach_attribs el at)
+    | at, Some children ->
+      Lwd.map2 ~f:(fun () el -> el)
+        (attach_attribs el at)
+        (update_children el children)
+  in
+  List.iter (fun h -> ignore (listen el h)) ev;
+  let result =
+    match impure_ev with
+    | [] -> result
+    | evs ->
+      Lwd.map2 ~f:(fun () el -> el)
+        (attach_events el evs)
+        result
+  in
+  result
 
 (** {1:els Element constructors} *)
 
-type cons =  ?d:El.document -> ?at:At.t col -> t col -> t Lwd.t
+type cons =  ?d:document -> ?at:At.t col -> ?ev:handler col -> t col -> t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
     pre-applied element name. *)
 
-type void_cons = ?d:El.document -> ?at:At.t col -> unit -> t Lwd.t
+type void_cons = ?d:document -> ?at:At.t col -> ?ev:handler col -> unit -> t Lwd.t
 (** The type for void element constructors. This is simply {!v}
     with a pre-applied element name and without children. *)
 
-let cons name ?d ?at cs = v ?d ?at name cs
-let void_cons name ?d ?at () = v ?d ?at name []
+let cons name ?d ?at ?ev cs = v ?d ?at ?ev name cs
+let void_cons name ?d ?at ?ev () = v ?d ?at ?ev name []
 
 let a = cons Name.a
 let abbr = cons Name.abbr

@@ -13,7 +13,10 @@ type 'a col = [
 ] list
 (** Describing collections of elements *)
 
-val v : ?d:document -> ?at:At.t col -> tag_name -> t col -> t Lwd.t
+type handler (* An event handler *)
+val handler : ?opts:Ev.listen_opts -> 'a Ev.type' -> ('a Ev.t -> unit) -> handler
+
+val v : ?d:document -> ?at:At.t col -> ?ev:handler col -> tag_name -> t col -> t Lwd.t
 (** [v ?d ?at name cs] is an element [name] with attribute [at]
     (defaults to [[]]) and children [cs]. If [at] specifies an
     attribute more thanonce, the last one takes over with the
@@ -23,11 +26,11 @@ val v : ?d:document -> ?at:At.t col -> tag_name -> t col -> t Lwd.t
 
 (** {1:els Element constructors} *)
 
-type cons =  ?d:document -> ?at:At.t col -> t col -> t Lwd.t
+type cons =  ?d:document -> ?at:At.t col -> ?ev:handler col -> t col -> t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
     pre-applied element name. *)
 
-type void_cons = ?d:document -> ?at:At.t col -> unit -> t Lwd.t
+type void_cons = ?d:document -> ?at:At.t col -> ?ev:handler col -> unit -> t Lwd.t
 (** The type for void element constructors. This is simply {!v}
     with a pre-applied element name and without children. *)
 
