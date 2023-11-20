@@ -308,6 +308,8 @@ let peek = function
   | Operator ({desc = Var v; _}) -> v.binding
   | _ -> assert false
 
+let map_and_set f v = set v (f (peek v))
+
 (* Primitives *)
 type 'a prim = 'a t
 let prim ~acquire ~release =
