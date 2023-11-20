@@ -67,7 +67,7 @@ val peek : 'a var -> 'a
 (** Observe the current value of the variable, without any dependency
     tracking. *)
 
-val map_and_set : ('a -> 'a) -> 'a var -> unit
+val update : ('a -> 'a) -> 'a var -> unit
 (** Modify a variable based on its currently observed value. *)
 
 type +'a prim
