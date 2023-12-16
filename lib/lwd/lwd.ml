@@ -310,6 +310,11 @@ let peek = function
 
 let update f v = set v (f (peek v))
 
+let may_update f v =
+  match f (peek v) with
+  | None -> ()
+  | Some x -> set v x
+
 (* Primitives *)
 type 'a prim = 'a t
 let prim ~acquire ~release =
