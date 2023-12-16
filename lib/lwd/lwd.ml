@@ -300,8 +300,8 @@ let set (vx:_ var) x : unit =
   match vx with
   | Operator ({desc = Var v; _}) ->
     (* set the variable, and invalidate all observers *)
-    do_invalidate Strong vx;
-    v.binding <- x
+    v.binding <- x;
+    do_invalidate Strong vx
   | _ -> assert false
 
 let peek = function
