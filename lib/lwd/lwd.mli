@@ -70,6 +70,9 @@ val peek : 'a var -> 'a
 val update : ('a -> 'a) -> 'a var -> unit
 (** Modify a variable based on its currently observed value. *)
 
+val may_update : ('a -> 'a option) -> 'a var -> unit
+(** Conditionnally modify a variable based on its currently observed value. *)
+
 type +'a prim
 (** A primitive document. It can correspond, for example, to
     a primitive UI element.
