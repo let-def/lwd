@@ -270,17 +270,22 @@ and balance version = function
       else (node.version <- version; node.size <- 1 + sl + sr; self)
     )
 
-let rec _compute_sub_size1 version = function
+let rec compute_sub_size version = function
   | Root _ -> ()
   | Leaf -> ()
   | Node node as self ->
-    if node.size = 0 then begin
-      _compute_sub_size1 version node.left;
-      _compute_sub_size1 version node.right;
-      ignore (balance version self)
-    end
-
-let compute_sub_size = _compute_sub_size1
+    if node.size = 0 then
+      match node.left with
+      | Node {size = 0; _} ->
+        compute_sub_size version node.left
+      | _ ->
+        match node.right with
+        | Node {size = 0; _} ->
+          compute_sub_size version node.right
+        | _ ->
+          let parent = node.parent in
+          ignore (balance version self);
+          compute_sub_size version parent
 
 let rec reset_version version = function
   | Leaf -> ()
