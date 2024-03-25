@@ -70,9 +70,14 @@ let render ?quit ~size events doc =
   Lwt.async (fun () -> Lwt_stream.iter refresh refresh_stream);
   result
 
-let run ?quit doc =
+let run ?cursor ?quit doc =
   let term = Term.create () in
   let images = render ?quit ~size:(Term.size term) (Term.events term) doc in
+  let cursor () =
+    let cursor = cursor |> Option.map @@ fun cursor ->
+      Lwd.quick_sample (Lwd.observe (Lwd.get cursor)) in
+    Term.cursor term cursor in
   Lwt.finalize
-    (fun () -> Lwt_stream.iter_s (Term.image term) images)
+    (fun () ->
+       Lwt_stream.iter_s (fun image -> Lwt.join [ Term.image term image; cursor () ]) images)
     (fun () -> (Term.release term))

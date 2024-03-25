@@ -342,7 +342,7 @@ module Ui_loop :
 sig
   open Notty_unix
 
-  val step : ?process_event:bool -> ?timeout:float -> renderer:Renderer.t ->
+  val step : ?cursor:(int * int) Lwd.var -> ?process_event:bool -> ?timeout:float -> renderer:Renderer.t ->
     Term.t -> ui Lwd.root -> unit
   (** Run one step of the main loop.
 
@@ -351,6 +351,7 @@ sig
       consume and dispatch it. *)
 
   val run :
+    ?cursor:(int * int) Lwd.var ->
     ?tick_period:float -> ?tick:(unit -> unit) ->
     ?term:Term.t -> ?renderer:Renderer.t ->
     ?quit:bool Lwd.var -> ?quit_on_escape:bool ->

@@ -18,7 +18,7 @@ type event = [
 val render : ?quit:unit Lwt.t -> size:int * int -> event Lwt_stream.t -> ui Lwd.t -> image Lwt_stream.t
 (** Turn a stream of events into a stream of images. *)
 
-val run : (*?term:Term.t ->*) ?quit:unit Lwt.t -> ui Lwd.t -> unit Lwt.t
+val run : (*?term:Term.t ->*) ?cursor:(int * int) Lwd.var -> ?quit:unit Lwt.t -> ui Lwd.t -> unit Lwt.t
 (** Run mainloop in [Lwt], until the [quit] promise is fulfilled.
 
     The ui is a normal [Lwd.t] value, but events are free to spawn asynchronous
