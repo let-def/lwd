@@ -200,11 +200,6 @@ let get_idx obj = function
   | Root t' -> get_idx_rec obj t'.trace_idx
   | Operator t' -> get_idx_rec obj t'.trace_idx
 
-type status =
-  | Neutral
-  | Safe
-  | Unsafe
-
 type sensitivity =
   | Strong
   | Fragile
@@ -212,65 +207,55 @@ type sensitivity =
 (* Propagating invalidation recursively.
    Each document is invalidated at most once,
    and only if it has [t.value = Some _]. *)
-let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
-  fun status sensitivity node ->
+let rec invalidate_node : type a . bool ref -> sensitivity -> a t_ -> unit =
+  fun unsafe sensitivity node ->
   match node, sensitivity with
   | Pure _, _ -> assert false
-  | Root ({value; _} as t), _ ->
-    t.value <- Eval_none;
-    begin match value with
+  | Root t, _ ->
+    begin match t.value with
       | Eval_none -> ()
       | Eval_progress ->
-        status := Unsafe
+        t.value <- Eval_none;
+        unsafe := true
       | Eval_some x ->
+        t.value <- Eval_none;
         begin match sensitivity with
           | Strong -> ()
-          | Fragile -> status := Unsafe
+          | Fragile -> unsafe := true
         end;
         t.on_invalidate x (* user callback that {i observes} this root. *)
     end
-  | Operator {value = Eval_none; _}, Fragile ->
-    begin match !status with
-      | Unsafe | Safe -> ()
-      | _ -> status := Safe
-    end
   | Operator {value = Eval_none; _}, _ -> ()
-  | Operator {desc = Fix {wrt = Operator {value = Eval_none; _}; _}; _}, Fragile ->
-    begin match !status with
-      | Safe | Unsafe -> ()
-      | Neutral -> status := Safe
-    end
-  | Operator {desc = Fix {wrt = Operator {value = Eval_some _; _}; _}; _}, Fragile ->
-    ()
+  | Operator {desc = Fix _; value = Eval_progress; _}, _ -> ()
   | Operator t, _ ->
     let sensitivity =
       match t.value with Eval_progress -> Fragile | _ -> sensitivity
     in
     t.value <- Eval_none;
     (* invalidate parents recursively *)
-    invalidate_trace status sensitivity t.trace
+    invalidate_trace unsafe sensitivity t.trace
 
 (* invalidate recursively documents in the given trace *)
-and invalidate_trace status sensitivity = function
+and invalidate_trace unsafe sensitivity = function
   | T0 -> ()
-  | T1 x -> invalidate_node status sensitivity x
+  | T1 x -> invalidate_node unsafe sensitivity x
   | T2 (x, y) ->
-    invalidate_node status sensitivity x;
-    invalidate_node status sensitivity y
+    invalidate_node unsafe sensitivity x;
+    invalidate_node unsafe sensitivity y
   | T3 (x, y, z) ->
-    invalidate_node status sensitivity x;
-    invalidate_node status sensitivity y;
-    invalidate_node status sensitivity z
+    invalidate_node unsafe sensitivity x;
+    invalidate_node unsafe sensitivity y;
+    invalidate_node unsafe sensitivity z
   | T4 (x, y, z, w) ->
-    invalidate_node status sensitivity x;
-    invalidate_node status sensitivity y;
-    invalidate_node status sensitivity z;
-    invalidate_node status sensitivity w
+    invalidate_node unsafe sensitivity x;
+    invalidate_node unsafe sensitivity y;
+    invalidate_node unsafe sensitivity z;
+    invalidate_node unsafe sensitivity w
   | Tn t ->
     let active = t.active in
     t.active <- 0;
     for i = 0 to active - 1 do
-      invalidate_node status sensitivity t.entries.(i)
+      invalidate_node unsafe sensitivity t.entries.(i)
     done
 
 let default_unsafe_mutation_logger () =
@@ -282,14 +267,9 @@ let default_unsafe_mutation_logger () =
 let unsafe_mutation_logger = ref default_unsafe_mutation_logger
 
 let do_invalidate sensitivity node =
-  let status = ref Neutral in
-  invalidate_node status sensitivity node;
-  let unsafe =
-    match !status with
-    | Neutral | Safe -> false
-    | Unsafe -> true
-  in
-  if unsafe then !unsafe_mutation_logger ()
+  let unsafe = ref false in
+  invalidate_node unsafe sensitivity node;
+  if !unsafe then !unsafe_mutation_logger ()
 
 (* Variables *)
 type 'a var = 'a t_
@@ -575,13 +555,24 @@ let sub_sample queue =
           | Fix {doc; wrt} ->
             let _ = aux self wrt in
             let result = aux self doc in
-            if sub_is_damaged wrt then
-              aux origin self
-            else (
-              if sub_is_damaged doc then
-                do_invalidate Fragile self;
-              result
-            )
+            let result =
+              if sub_is_damaged wrt then
+                let rec loop () =
+                  t.value <- Eval_progress;
+                  let _ = aux self wrt in
+                  let result = aux self doc in
+                  if sub_is_damaged wrt then
+                    loop ()
+                  else
+                    result
+                in
+                loop ()
+              else
+                result
+            in
+            if sub_is_damaged doc then
+              do_invalidate Fragile self;
+            result
           | Join x ->
             let intermediate =
               (* We haven't touched any state yet,
