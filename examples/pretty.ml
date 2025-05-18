@@ -74,4 +74,4 @@ let () =
       (Nottui_widgets.scroll_area (varying_width contents))
       (Lwd.pure Ui.empty)
   );
-  Ui_loop.run (Nottui_widgets.window_manager_view wm)
+  Nottui_unix.run (Nottui_widgets.window_manager_view wm)

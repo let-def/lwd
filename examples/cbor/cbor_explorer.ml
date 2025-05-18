@@ -68,7 +68,7 @@ let show_file f =
   let cbor = CCIO.with_in f (fun ic -> CCIO.read_all ic |> C.decode) in
   let quit, ui = ui_of_cbor cbor in
   Lwd.set body ui;
-  Ui.Ui_loop.run ~quit ~tick_period:0.2 (W.window_manager_view wm)
+  Nottui_unix.run ~quit ~tick_period:0.2 (W.window_manager_view wm)
 
 let () =
   let f = ref "" in
