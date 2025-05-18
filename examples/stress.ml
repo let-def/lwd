@@ -34,7 +34,7 @@ let () =
   let renderer = Renderer.make () in
   let root = Lwd.observe table in
   for _ = 0 to 99 do
-    Ui_loop.step ~timeout:0.0 ~process_event:true ~renderer term root;
+    Nottui_unix.step ~timeout:0.0 ~process_event:true ~renderer term root;
     Array.iter (Array.iter walk) cells
   done;
   Lwd.quick_release root;

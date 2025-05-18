@@ -137,5 +137,5 @@ let () =
     ]
   in
   Lwd.set body (Lwd.map ~f:(Ui.resize ~pad:gravity_pad ~crop:gravity_crop) ui);
-  Ui_loop.run (Nottui_widgets.window_manager_view wm)
+  Nottui_unix.run (Nottui_widgets.window_manager_view wm)
 
