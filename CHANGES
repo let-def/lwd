@@ -5,6 +5,7 @@ v0.4 - Alpha 0.4 UNRELEASED
 - Lwd.set: change binding before invalidation, otherwise the old value could be re-observed (reported by @voodoos)
 - brr-lwd: support declarative events and set of css classes
 - Nottui: fix treatment of some terminal events that were delayed because of improper buffer flushing, reported by @darrenldl
+- Introduce Nottui_unix: move platform-specific code of Nottui to a separate library (by @Dinosaure and @Reynir, #44, #51)
 
 v0.3 - Alpha 0.3
 ======
