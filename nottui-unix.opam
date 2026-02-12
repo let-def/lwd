@@ -10,7 +10,7 @@ bug-reports: "https://github.com/let-def/lwd/issues"
 depends: [
   "dune" {>= "3.5"}
   "lwd" {= version}
-  "notty" {>= "0.2"}
+  "notty-community" {>= "0.2"}
   "nottui" {= version}
   "cbor" {with-test}
   "containers" {with-test}

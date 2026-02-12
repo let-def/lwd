@@ -10,7 +10,7 @@ bug-reports: "https://github.com/let-def/lwd/issues"
 depends: [
   "dune" {>= "3.5"}
   "nottui" {= version}
-  "notty" {>= "0.2"}
+  "notty-community" {>= "0.2"}
   "odoc" {with-doc}
 ]
 build: [
