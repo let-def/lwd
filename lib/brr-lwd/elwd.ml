@@ -175,47 +175,62 @@ let update_children
 
 let pure_unit = Lwd.pure ()
 
-let dummy_kv_at = (Jstr.empty, Jstr.empty)
+type 'a kv = {
+  unset_kv : 'a -> El.t -> unit;
+  set_kv : ?old:'a -> 'a -> El.t -> unit;
+  dummy_kv : 'a;
+}
 
-let attach_attribs el attribs =
-  let set_kv (k, v) =
+let attr_kv =
+  let set_kv (k, v) el =
     if Jstr.equal k At.Name.class'
     then El.set_class v true el
     else El.set_at k (Some v) el
   in
-  let unset_kv (k, v) =
+  let unset_kv (k, v) el =
     if Jstr.equal k At.Name.class'
     then El.set_class v false el
     else El.set_at k None el
   in
-  let reset_kv (old_k, old_v) (k, v) =
+  let reset_kv ((old_k, _) as old) (k, v) el =
     let requires_unsetting =
       not (Jstr.equal old_k k) || Jstr.equal old_k At.Name.class'
     in
     if requires_unsetting then
-      unset_kv (old_k, old_v);
-    set_kv (k, v)
+      unset_kv old el;
+    set_kv (k, v) el
   in
+  let set_kv ?old kv el =
+    let kv = At.to_pair kv in
+    let old = Option.map At.to_pair old in
+    match old with None -> set_kv kv el | Some old -> reset_kv old kv el
+  in
+  let unset_kv at el =
+    let kv = At.to_pair at in
+    unset_kv kv el
+  in
+  let dummy_kv = At.v Jstr.empty Jstr.empty in
+  { unset_kv; set_kv; dummy_kv }
+
+let attach_kv {set_kv; unset_kv; dummy_kv} el attribs =
   let set_lwd_at () =
-    let prev = ref dummy_kv_at in
+    let prev = ref dummy_kv in
     fun at ->
-      let pair = At.to_pair at in
-      reset_kv !prev pair;
-      prev := pair
+      set_kv ~old:!prev at el;
+      prev := at
   in
   Lwd_utils.map_reduce (function
       | `P _ -> assert false
       | `R at -> Lwd.map ~f:(set_lwd_at ()) at
       | `S ats ->
-        let set_at' at =
-          let kv = At.to_pair at in
-          set_kv kv;
+        let set_kv kv =
+          set_kv kv el;
           kv
         in
         let reducer =
           ref (Lwd_seq.Reducer.make
-                 ~map:set_at'
-                 ~reduce:(fun _ _ -> dummy_kv_at))
+                 ~map:set_kv
+                 ~reduce:(fun _ _ -> dummy_kv))
         in
         let update ats =
           let dropped, reducer' =
@@ -223,13 +238,15 @@ let attach_attribs el attribs =
           in
           reducer := reducer';
           Lwd_seq.Reducer.fold_dropped `Map
-            (fun kv () -> unset_kv kv)
+            (fun kv () -> unset_kv kv el)
             dropped ();
           ignore (Lwd_seq.Reducer.reduce reducer': _ option)
         in
         Lwd.map ~f:update ats
     ) (pure_unit, Lwd.map2 ~f:(fun () () -> ()))
     attribs
+
+let attach_attribs = attach_kv attr_kv
 
 let listen el (Handler {opts; type'; func}) =
   Ev.listen ?opts type' func (El.as_target el)
