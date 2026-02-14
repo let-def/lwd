@@ -289,26 +289,18 @@ let v ?d ?(at=[]) ?(ev=[]) tag children =
   let children, impure_children = consume_children children in
   let el = El.v ?d ~at tag children in
   let result =
-    match impure_at, impure_children with
-    | [], None -> Lwd.pure el
-    | [], Some children ->
-      update_children el children
-    | at, None ->
-      Lwd.map ~f:(fun () -> el) (attach_attribs el at)
-    | at, Some children ->
-      Lwd.map2 ~f:(fun () el -> el)
-        (attach_attribs el at)
-        (update_children el children)
+    match impure_children with
+    | None -> Lwd.pure el
+    | Some children -> update_children el children
   in
-  List.iter (fun h -> ignore (listen el h)) ev;
-  let result =
-    match impure_ev with
+  let attach_impure attach impure result =
+    match impure with
     | [] -> result
-    | evs ->
-      Lwd.map2 ~f:(fun () el -> el)
-        (attach_events el evs)
-        result
+    | impure -> Lwd.map2 ~f:(fun () el -> el) (attach el impure) result
   in
+  let result = attach_impure attach_attribs impure_at result in
+  List.iter (fun h -> ignore (listen el h)) ev;
+  let result = attach_impure attach_events impure_ev result in
   result
 
 (** {1:els Element constructors} *)
