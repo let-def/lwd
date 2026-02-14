@@ -188,13 +188,19 @@ let attach_attribs el attribs =
     then El.set_class v false el
     else El.set_at k None el
   in
+  let reset_kv (old_k, old_v) (k, v) =
+    let requires_unsetting =
+      not (Jstr.equal old_k k) || Jstr.equal old_k At.Name.class'
+    in
+    if requires_unsetting then
+      unset_kv (old_k, old_v);
+    set_kv (k, v)
+  in
   let set_lwd_at () =
     let prev = ref dummy_kv_at in
     fun at ->
-      if !prev != dummy_kv_at then
-        unset_kv !prev;
       let pair = At.to_pair at in
-      set_kv pair;
+      reset_kv !prev pair;
       prev := pair
   in
   Lwd_utils.map_reduce (function
