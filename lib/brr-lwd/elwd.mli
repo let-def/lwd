@@ -21,6 +21,7 @@ val v :
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:(Jstr.t * Jv.t) col ->
   tag_name ->
   t col ->
   t Lwd.t
@@ -38,6 +39,7 @@ type cons =
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:(Jstr.t * Jv.t) col ->
   t col ->
   t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
@@ -48,6 +50,7 @@ type void_cons =
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:(Jstr.t * Jv.t) col ->
   unit ->
   t Lwd.t
 (** The type for void element constructors. This is simply {!v}

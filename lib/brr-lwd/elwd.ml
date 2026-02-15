@@ -227,6 +227,21 @@ let style_kv =
   let dummy_kv = (Jstr.empty, Jstr.empty) in
   { unset_kv; set_kv; dummy_kv }
 
+let prop_kv =
+  let unset_kv _prop_kv _el =
+    ()
+    (* Unsetting a property does not always mean something... For instance, the
+       [checked] property of a checkbox can only be set to a boolean, and not be
+       "unset".
+       This is also why Brr does not have a [El.unset_prop].
+    *)
+  in
+  let set_kv ?old:_ (k,v) el =
+    Jv.set' (El.to_jv el) k v
+  in
+  let dummy_kv = (Jstr.empty, Jv.undefined) in
+  { unset_kv; set_kv; dummy_kv }
+
 let attach_kv {set_kv; unset_kv; dummy_kv} el attribs =
   let set_lwd_at () =
     let prev = ref dummy_kv in
@@ -265,6 +280,8 @@ let attach_attribs = attach_kv attr_kv
 
 let attach_styles = attach_kv style_kv
 
+let attach_props = attach_kv prop_kv
+
 let listen el (Handler {opts; type'; func}) =
   Ev.listen ?opts type' func (El.as_target el)
 
@@ -300,10 +317,11 @@ let attach_events el events =
     ) (pure_unit, Lwd.map2 ~f:(fun () () -> ()))
     events
 
-let v ?d ?(at=[]) ?(ev=[]) ?(st=[]) tag children =
+let v ?d ?(at=[]) ?(ev=[]) ?(st=[]) ?(pr=[]) tag children =
   let at, impure_at = prepare_col at in
   let ev, impure_ev = prepare_col ev in
   let st, impure_st = prepare_col st in
+  let pr, impure_pr = prepare_col pr in
   let children, impure_children = consume_children children in
   let el = El.v ?d ~at tag children in
   let result =
@@ -321,6 +339,8 @@ let v ?d ?(at=[]) ?(ev=[]) ?(st=[]) tag children =
   let result = attach_impure attach_events impure_ev result in
   let result = attach_impure attach_styles impure_st result in
   List.iter (fun kv -> style_kv.set_kv kv el) st;
+  let result = attach_impure attach_props impure_pr result in
+  List.iter (fun kv -> prop_kv.set_kv kv el) pr;
   result
 
 (** {1:els Element constructors} *)
@@ -330,6 +350,7 @@ type cons =
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:(Jstr.t * Jv.t) col ->
   t col ->
   t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
@@ -340,13 +361,14 @@ type void_cons =
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:(Jstr.t * Jv.t) col ->
   unit ->
   t Lwd.t
 (** The type for void element constructors. This is simply {!v}
     with a pre-applied element name and without children. *)
 
-let cons name ?d ?at ?ev ?st cs = v ?d ?at ?ev ?st name cs
-let void_cons name ?d ?at ?ev ?st () = v ?d ?at ?ev ?st name []
+let cons name ?d ?at ?ev ?st ?pr cs = v ?d ?at ?ev ?st ?pr name cs
+let void_cons name ?d ?at ?ev ?st ?pr () = v ?d ?at ?ev ?st ?pr name []
 
 let a = cons Name.a
 let abbr = cons Name.abbr
