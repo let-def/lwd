@@ -16,12 +16,14 @@ type 'a col = [
 type handler (* An event handler *)
 val handler : ?opts:Ev.listen_opts -> 'a Ev.type' -> ('a Ev.t -> unit) -> handler
 
+type prop = P : ('a El.Prop.t * 'a) -> prop
+
 val v :
   ?d:document ->
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
-  ?pr:(Jstr.t * Jv.t) col ->
+  ?pr:prop col ->
   tag_name ->
   t col ->
   t Lwd.t
@@ -39,7 +41,7 @@ type cons =
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
-  ?pr:(Jstr.t * Jv.t) col ->
+  ?pr:prop col ->
   t col ->
   t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
@@ -50,7 +52,7 @@ type void_cons =
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
-  ?pr:(Jstr.t * Jv.t) col ->
+  ?pr:prop col ->
   unit ->
   t Lwd.t
 (** The type for void element constructors. This is simply {!v}

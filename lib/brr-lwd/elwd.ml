@@ -227,6 +227,8 @@ let style_kv =
   let dummy_kv = (Jstr.empty, Jstr.empty) in
   { unset_kv; set_kv; dummy_kv }
 
+type prop = P : ('a El.Prop.t * 'a) -> prop
+
 let prop_kv =
   let unset_kv _prop_kv _el =
     ()
@@ -236,10 +238,10 @@ let prop_kv =
        This is also why Brr does not have a [El.unset_prop].
     *)
   in
-  let set_kv ?old:_ (k,v) el =
-    Jv.set' (El.to_jv el) k v
+  let set_kv ?old:_ (P (k,v)) el =
+    El.set_prop k v el
   in
-  let dummy_kv = (Jstr.empty, Jv.undefined) in
+  let dummy_kv = P (El.Prop.width, 0) in
   { unset_kv; set_kv; dummy_kv }
 
 let attach_kv {set_kv; unset_kv; dummy_kv} el attribs =
@@ -353,7 +355,7 @@ type cons =
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
-  ?pr:(Jstr.t * Jv.t) col ->
+  ?pr:prop col ->
   t col ->
   t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
@@ -364,7 +366,7 @@ type void_cons =
   ?at:At.t col ->
   ?ev:handler col ->
   ?st:(El.Style.prop * Jstr.t) col ->
-  ?pr:(Jstr.t * Jv.t) col ->
+  ?pr:prop col ->
   unit ->
   t Lwd.t
 (** The type for void element constructors. This is simply {!v}

@@ -25,7 +25,7 @@ let string var =
 let checkbox s check description =
   let checked =
     let$ s = s in
-    (Jstr.v "checked", check s |> Jv.of_bool)
+    Elwd.P (El.Prop.checked, check s)
   in
   let checkbox_el =
     Elwd.input
