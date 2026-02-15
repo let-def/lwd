@@ -212,6 +212,21 @@ let attr_kv =
   let dummy_kv = At.v Jstr.empty Jstr.empty in
   { unset_kv; set_kv; dummy_kv }
 
+let style_kv =
+  let unset_kv (k,_) el =
+    El.remove_inline_style k el
+  in
+  let set_kv ?old (k,v) el =
+    let () =
+      Option.iter (fun ((old_k, _) as old) ->
+          if not (Jstr.equal old_k k) then unset_kv old el)
+        old
+    in
+    El.set_inline_style k v el
+  in
+  let dummy_kv = (Jstr.empty, Jstr.empty) in
+  { unset_kv; set_kv; dummy_kv }
+
 let attach_kv {set_kv; unset_kv; dummy_kv} el attribs =
   let set_lwd_at () =
     let prev = ref dummy_kv in
@@ -248,6 +263,8 @@ let attach_kv {set_kv; unset_kv; dummy_kv} el attribs =
 
 let attach_attribs = attach_kv attr_kv
 
+let attach_styles = attach_kv style_kv
+
 let listen el (Handler {opts; type'; func}) =
   Ev.listen ?opts type' func (El.as_target el)
 
@@ -283,9 +300,10 @@ let attach_events el events =
     ) (pure_unit, Lwd.map2 ~f:(fun () () -> ()))
     events
 
-let v ?d ?(at=[]) ?(ev=[]) tag children =
+let v ?d ?(at=[]) ?(ev=[]) ?(st=[]) tag children =
   let at, impure_at = prepare_col at in
   let ev, impure_ev = prepare_col ev in
+  let st, impure_st = prepare_col st in
   let children, impure_children = consume_children children in
   let el = El.v ?d ~at tag children in
   let result =
@@ -301,20 +319,34 @@ let v ?d ?(at=[]) ?(ev=[]) tag children =
   let result = attach_impure attach_attribs impure_at result in
   List.iter (fun h -> ignore (listen el h)) ev;
   let result = attach_impure attach_events impure_ev result in
+  let result = attach_impure attach_styles impure_st result in
+  List.iter (fun kv -> style_kv.set_kv kv el) st;
   result
 
 (** {1:els Element constructors} *)
 
-type cons =  ?d:document -> ?at:At.t col -> ?ev:handler col -> t col -> t Lwd.t
+type cons =
+  ?d:document ->
+  ?at:At.t col ->
+  ?ev:handler col ->
+  ?st:(El.Style.prop * Jstr.t) col ->
+  t col ->
+  t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
     pre-applied element name. *)
 
-type void_cons = ?d:document -> ?at:At.t col -> ?ev:handler col -> unit -> t Lwd.t
+type void_cons =
+  ?d:document ->
+  ?at:At.t col ->
+  ?ev:handler col ->
+  ?st:(El.Style.prop * Jstr.t) col ->
+  unit ->
+  t Lwd.t
 (** The type for void element constructors. This is simply {!v}
     with a pre-applied element name and without children. *)
 
-let cons name ?d ?at ?ev cs = v ?d ?at ?ev name cs
-let void_cons name ?d ?at ?ev () = v ?d ?at ?ev name []
+let cons name ?d ?at ?ev ?st cs = v ?d ?at ?ev ?st name cs
+let void_cons name ?d ?at ?ev ?st () = v ?d ?at ?ev ?st name []
 
 let a = cons Name.a
 let abbr = cons Name.abbr
