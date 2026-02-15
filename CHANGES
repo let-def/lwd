@@ -6,6 +6,7 @@ v0.4 - Alpha 0.4 UNRELEASED
 - brr-lwd: support declarative events and set of css classes
 - Nottui: fix treatment of some terminal events that were delayed because of improper buffer flushing, reported by @darrenldl
 - brr-lwd: Fix handling of multiple reactive attributes (by @panglesd)
+- brr-lwd: Add support for reactive styles and properties (by @panglesd)
 
 v0.3 - Alpha 0.3
 ======
