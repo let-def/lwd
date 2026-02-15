@@ -27,12 +27,22 @@ val v :
   tag_name ->
   t col ->
   t Lwd.t
-(** [v ?d ?at name cs] is an element [name] with attribute [at]
-    (defaults to [[]]) and children [cs]. If [at] specifies an
-    attribute more thanonce, the last one takes over with the
-    exception of {!At.class'} whose occurences accumulate to define
-    the final value. [d] is the document on which the element is
-    defined it defaults {!Brr.G.document}. *)
+(** [v ?d ?at ?ev ?st?pr name cs] is an element [name] with:
+    - attribute [at] (defaults to [[]])
+    - event handlers [ev]
+    - inline styles [st]
+    - properties [pr]
+    - and children [cs].
+
+    All optional attributes default to [[]].
+
+    Note that attributes specified by multiple elements of [at] (even at
+    different sampling time) may result in undefined behavior. The only
+    exception is {!At.class'} whose occurrences accumulate to define the final
+    value.
+
+    [d] is the document on which the element is defined it defaults
+    {!Brr.G.document}. *)
 
 (** {1:els Element constructors} *)
 
