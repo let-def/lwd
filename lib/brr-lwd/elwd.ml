@@ -318,12 +318,18 @@ let attach_events el events =
     events
 
 let v ?d ?(at=[]) ?(ev=[]) ?(st=[]) ?(pr=[]) tag children =
+  (* Splitting impure and pure parts *)
   let at, impure_at = prepare_col at in
   let ev, impure_ev = prepare_col ev in
   let st, impure_st = prepare_col st in
   let pr, impure_pr = prepare_col pr in
   let children, impure_children = consume_children children in
+  (* Handling pure parts *)
   let el = El.v ?d ~at tag children in
+  List.iter (fun h -> ignore (listen el h)) ev;
+  List.iter (fun kv -> style_kv.set_kv kv el) st;
+  List.iter (fun kv -> prop_kv.set_kv kv el) pr;
+  (* Handling impure parts *)
   let result =
     match impure_children with
     | None -> Lwd.pure el
@@ -335,12 +341,9 @@ let v ?d ?(at=[]) ?(ev=[]) ?(st=[]) ?(pr=[]) tag children =
     | impure -> Lwd.map2 ~f:(fun () el -> el) (attach el impure) result
   in
   let result = attach_impure attach_attribs impure_at result in
-  List.iter (fun h -> ignore (listen el h)) ev;
   let result = attach_impure attach_events impure_ev result in
   let result = attach_impure attach_styles impure_st result in
-  List.iter (fun kv -> style_kv.set_kv kv el) st;
   let result = attach_impure attach_props impure_pr result in
-  List.iter (fun kv -> prop_kv.set_kv kv el) pr;
   result
 
 (** {1:els Element constructors} *)
