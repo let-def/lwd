@@ -182,19 +182,24 @@ type 'a kv = {
 }
 
 let attr_kv =
+  let is_class_at at = Jstr.equal at At.Name.class' in
   let set_kv (k, v) el =
-    if Jstr.equal k At.Name.class'
+    if is_class_at k
     then El.set_class v true el
     else El.set_at k (Some v) el
   in
   let unset_kv (k, v) el =
-    if Jstr.equal k At.Name.class'
+    if is_class_at k
     then El.set_class v false el
     else El.set_at k None el
   in
   let reset_kv ((old_k, _) as old) (k, v) el =
     let requires_unsetting =
-      not (Jstr.equal old_k k) || Jstr.equal old_k At.Name.class'
+    (* We have to unset the attribute if it was removed (changed name) or if a class
+       name was changed.  When an attribute is changed by multiple reactive values
+       the current behavior is undefined.  See
+       https://github.com/let-def/lwd/issues/59 *)
+      not (Jstr.equal old_k k) || is_class_at old_k
     in
     if requires_unsetting then
       unset_kv old el;
