@@ -12,12 +12,10 @@
     [Lwd_alg.t] extends a user type with the necessary information: if [u] is
     some algebraic data type, [u Lwd_alg.t] is the "incrementalized" version.
 
-    [+]: the type is covariant in its parameter,
-         that is if [(u :> v)] then [(u t :> v t)]
     [!]: the type is injective in its parameter,
          if [u == v] then [u t == t v]
 *)
-type +!'a t
+type !'a t
 
 (** To incrementalize transformations on a value of type [a], we need to peek
     into the incrementalized sub-values of [a].
@@ -52,10 +50,10 @@ type ('a, 'b) map
 
 (** A map is function that receives a trace that can be applied when decomposing
     the transformation. *)
-val map : (trace -> 'a -> 'b) -> ('a, 'b) map
+val map : ?finalize:('a -> 'b -> unit) -> (trace -> 'a -> 'b) -> ('a, 'b) map
 
 (** Given a trace, one can apply a map on a sub-value. *)
-val apply : trace -> ('a, 'b) map -> 'a t -> 'b t
+val apply : trace -> ('a, 'b) map -> 'a t -> 'b
 
 (** Resumptions
 
@@ -80,6 +78,6 @@ val apply : trace -> ('a, 'b) map -> 'a t -> 'b t
 *)
 type ('a, 'b) resumption = R of ('a -> 'b * ('a, 'b) resumption) [@@ocaml.unboxed]
 
-(** Instantiating an incremental computation yields a resumption on incremental
-    values. *)
-val transform : ('a, 'b) map -> ('a t, 'b t) resumption
+(** Instantiating an incremental computation yields a resumption consumming
+    incremental values. *)
+val transform : ('a, 'b) map -> ('a t, 'b) resumption
