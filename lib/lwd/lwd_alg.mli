@@ -24,14 +24,15 @@ type !'a t
     sub-values to a [folder].
 *)
 
+type folder_kind
 type folder
-val accumulate : 'a t -> folder -> folder
+val add : 'a t -> folder_kind -> folder -> folder
 
 (**
     We get an [a t] by equipping [a] with [a foldable]
    (the function that accumulates all sub-values to a folder).
 *)
-type 'a foldable = 'a -> folder -> folder
+type 'a foldable = 'a -> folder_kind -> folder -> folder
 
 (** Lift an [a] to an [a t] *)
 val make : 'a -> 'a foldable -> 'a t
