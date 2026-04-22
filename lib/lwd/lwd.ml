@@ -1,45 +1,62 @@
-(** Create-only version of [Obj.t] *)
-module Any : sig
-  type t
-  val any : 'a -> t
-end = struct
-  type t = Obj.t
-  let any = Obj.repr
-end
+(**
+    Lwd (Lightweight Document)
+    A library for incremental computation. It builds a dependency graph where
+    nodes cache their values and propagate invalidations upward when dependencies change.
+*)
 
+(** The state of a cached value. *)
 type 'a eval =
-  | Eval_none
-  | Eval_progress
-  | Eval_some of 'a
+  | Eval_none       (** Value is not computed or has been invalidated *)
+  | Eval_progress   (** Value is currently being computed (used to detect cycles) *)
+  | Eval_some of 'a (** Value is cached and valid *)
 
+(** The internal representation of a node in the dependency graph. *)
 type 'a t_ =
-  | Pure of 'a
+  | Pure of 'a (** A constant value that never changes *)
   | Operator : {
-      mutable value : 'a eval; (* cached value *)
-      mutable trace : trace; (* list of parents this can invalidate *)
-      mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
-      desc: 'a desc;
+      mutable value : 'a eval;       (** Cached result of the operation *)
+      mutable trace : trace;         (** Upward links: nodes that depend on this node *)
+      mutable trace_idx : trace_idx; (** Downward links: nodes this node depends on *)
+      desc: 'a desc;                 (** The logic/combinator defining this node *)
     } -> 'a t_
   | Root : {
-      mutable value : 'a eval; (* cached value *)
-      mutable trace_idx : trace_idx; (* list of direct children that can invalidate this *)
-      mutable on_invalidate : 'a -> unit;
-      mutable acquired : bool;
-      child : 'a t_;
+      mutable value : 'a eval;       (** Cached result for the observer *)
+      mutable trace_idx : trace_idx; (** Downward links to the child graph *)
+      mutable on_invalidate : 'a -> unit; (** Callback triggered when an observation becomes invalid *)
+      mutable acquired : bool;       (** Whether the node is being observed at the moment *)
+      child : 'a t_;                 (** The node to observe *)
     } -> 'a t_
 
+(** The definition of an operator node. *)
 and _ desc =
+  (* Lwd is a functor: *)
   | Map  : 'a t_ * ('a -> 'b) -> 'b desc
+  (** Transforms a value *)
+  (* ... an applicative-functor: *)
   | Map2 : 'a t_ * 'b t_ * ('a -> 'b -> 'c) -> 'c desc
+  (** Applicative functor: Combines two values *)
   | Pair : 'a t_ * 'b t_ -> ('a * 'b) desc
+  (** Applicative functor: Groups two values *)
   | App  : ('a -> 'b) t_ * 'a t_ -> 'b desc
+  (** Applicative functor: Applies a computed function to a computed value *)
+  (* ... a monad: *)
   | Join : { child : 'a t_ t_; mutable intermediate : 'a t_ option } -> 'a desc
+  (** Flattens a nested computation *)
+  (* Lwd specific nodes: *)
   | Var  : { mutable binding : 'a } -> 'a desc
+  (** A mutable leaf node (the source of changes) *)
   | Prim : { acquire : 'a t -> 'a;
              release : 'a t -> 'a -> unit } -> 'a desc
+  (** An external resource/primitive *)
   | Fix : { doc : 'a t_; wrt : _ t_ } -> 'a desc
+  (** A fixed-point computation (computation that might not converge in a
+      single evaluation, because of internal mutations) *)
 
-(* a set of (active) parents for a ['a t], used during invalidation *)
+(**
+   A 'trace' is a set of parents to invalidate when the value change.
+   To optimize memory, it uses specialized constructors for small numbers of
+   parents (T1-T4) before falling back to a dynamic array (Tn).
+*)
 and trace =
   | T0
   | T1 : _ t_ -> trace
@@ -47,32 +64,51 @@ and trace =
   | T3 : _ t_ * _ t_ * _ t_ -> trace
   | T4 : _ t_ * _ t_ * _ t_ * _ t_ -> trace
   | Tn : { mutable active : int; mutable count : int;
-           mutable entries : Any.t t_ array } -> trace
+           mutable entries : Obj.t t_ array } -> trace
 
-(* a set of direct children for a composite document *)
+(** A `trace index' remembers the position of a parent node in the trace
+    of one of its children.
+    This is needed to keep maintenance O(1) when a node has a trace of
+    the form [Tn _] (many dependencies).
+    In this case the idx has the form [I1 {idx; obj; next}], where:
+    - obj is the children with a trace Tn array
+    - idx is the index of the node in array.entries
+ *)
 and trace_idx =
   | I0
   | I1 : { mutable idx : int ;
-           obj : 'a t_;
+           obj : Obj.t t_;
            mutable next : trace_idx } -> trace_idx
 
-(* The type system cannot see that t is covariant in its parameter.
-   Use the Force to convince it. *)
+(**
+    The public handle to a node.
+    A node is covariant in its parameter, but the OCaml typechecker cannot know
+    that. We use explicit coercions to expose the covariant type in the public API.
+*)
 and +'a t
 external inj : 'a t_ -> 'a t = "%identity"
 external prj : 'a t -> 'a t_ = "%identity"
 external prj2 : 'a t t -> 'a t_ t_ = "%identity"
 
-(* Basic combinators *)
+(* --- Basic Combinators --- *)
+
 let return x = inj (Pure x)
 let pure x = inj (Pure x)
 
+(** Returns the value if the node is a constant, otherwise None. *)
 let is_pure x = match prj x with
   | Pure x -> Some x
   | _ -> None
 
-let dummy = Pure (Any.any ())
+(* Sometime we don't care about the actual type of a computation.
+   To allow heterogeneous storage of obj in traces, we inject
+   them to the `top` type Obj.t t_.*)
+external obj_t : 'a t_ -> Obj.t t_ = "%identity"
 
+(** Internal dummy node used to fill holes in trace arrays. *)
+let dummy = obj_t (Pure ())
+
+(** Internal helper to create an operator node. *)
 let operator desc =
   Operator { value = Eval_none; trace = T0; desc; trace_idx = I0 }
 
@@ -108,14 +144,12 @@ let join child = inj (
 
 let bind x ~f = join (map ~f x)
 
-(* Management of trace indices *)
+(* --- Management of trace indices (Downward links) --- *)
 
 let addr oc obj =
   Printf.fprintf oc "0x%08x" (Obj.magic obj : int)
 
-external t_equal : _ t_ -> _ t_ -> bool = "%eq"
-external obj_t : 'a t_ -> Any.t t_ = "%identity"
-
+(** Debugging: Prints the parent trace of a node. *)
 let rec dump_trace : type a. a t_ -> unit =
   fun obj -> match obj with
   | Pure _ -> Printf.eprintf "%a: Pure _\n%!" addr obj
@@ -148,15 +182,17 @@ and dump_trace_aux oc = function
 
 let dump_trace x = dump_trace (obj_t (prj x))
 
+(** Registers that [obj] is a child of the given node. *)
 let add_idx obj idx = function
   | Pure _ -> assert false
-  | Root t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
-  | Operator t' -> t'.trace_idx <- I1 { idx; obj; next = t'.trace_idx }
+  | Root t' -> t'.trace_idx <- I1 { idx; obj = obj_t obj; next = t'.trace_idx }
+  | Operator t' -> t'.trace_idx <- I1 { idx; obj = obj_t obj; next = t'.trace_idx }
 
+(** Helper to remove a child from the trace index list. *)
 let rec rem_idx_rec obj = function
   | I0 -> assert false
   | I1 t as self ->
-    if t_equal t.obj obj
+    if t.obj == obj_t obj
     then (t.idx, t.next)
     else (
       let idx, result = rem_idx_rec obj t.next in
@@ -164,7 +200,7 @@ let rec rem_idx_rec obj = function
       (idx, self)
     )
 
-(* remove [obj] from the lwd's trace. *)
+(** Removes [obj] from the node's child trace and returns its index. *)
 let rem_idx obj = function
   | Pure _ -> assert false
   | Root t' ->
@@ -174,11 +210,11 @@ let rem_idx obj = function
     let idx, trace_idx = rem_idx_rec obj t'.trace_idx in
     t'.trace_idx <- trace_idx; idx
 
-(* move [obj] from old index to new index. *)
+(** Updates the index of a child node. *)
 let rec mov_idx_rec obj oldidx newidx = function
   | I0 -> assert false
   | I1 t ->
-    if t.idx = oldidx && t_equal t.obj obj
+    if t.idx = oldidx && t.obj == obj_t obj
     then t.idx <- newidx
     else mov_idx_rec obj oldidx newidx t.next
 
@@ -190,17 +226,17 @@ let mov_idx obj oldidx newidx = function
 let rec get_idx_rec obj = function
   | I0 -> assert false
   | I1 t ->
-    if t_equal t.obj obj
+    if t.obj == obj_t obj
     then t.idx
     else get_idx_rec obj t.next
 
-(* find index of [obj] in the given lwd *)
+(** Finds the index of [obj] in the given node's child trace. *)
 let get_idx obj = function
   | Pure _ -> assert false
   | Root t' -> get_idx_rec obj t'.trace_idx
   | Operator t' -> get_idx_rec obj t'.trace_idx
 
-(* Logging unsafe usages of Lwd API *)
+(* --- Logging unsafe usages of Lwd API --- *)
 
 type unsafe_action = [`Mutation | `Nested_sampling]
 
@@ -217,18 +253,35 @@ let default_unsafe_action_logger action =
 
 let unsafe_action_logger = ref default_unsafe_action_logger
 
+(* --- Invalidation Logic --- *)
+
 type status =
-  | Neutral
-  | Safe
-  | Unsafe
+  | Neutral (** No issues detected *)
+  | Safe    (** Invalidation occurred, but it's safe *)
+  | Unsafe  (** Invalidation occurred during evaluation (a bug/race) *)
+
+(* The invalidation status evolves monotonically: it starts Neutral, can become
+   Safe then Unsafe, but can't go back. *)
+
+(* Called when we found that invalidation is safe in the current
+   context. *)
+let mark_safe status =
+  match !status with
+  | Neutral -> status := Safe
+  | Unsafe | Safe ->
+     (* Status has already been marked in another context.
+        If it was unsafe, we can't go back.
+        If is was safe, nothing to change. *)
+     ()
 
 type sensitivity =
-  | Strong
-  | Fragile
+  | Strong   (** Force invalidation regardless of state *)
+  | Fragile  (** Only invalidate if the node is in a specific state *)
 
-(* Propagating invalidation recursively.
-   Each document is invalidated at most once,
-   and only if it has [t.value = Some _]. *)
+(**
+    Recursively invalidates a node and its parents.
+    This is the "Push" phase of the incremental system.
+*)
 let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
   fun status sensitivity node ->
   match node, sensitivity with
@@ -238,6 +291,7 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
     begin match value with
       | Eval_none -> ()
       | Eval_progress ->
+        (* Invalidating a root being evaluated: unsafe *)
         status := Unsafe
       | Eval_some x ->
         begin match sensitivity with
@@ -251,16 +305,10 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
         end;
     end
   | Operator {value = Eval_none; _}, Fragile ->
-    begin match !status with
-      | Unsafe | Safe -> ()
-      | _ -> status := Safe
-    end
+    mark_safe status
   | Operator {value = Eval_none; _}, _ -> ()
   | Operator {desc = Fix {wrt = Operator {value = Eval_none; _}; _}; _}, Fragile ->
-    begin match !status with
-      | Safe | Unsafe -> ()
-      | Neutral -> status := Safe
-    end
+    mark_safe status
   | Operator {desc = Fix {wrt = Operator {value = Eval_some _; _}; _}; _}, Fragile ->
     ()
   | Operator t, _ ->
@@ -268,10 +316,10 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
       match t.value with Eval_progress -> Fragile | _ -> sensitivity
     in
     t.value <- Eval_none;
-    (* invalidate parents recursively *)
+    (* Propagate invalidation to parents *)
     invalidate_trace status sensitivity t.trace
 
-(* invalidate recursively documents in the given trace *)
+(** Iterates through the parent trace to invalidate all observers. *)
 and invalidate_trace status sensitivity = function
   | T0 -> ()
   | T1 x -> invalidate_node status sensitivity x
@@ -304,15 +352,16 @@ let do_invalidate sensitivity node =
   in
   if unsafe then !unsafe_action_logger `Mutation
 
-(* Variables *)
+(* --- Variables --- *)
+
 type 'a var = 'a t_
 let var x = operator (Var {binding = x})
 let get x = inj x
 
+(** Updates a variable's value and triggers invalidation of all its parents. *)
 let set (vx:_ var) x : unit =
   match vx with
   | Operator ({desc = Var v; _}) ->
-    (* set the variable, and invalidate all observers *)
     v.binding <- x;
     do_invalidate Strong vx
   | _ -> assert false
@@ -328,15 +377,16 @@ let may_update f v =
   | None -> ()
   | Some x -> set v x
 
-(* Primitives *)
+(* --- Primitives --- *)
+
 type 'a prim = 'a t
 let prim ~acquire ~release =
   inj (operator (Prim { acquire; release }))
 let get_prim x = x
 
+(** Manually invalidates a primitive node and calls its release function. *)
 let invalidate x = match prj x with
   | Operator {desc = Prim p; value; _} as t ->
-    (* the value is invalidated, be sure to invalidate all parents as well *)
     begin match value with
       | Eval_none -> ()
       | Eval_progress -> do_invalidate Fragile t;
@@ -346,12 +396,14 @@ let invalidate x = match prj x with
     end
   | _ -> assert false
 
-(* Fix point *)
+(* --- Fix point --- *)
 
 let fix doc ~wrt = match prj wrt with
   | Root _ -> assert false
   | Pure _ -> doc
   | Operator _ as wrt -> inj (operator (Fix {doc = prj doc; wrt}))
+
+(* --- Resource Lifecycle Management --- *)
 
 type release_list =
   | Release_done
@@ -363,40 +415,48 @@ let make_release_queue () = ref Release_done
 
 type release_failure = exn * Printexc.raw_backtrace
 
-(* [sub_release [] origin self] is called when [origin] is released,
-   where [origin] is reachable from [self]'s trace.
-   We're going to remove [origin] from that trace as [origin] is now dead.
+(**
+    Handles the removal of a node from the graph.
+    When a node is no longer reachable from any root, it is "released",
+    which may trigger further releases of its children.
 
-   [sub_release] cannot raise.
-   If a primitive raises, the exception is caught and a warning is emitted. *)
+    [sub_release [] origin self] is called when [origin] is released,
+    where [origin] is reachable from [self]'s trace.
+    We're going to remove [origin] from that trace as [origin] is now dead.
+
+    [sub_release] cannot raise.
+    If a primitive raises, the exception is caught and returned in the failure
+    list.
+*)
 let rec sub_release
   : type a b . release_failure list -> a t_ -> b t_ -> release_failure list
   = fun failures origin -> function
     | Root _ -> assert false
     | Pure _ -> failures
     | Operator t as self ->
-      (* compute [t.trace \ {origin}] *)
+      (* Remove the origin from the parent trace *)
+      let origin = obj_t origin in
       let trace = match t.trace with
         | T0 -> assert false
-        | T1 x -> assert (t_equal x origin); T0
+        | T1 x -> assert (obj_t x == origin); T0
         | T2 (x, y) ->
-          if t_equal x origin then T1 y
-          else if t_equal y origin then T1 x
+          if obj_t x == origin then T1 y
+          else if obj_t y == origin then T1 x
           else assert false
         | T3 (x, y, z) ->
-          if t_equal x origin then T2 (y, z)
-          else if t_equal y origin then T2 (x, z)
-          else if t_equal z origin then T2 (x, y)
+          if obj_t x == origin then T2 (y, z)
+          else if obj_t y == origin then T2 (x, z)
+          else if obj_t z == origin then T2 (x, y)
           else assert false
         | T4 (x, y, z, w) ->
-          if t_equal x origin then T3 (y, z, w)
-          else if t_equal y origin then T3 (x, z, w)
-          else if t_equal z origin then T3 (x, y, w)
-          else if t_equal w origin then T3 (x, y, z)
+          if obj_t x == origin then T3 (y, z, w)
+          else if obj_t y == origin then T3 (x, z, w)
+          else if obj_t z == origin then T3 (x, y, w)
+          else if obj_t w == origin then T3 (x, y, z)
           else assert false
         | Tn tn as trace ->
           let revidx = rem_idx self origin in
-          assert (t_equal tn.entries.(revidx) origin);
+          assert (tn.entries.(revidx) == origin);
           let count = tn.count - 1 in
           tn.count <- count;
           if revidx < count then (
@@ -408,7 +468,7 @@ let rec sub_release
             tn.entries.(revidx) <- dummy;
           if tn.active > count then tn.active <- count;
           if count = 4 then (
-            (* downgrade to [T4] to save space *)
+            (* Downgrade to T4 to save memory *)
             let a = tn.entries.(0) and b = tn.entries.(1) in
             let c = tn.entries.(2) and d = tn.entries.(3) in
             ignore (rem_idx self a : int);
@@ -466,7 +526,12 @@ let rec sub_release
         end
       | _ -> failures
 
-(* [sub_acquire] cannot raise *)
+(**
+    Activates a node and its children.
+    This is called when a Root is first sampled.
+
+    [sub_acquire] cannot raise.
+*)
 let rec sub_acquire : type a b . a t_ -> b t_ -> unit = fun origin ->
   function
   | Root _ -> assert false
@@ -527,13 +592,13 @@ let rec sub_acquire : type a b . a t_ -> b t_ -> unit = fun origin ->
         begin match intermediate with
           | None -> ()
           | Some _ ->
-            assert false (* this can't initialized already, first-time acquire *)
+            assert false (* this can't be initialized already, first-time acquire *)
         end
       | Var  _ -> ()
       | Prim _ -> ()
     )
 
-(* make sure that [origin] is in [self.trace], passed as last arg. *)
+(** Activate [origin] in the trace of [self] if necessary. *)
 let activate_tracing self origin = function
   | Tn tn ->
     let idx = get_idx self origin in (* index of [self] in [origin.trace_idx] *)
@@ -562,11 +627,14 @@ let sub_is_damaged = function
     | Eval_some _ -> false
     | Eval_progress -> assert false
 
-(* [sub_sample origin self] computes a value for [self].
+(**
+    The "Pull" phase. Computes the value of a node by recursively
+    sampling its dependencies.
 
-   [sub_sample] raise if any user-provided computation raises.
-   Graph will be left in a coherent state but exception will be propagated
-   to the observer. *)
+    [sub_sample] raise if any user-provided computation raises.
+    Graph will be left in a coherent state but exception will be propagated
+    to the observer.
+*)
 let sub_sample queue =
   let rec aux : type a b . a t_ -> b t_ -> b = fun origin ->
     function
@@ -634,6 +702,7 @@ let sub_sample queue =
 
 type 'a root = 'a t
 
+(** Creates a root observer for a computation. *)
 let observe ?(on_invalidate=ignore) child : _ root =
   let root = Root {
       child = prj child;
@@ -660,6 +729,7 @@ let flush_release_queue queue =
   queue := Release_done;
   raw_flush_release_queue queue'
 
+(** Samples the value of a root. *)
 let sample queue x = match prj x with
   | Pure _ | Operator _ -> assert false
   | Root t as self ->
@@ -684,6 +754,7 @@ let is_damaged x = match prj x with
   | Root {value = Eval_some _; _} -> false
   | Root {value = Eval_none | Eval_progress; _} -> true
 
+(** Releases a root and its subtree. *)
 let release queue x = match prj x with
   | Pure _ | Operator _ -> assert false
   | Root t as self ->
@@ -704,12 +775,14 @@ let flush_or_fail main_exn queue =
   | [] -> ()
   | failures -> raise (Release_failure (main_exn, failures))
 
+(** High-level API to sample a root without managing the release queue manually. *)
 let quick_sample root =
   let queue = ref Release_done in
   match sample queue root with
   | result -> flush_or_fail None queue; result
   | exception exn -> flush_or_fail (Some exn) queue; raise exn
 
+(** High-level API to release a root. *)
 let quick_release root =
   let queue = ref Release_done in
   release queue root;
