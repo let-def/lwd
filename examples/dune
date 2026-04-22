@@ -27,3 +27,9 @@
  (modules pretty)
  (modes byte exe)
  (libraries nottui-pretty notty notty.unix nottui nottui-unix))
+
+(executable
+ (name long)
+ (modules long)
+ (modes byte exe)
+ (libraries lwd))
