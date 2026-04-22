@@ -200,6 +200,23 @@ let get_idx obj = function
   | Root t' -> get_idx_rec obj t'.trace_idx
   | Operator t' -> get_idx_rec obj t'.trace_idx
 
+(* Logging unsafe usages of Lwd API *)
+
+type unsafe_action = [`Mutation | `Nested_sampling]
+
+let unsafe_action_explanation = function
+  | `Mutation -> "unsafe mutation (variable invalidated during evaluation)"
+  | `Nested_sampling -> "nested sampling (sampling a root in its invalidation callback)"
+
+let default_unsafe_action_logger action =
+  let callstack = Printexc.get_callstack 20 in
+  Printf.fprintf stderr
+    "Lwd: %s at\n%a"
+    (unsafe_action_explanation action)
+    Printexc.print_raw_backtrace callstack
+
+let unsafe_action_logger = ref default_unsafe_action_logger
+
 type status =
   | Neutral
   | Safe
@@ -227,7 +244,11 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
           | Strong -> ()
           | Fragile -> status := Unsafe
         end;
-        t.on_invalidate x (* user callback that {i observes} this root. *)
+        t.on_invalidate x; (* user callback that {i observes} this root. *)
+        begin match t.value with
+        | Eval_none -> ()
+        | _ -> !unsafe_action_logger `Nested_sampling
+        end;
     end
   | Operator {value = Eval_none; _}, Fragile ->
     begin match !status with
@@ -273,14 +294,6 @@ and invalidate_trace status sensitivity = function
       invalidate_node status sensitivity t.entries.(i)
     done
 
-let default_unsafe_mutation_logger () =
-  let callstack = Printexc.get_callstack 20 in
-  Printf.fprintf stderr
-    "Lwd: unsafe mutation (variable invalidated during evaluation) at\n%a"
-    Printexc.print_raw_backtrace callstack
-
-let unsafe_mutation_logger = ref default_unsafe_mutation_logger
-
 let do_invalidate sensitivity node =
   let status = ref Neutral in
   invalidate_node status sensitivity node;
@@ -289,7 +302,7 @@ let do_invalidate sensitivity node =
     | Neutral | Safe -> false
     | Unsafe -> true
   in
-  if unsafe then !unsafe_mutation_logger ()
+  if unsafe then !unsafe_action_logger `Mutation
 
 (* Variables *)
 type 'a var = 'a t_

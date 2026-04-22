@@ -100,8 +100,9 @@ val invalidate : 'a prim -> unit
 *)
 val fix : 'a t -> wrt:_ t -> 'a t
 
-val default_unsafe_mutation_logger : unit -> unit
-val unsafe_mutation_logger : (unit -> unit) ref
+type unsafe_action = [`Mutation | `Nested_sampling]
+val default_unsafe_action_logger : unsafe_action -> unit
+val unsafe_action_logger : (unsafe_action -> unit) ref
 
 (** Releasing unused graphs *)
 type release_failure = exn * Printexc.raw_backtrace
