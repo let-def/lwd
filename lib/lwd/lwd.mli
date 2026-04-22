@@ -12,17 +12,17 @@ type +'a t
 *)
 
 val return : 'a -> 'a t
-(** The content document with the given value inside *)
+(** A constant document containing the given value. *)
 
 val pure : 'a -> 'a t
-(** Alias to {!return} *)
+(** Alias to {!return}. *)
 
 val map : 'a t -> f:('a -> 'b) -> 'b t
-(** [map d ~f] is the document that has value [f x] whenever [d] has value [x] *)
+(** [map d ~f] is the document that has value [f x] whenever [d] has value [x]. *)
 
 val map2 : 'a t -> 'b t -> f:('a -> 'b -> 'c) -> 'c t
 (** [map2 d1 d2 ~f] is the document that has value [f x1 x2] whenever
-    [d1] has value [x1] and [d2] has value [x2] *)
+    [d1] has value [x1] and [d2] has value [x2]. *)
 
 val join : 'a t t -> 'a t
 (** Monadic operator [join d] is the document pointed to by document [d].
@@ -30,17 +30,17 @@ val join : 'a t t -> 'a t
 *)
 
 val bind : 'a t -> f:('a -> 'b t) -> 'b t
-(** Monadic bind, a mix of {!join} and {!map} *)
+(** Monadic bind, a mix of {!join} and {!map}. *)
 
 val app : ('a -> 'b) t -> 'a t -> 'b t
 (** Applicative: [app df dx] is the document that has value [f x]
-    whenever [df] has value [f] and [dx] has value [x] *)
+    whenever [df] has value [f] and [dx] has value [x]. *)
 
 val pair : 'a t -> 'b t -> ('a * 'b) t
-(** [pair a b] is [map2 (fun x y->x,y) a b] *)
+(** [pair a b] is [map2 (fun x y -> (x, y)) a b]. *)
 
 val is_pure : 'a t -> 'a option
-(** [is_pure x] will return [Some v] if [x] was built with [pure v] or
+(** [is_pure x] returns [Some v] if [x] was built with [pure v] or
     [return v].
 
     Normal code should not rely on the "reactive-ness" of a value, but this is
@@ -54,10 +54,10 @@ type 'a var
     and will be recomputed incrementally on demand. *)
 
 val var : 'a -> 'a var
-(** Create a new variable with the given initial value *)
+(** Create a new variable with the given initial value. *)
 
 val get : 'a var -> 'a t
-(** A document that reflects the current content of a variable *)
+(** A document that reflects the current content of a variable. *)
 
 val set : 'a var -> 'a -> unit
 (** Change the variable's content, invalidating all documents depending
@@ -71,7 +71,7 @@ val update : ('a -> 'a) -> 'a var -> unit
 (** Modify a variable based on its currently observed value. *)
 
 val may_update : ('a -> 'a option) -> 'a var -> unit
-(** Conditionnally modify a variable based on its currently observed value. *)
+(** Conditionally modify a variable based on its currently observed value. *)
 
 type +'a prim
 (** A primitive document. It can correspond, for example, to
@@ -81,22 +81,25 @@ type +'a prim
     to manage its lifecycle. *)
 
 val prim : acquire:('a prim -> 'a) -> release:('a prim -> 'a -> unit) -> 'a prim
-(** create a new primitive document.
+(** Create a new primitive document.
     @param acquire is called when the document becomes observed (indirectly)
-    via at least one {!root}.  The resulting primitive is passed as an argument
+    via at least one {!root}. The resulting primitive is passed as an argument
     to support certain recursive use cases.
     @param release is called when the document is no longer observed.
     Internal resources can be freed. *)
 
 val get_prim : 'a prim -> 'a t
-val invalidate : 'a prim -> unit
+(** Treat a primitive document as a standard document. *)
 
-(** Some document might change variables during their evaluation.
+val invalidate : 'a prim -> unit
+(** Manually trigger invalidation of a primitive. *)
+
+(** Some documents might change variables during their evaluation.
     These are called "unstable" documents.
 
     Evaluating these might need many passes to eventually converge to a value.
     The `fix` operator tries to stabilize a sub-document by repeating
-    evaluation until a stable condition is reached.
+    evaluation until the witness document [wrt] stabilizes.
 *)
 val fix : 'a t -> wrt:_ t -> 'a t
 
@@ -128,7 +131,7 @@ val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 
 val sample : release_queue -> 'a root -> 'a
 (** Force the computation of the value for this root.
-    The value is cached, so this is idempotent, until the next invalidation. *)
+    The value is cached, so this is idempotent until the next invalidation. *)
 
 val is_damaged : 'a root -> bool
 (** [is_damaged root] is true if the root doesn't have a valid value in
@@ -140,8 +143,10 @@ val release : release_queue -> 'a root -> unit
     any root. *)
 
 val quick_sample : 'a root -> 'a
+(** Sample a root and immediately flush the release queue. *)
 
 val quick_release : 'a root -> unit
+(** Release a root and immediately flush the release queue. *)
 
 module Infix : sig
   val (>|=) : 'a t -> ('a -> 'b) -> 'b t
