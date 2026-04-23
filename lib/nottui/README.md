@@ -38,7 +38,7 @@ let button count =
   W.button (Printf.sprintf "Clicked %d times!" count)
            (fun () -> Lwd.set vcount (count + 1));;
   
-Ui_loop.run (Lwd.map button (Lwd.get vcount));;
+Ui_loop.run (Lwd.map (Lwd.get vcount) button);;
 ```
 
 We reserve state for holding the number of clicks, we render a button and
@@ -47,7 +47,7 @@ increment the state when clicked.
 #### Displaying a tree
 
 ```ocaml
-type tree = Tree of string * (unit -> tree list)
+type tree = Tree of string * (unit -> tree list);;
 
 let rec tree_ui (Tree (label, child)) =
   let opened = Lwd.var false in
@@ -59,10 +59,10 @@ let rec tree_ui (Tree (label, child)) =
       Ui.join_y node (Ui.join_x (Ui.space 2 0) forest) 
     in
     if is_opened 
-    then Lwd.map (layout btn) (forest_ui (child ()))
+    then Lwd.map (forest_ui (child ())) (layout btn) 
     else Lwd.pure btn
   in
-  Lwd.join (Lwd.map render (Lwd.get opened))
+  Lwd.join (Lwd.map (Lwd.get opened) render)
   
 and forest_ui nodes = 
   Lwd_utils.pack Ui.pack_y 
