@@ -384,7 +384,7 @@ let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
     let handler = function
       | `ASCII 'U', [`Ctrl] -> on_change ("", 0); `Handled (* clear *)
       | `Escape, [] -> Focus.release focus_h; `Handled
-      | `ASCII k, _ ->
+      | `ASCII k, [] ->
         let text =
           if pos < String.length text then (
             String.sub text 0 pos ^ String.make 1 k ^
@@ -395,7 +395,7 @@ let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
         in
         on_change (text, (pos + 1));
         `Handled
-      | `Backspace, _ ->
+      | `Backspace, [] ->
         let text =
           if pos > 0 then (
             if pos < String.length text then (
@@ -409,7 +409,7 @@ let edit_field ?(focus=Focus.make()) state ~on_change ~on_submit =
         let pos = maxi 0 (pos - 1) in
         on_change (text, pos);
         `Handled
-      | `Enter, _ -> on_submit (text, pos); `Handled
+      | `Enter, [] -> on_submit (text, pos); `Handled
       | `Arrow `Left, [] ->
         let pos = mini (String.length text) pos in
         if pos > 0 then (
