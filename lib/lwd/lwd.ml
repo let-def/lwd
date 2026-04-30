@@ -310,9 +310,17 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
   | Operator {desc = Fix {wrt = Operator {value = Eval_none; _}; _}; _}, Fragile ->
     mark_safe status
   | Operator {desc = Fix {wrt = Operator {value = Eval_some _; _}; _}; _}, Fragile ->
-    ()
+     ()
   | Operator {desc = Join {child = Operator {value = Eval_progress; _}; _}; _}, _ ->
-    ()
+     (* While the child node (the "outer" graph) of a Join is evaluated, it is
+        safe to invalidate the "inner" graph (because it will be re-evaluated
+        next, if necessary).
+        In the same way, it is possible, in theory to relax the mutation
+        restriction of pairs: the lhs of a pair could be allowed to mutate the
+        rhs. This would make the evaluation of pairs part of the semantics...
+        I am not eager to do that, at the moment the model is that they are
+        (morally) evaluated in "parallel". *)
+     ()
   | Operator t, _ ->
     let sensitivity =
       match t.value with Eval_progress -> Fragile | _ -> sensitivity
