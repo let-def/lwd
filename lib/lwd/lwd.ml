@@ -311,6 +311,8 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
     mark_safe status
   | Operator {desc = Fix {wrt = Operator {value = Eval_some _; _}; _}; _}, Fragile ->
     ()
+  | Operator {desc = Join {child = Operator {value = Eval_progress; _}; _}; _}, _ ->
+    ()
   | Operator t, _ ->
     let sensitivity =
       match t.value with Eval_progress -> Fragile | _ -> sensitivity
