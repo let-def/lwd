@@ -1,4 +1,7 @@
-let cache_changes computation ~equal k =
+(* This example tests the caching of expensive
+   computations. *)
+
+let cache_changes computation ?(equal=(==)) k =
   let cache = ref None in
   Lwd.bind computation ~f:(fun value ->
       match !cache with
