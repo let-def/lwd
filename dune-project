@@ -36,7 +36,7 @@
  (name tyxml-lwd)
  (synopsis "Make reactive webpages in Js_of_ocaml using Tyxml and Lwd")
  (documentation "https://let-def.github.io/lwd/doc")
- (depends (lwd (= :version)) (tyxml (>= 4.5.0)) js_of_ocaml js_of_ocaml-ppx))
+ (depends (lwd (= :version)) (tyxml (>= 4.6.0)) js_of_ocaml js_of_ocaml-ppx))
 
 (package
  (name brr-lwd)
