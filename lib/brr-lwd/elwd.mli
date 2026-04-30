@@ -16,21 +16,55 @@ type 'a col = [
 type handler (* An event handler *)
 val handler : ?opts:Ev.listen_opts -> 'a Ev.type' -> ('a Ev.t -> unit) -> handler
 
-val v : ?d:document -> ?at:At.t col -> ?ev:handler col -> tag_name -> t col -> t Lwd.t
-(** [v ?d ?at name cs] is an element [name] with attribute [at]
-    (defaults to [[]]) and children [cs]. If [at] specifies an
-    attribute more thanonce, the last one takes over with the
-    exception of {!At.class'} whose occurences accumulate to define
-    the final value. [d] is the document on which the element is
-    defined it defaults {!Brr.G.document}. *)
+type prop = P : ('a El.Prop.t * 'a) -> prop
+
+val v :
+  ?d:document ->
+  ?at:At.t col ->
+  ?ev:handler col ->
+  ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:prop col ->
+  tag_name ->
+  t col ->
+  t Lwd.t
+(** [v ?d ?at ?ev ?st?pr name cs] is an element [name] with:
+    - attribute [at] (defaults to [[]])
+    - event handlers [ev]
+    - inline styles [st]
+    - properties [pr]
+    - and children [cs].
+
+    All optional attributes default to [[]].
+
+    Note that attributes specified by multiple elements of [at] (even at
+    different sampling time) may result in undefined behavior. The only
+    exception is {!At.class'} whose occurrences accumulate to define the final
+    value.
+
+    [d] is the document on which the element is defined it defaults
+    {!Brr.G.document}. *)
 
 (** {1:els Element constructors} *)
 
-type cons =  ?d:document -> ?at:At.t col -> ?ev:handler col -> t col -> t Lwd.t
+type cons =
+  ?d:document ->
+  ?at:At.t col ->
+  ?ev:handler col ->
+  ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:prop col ->
+  t col ->
+  t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
     pre-applied element name. *)
 
-type void_cons = ?d:document -> ?at:At.t col -> ?ev:handler col -> unit -> t Lwd.t
+type void_cons =
+  ?d:document ->
+  ?at:At.t col ->
+  ?ev:handler col ->
+  ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:prop col ->
+  unit ->
+  t Lwd.t
 (** The type for void element constructors. This is simply {!v}
     with a pre-applied element name and without children. *)
 

@@ -175,41 +175,99 @@ let update_children
 
 let pure_unit = Lwd.pure ()
 
-let dummy_kv_at = (Jstr.empty, Jstr.empty)
+type 'a kv = {
+  unset_kv : 'a -> El.t -> unit;
+  set_kv : ?old:'a -> 'a -> El.t -> unit;
+  dummy_kv : 'a;
+}
 
-let attach_attribs el attribs =
-  let set_kv (k, v) =
-    if Jstr.equal k At.Name.class'
+let attr_kv =
+  let is_class_at at = Jstr.equal at At.Name.class' in
+  let set_kv (k, v) el =
+    if is_class_at k
     then El.set_class v true el
     else El.set_at k (Some v) el
   in
-  let unset_kv (k, v) =
-    if Jstr.equal k At.Name.class'
+  let unset_kv (k, v) el =
+    if is_class_at k
     then El.set_class v false el
     else El.set_at k None el
   in
+  let reset_kv ((old_k, _) as old) (k, v) el =
+    let requires_unsetting =
+    (* We have to unset the attribute if it was removed (changed name) or if a class
+       name was changed.  When an attribute is changed by multiple reactive values
+       the current behavior is undefined.  See
+       https://github.com/let-def/lwd/issues/59 *)
+      not (Jstr.equal old_k k) || is_class_at old_k
+    in
+    if requires_unsetting then
+      unset_kv old el;
+    set_kv (k, v) el
+  in
+  let set_kv ?old kv el =
+    let kv = At.to_pair kv in
+    let old = Option.map At.to_pair old in
+    match old with None -> set_kv kv el | Some old -> reset_kv old kv el
+  in
+  let unset_kv at el =
+    let kv = At.to_pair at in
+    unset_kv kv el
+  in
+  let dummy_kv = At.v Jstr.empty Jstr.empty in
+  { unset_kv; set_kv; dummy_kv }
+
+let style_kv =
+  let unset_kv (k,_) el =
+    El.remove_inline_style k el
+  in
+  let set_kv ?old (k,v) el =
+    let () =
+      Option.iter (fun ((old_k, _) as old) ->
+          if not (Jstr.equal old_k k) then unset_kv old el)
+        old
+    in
+    El.set_inline_style k v el
+  in
+  let dummy_kv = (Jstr.empty, Jstr.empty) in
+  { unset_kv; set_kv; dummy_kv }
+
+type prop = P : ('a El.Prop.t * 'a) -> prop
+
+let prop_kv =
+  let unset_kv _prop_kv _el =
+    ()
+    (* Unsetting a property does not always mean something... For instance, the
+       [checked] property of a checkbox can only be set to a boolean, and not be
+       "unset".
+       This is also why Brr does not have a [El.unset_prop].
+    *)
+  in
+  let set_kv ?old:_ (P (k,v)) el =
+    El.set_prop k v el
+  in
+  let dummy_kv = P (El.Prop.width, 0) in
+  { unset_kv; set_kv; dummy_kv }
+
+let attach_kv {set_kv; unset_kv; dummy_kv} el attribs =
   let set_lwd_at () =
-    let prev = ref dummy_kv_at in
+    let prev = ref dummy_kv in
     fun at ->
-      if !prev != dummy_kv_at then
-        unset_kv !prev;
-      let pair = At.to_pair at in
-      set_kv pair;
-      prev := pair
+      set_kv ~old:!prev at el;
+      prev := at
   in
   Lwd_utils.map_reduce (function
       | `P _ -> assert false
       | `R at -> Lwd.map ~f:(set_lwd_at ()) at
       | `S ats ->
-        let set_at' at =
-          let kv = At.to_pair at in
-          set_kv kv;
+        let set_kv kv =
+          set_kv kv el;
           kv
         in
         let reducer =
           ref (Lwd_seq.Reducer.make
-                 ~map:set_at'
-                 ~reduce:(fun _ _ -> dummy_kv_at))
+                 ~map:set_kv
+                 ~reduce:(fun _ _ -> dummy_kv))
         in
         let update ats =
           let dropped, reducer' =
@@ -217,13 +275,19 @@ let attach_attribs el attribs =
           in
           reducer := reducer';
           Lwd_seq.Reducer.fold_dropped `Map
-            (fun kv () -> unset_kv kv)
+            (fun kv () -> unset_kv kv el)
             dropped ();
           ignore (Lwd_seq.Reducer.reduce reducer': _ option)
         in
         Lwd.map ~f:update ats
     ) (pure_unit, Lwd.map2 ~f:(fun () () -> ()))
     attribs
+
+let attach_attribs = attach_kv attr_kv
+
+let attach_styles = attach_kv style_kv
+
+let attach_props = attach_kv prop_kv
 
 let listen el (Handler {opts; type'; func}) =
   Ev.listen ?opts type' func (El.as_target el)
@@ -260,46 +324,61 @@ let attach_events el events =
     ) (pure_unit, Lwd.map2 ~f:(fun () () -> ()))
     events
 
-let v ?d ?(at=[]) ?(ev=[]) tag children =
+let v ?d ?(at=[]) ?(ev=[]) ?(st=[]) ?(pr=[]) tag children =
+  (* Splitting impure and pure parts *)
   let at, impure_at = prepare_col at in
   let ev, impure_ev = prepare_col ev in
+  let st, impure_st = prepare_col st in
+  let pr, impure_pr = prepare_col pr in
   let children, impure_children = consume_children children in
+  (* Handling pure parts *)
   let el = El.v ?d ~at tag children in
-  let result =
-    match impure_at, impure_children with
-    | [], None -> Lwd.pure el
-    | [], Some children ->
-      update_children el children
-    | at, None ->
-      Lwd.map ~f:(fun () -> el) (attach_attribs el at)
-    | at, Some children ->
-      Lwd.map2 ~f:(fun () el -> el)
-        (attach_attribs el at)
-        (update_children el children)
-  in
   List.iter (fun h -> ignore (listen el h)) ev;
+  List.iter (fun kv -> style_kv.set_kv kv el) st;
+  List.iter (fun kv -> prop_kv.set_kv kv el) pr;
+  (* Handling impure parts *)
   let result =
-    match impure_ev with
-    | [] -> result
-    | evs ->
-      Lwd.map2 ~f:(fun () el -> el)
-        (attach_events el evs)
-        result
+    match impure_children with
+    | None -> Lwd.pure el
+    | Some children -> update_children el children
   in
+  let attach_impure attach impure result =
+    match impure with
+    | [] -> result
+    | impure -> Lwd.map2 ~f:(fun () el -> el) (attach el impure) result
+  in
+  let result = attach_impure attach_attribs impure_at result in
+  let result = attach_impure attach_events impure_ev result in
+  let result = attach_impure attach_styles impure_st result in
+  let result = attach_impure attach_props impure_pr result in
   result
 
 (** {1:els Element constructors} *)
 
-type cons =  ?d:document -> ?at:At.t col -> ?ev:handler col -> t col -> t Lwd.t
+type cons =
+  ?d:document ->
+  ?at:At.t col ->
+  ?ev:handler col ->
+  ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:prop col ->
+  t col ->
+  t Lwd.t
 (** The type for element constructors. This is simply {!v} with a
     pre-applied element name. *)
 
-type void_cons = ?d:document -> ?at:At.t col -> ?ev:handler col -> unit -> t Lwd.t
+type void_cons =
+  ?d:document ->
+  ?at:At.t col ->
+  ?ev:handler col ->
+  ?st:(El.Style.prop * Jstr.t) col ->
+  ?pr:prop col ->
+  unit ->
+  t Lwd.t
 (** The type for void element constructors. This is simply {!v}
     with a pre-applied element name and without children. *)
 
-let cons name ?d ?at ?ev cs = v ?d ?at ?ev name cs
-let void_cons name ?d ?at ?ev () = v ?d ?at ?ev name []
+let cons name ?d ?at ?ev ?st ?pr cs = v ?d ?at ?ev ?st ?pr name cs
+let void_cons name ?d ?at ?ev ?st ?pr () = v ?d ?at ?ev ?st ?pr name []
 
 let a = cons Name.a
 let abbr = cons Name.abbr

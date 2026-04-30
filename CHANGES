@@ -1,10 +1,17 @@
-v0.4 - Alpha 0.4 UNRELEASED
+v0.5 - Alpha 0.5 UNRELEASED
+======
+
+- brr-lwd: Fix handling of multiple reactive attributes (by @panglesd, #53)
+- brr-lwd: Add support for reactive styles and properties (by @panglesd, #60)
+
+v0.4 - Alpha 0.4
 ======
 
 - Add Lwd.update (by @OlivierNicole and @Julow) and Lwd.may_update functions
 - Lwd.set: change binding before invalidation, otherwise the old value could be re-observed (reported by @voodoos)
 - brr-lwd: support declarative events and set of css classes
 - Nottui: fix treatment of some terminal events that were delayed because of improper buffer flushing, reported by @darrenldl
+- Introduce Nottui_unix: move platform-specific code of Nottui to a separate library (by @Dinosaure and @Reynir, #44, #51)
 
 v0.3 - Alpha 0.3
 ======
