@@ -345,12 +345,9 @@ and invalidate_trace status sensitivity = function
 let do_invalidate sensitivity node =
   let status = ref Neutral in
   invalidate_node status sensitivity node;
-  let unsafe =
-    match !status with
-    | Neutral | Safe -> false
-    | Unsafe -> true
-  in
-  if unsafe then !unsafe_action_logger `Mutation
+  match !status with
+  | Neutral | Safe -> ()
+  | Unsafe -> !unsafe_action_logger `Mutation
 
 (* --- Variables --- *)
 
