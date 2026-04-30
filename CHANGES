@@ -1,20 +1,24 @@
-v0.4 - Alpha 0.4 UNRELEASED
+v0.5 - Alpha 0.5
+======
+
+- Lwd: fix handling of mutations in Join nodes (reported by @voodoos)
+- Lwd: add detection and reporting of nested sampling
+- Lwd: update the public interface with `quick_sample` and `quick_release`
+- Lwd: document the core library
+- brr-lwd: fix handling of multiple reactive attributes or events (by @panglesd)
+- nottui: migrate dependency from `notty` to `notty-community` (by @nilsbecker)
+- Examples: add demonstration of caching expensive computations
+- Examples: add reproduction case for nested sampling
+
+v0.4 - Alpha 0.4
 ======
 
 - Add Lwd.update and Lwd.may_update functions (by @OlivierNicole and @Julow)
 - Lwd.set: change binding before invalidation, otherwise the old value could be re-observed (reported by @voodoos)
+- Lwd: optimize `Lwd_table.compute_sub_size` to be stackless
 - brr-lwd: support declarative events and set of css classes
 - Nottui: fix treatment of some terminal events that were delayed because of improper buffer flushing (reported by @darrenldl)
-- Lwd: fix handling of mutations in Join nodes (reported by @voodoos)
-- Lwd: add detection and reporting of nested sampling
-- Lwd: update the public interface with `quick_sample` and `quick_release`
-- Lwd: optimize `Lwd_table.compute_sub_size` to be stackless
-- Lwd: document the core library
-- brr-lwd: fix handling of multiple reactive attributes or events (by @panglesd)
-- nottui: split the Unix main loop into a separate `nottui-unix` package (by @dinosaure)
-- nottui: migrate dependency from `notty` to `notty-community` (by @nilsbecker)
-- Examples: add demonstration of caching expensive computations
-- Examples: add reproduction case for nested sampling
+- Nottui: split the Unix main loop into a separate `nottui-unix` package (by @dinosaure)
 
 v0.3 - Alpha 0.3
 ======
