@@ -14,7 +14,7 @@
  (documentation "https://let-def.github.io/lwd/doc")
  (depends dune seq (ocaml (>= "4.03"))
           (qtest :with-test)
-          (qcheck :with-test)))
+          (qcheck (and :with-test (>= "0.14")))))
 
 (package
  (name nottui)
