@@ -307,10 +307,13 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
   | Operator {value = Eval_none; _}, Fragile ->
     mark_safe status
   | Operator {value = Eval_none; _}, _ -> ()
-  | Operator {desc = Fix {wrt = Operator {value = Eval_none; _}; _}; _}, Fragile ->
-    mark_safe status
-  | Operator {desc = Fix {wrt = Operator {value = Eval_some _; _}; _}; _}, Fragile ->
-     ()
+  | Operator {desc = Fix {wrt = Operator {value; _}; _}; _}, Fragile ->
+    begin match value with
+      | Eval_none -> mark_safe status
+      | _ -> ()
+    end
+  | Operator {desc = Fix _; _}, _ ->
+    ()
   | Operator {desc = Join {child = Operator {value = Eval_progress; _}; _}; _}, _ ->
      (* While the child node (the "outer" graph) of a Join is evaluated, it is
         safe to invalidate the "inner" graph (because it will be re-evaluated
@@ -661,15 +664,18 @@ let sub_sample queue =
           | Pair (x, y) -> (aux self x, aux self y)
           | App  (f, x) -> (aux self f) (aux self x)
           | Fix {doc; wrt} ->
-            let _ = aux self wrt in
-            let result = aux self doc in
-            if sub_is_damaged wrt then
-              aux origin self
-            else (
-              if sub_is_damaged doc then
-                do_invalidate Fragile self;
-              result
-            )
+            let rec loop () =
+              let _ = aux self wrt in
+              let result = aux self doc in
+              if sub_is_damaged wrt then
+                loop ()
+              else
+                result
+            in
+            let result = loop () in
+            if sub_is_damaged doc then
+              do_invalidate Fragile self;
+            result
           | Join x ->
             let intermediate =
               (* We haven't touched any state yet,
