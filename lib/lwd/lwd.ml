@@ -312,7 +312,7 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
       | Eval_none -> mark_safe status
       | _ -> ()
     end
-  | Operator {desc = Fix _; _}, _ ->
+  | Operator {desc = Fix _; value = Eval_progress _; _}, _ ->
     ()
   | Operator {desc = Join {child = Operator {value = Eval_progress; _}; _}; _}, _ ->
      (* While the child node (the "outer" graph) of a Join is evaluated, it is
