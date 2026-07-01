@@ -177,6 +177,36 @@ let test_quick_sample () =
   let () = quick_sample root |> fun r -> assert (r = 14) in
   quick_release root
 
+let test_fix_dirty_bit_clearance () =
+  let state = var 0 in
+  let steps = ref 0 in
+  let invalidated = ref false in
+
+  (* Inner document mutates `state` until it reaches 2 *)
+  let d = map (get state) ~f:(fun st -> incr steps; if st < 2 then set state (st + 1); st) in
+  let stabilized = fix d ~wrt:(get state) in
+  let rq = make_release_queue () in
+  let root = observe ~on_invalidate:(fun _ -> invalidated := true) stabilized in
+
+  (* === Cycle 1 === *)
+  let () = sample rq root |> fun r -> assert (r = 2) in
+  assert (!steps = 3);          (* 0→1→2: 3 evaluations *)
+  assert (not (is_damaged root));
+  assert (not !invalidated);
+
+  (* === Cycle 2 === *)
+  set state 0;
+  (* BUG CHECK: If `fix` didn't clear its dirty bit after cycle 1,
+     invalidation propagation will see it as already dirty and stop.
+     The root will remain undamaged, breaking reactivity. *)
+  assert (is_damaged root);
+  assert !invalidated;
+
+  let () = sample rq root |> fun r -> assert (r = 2) in
+  assert (!steps = 6);          (* 3 more evaluations *)
+  assert (not (is_damaged root));
+  release rq root
+
 (** Simple test runner *)
 let check name test =
   try
@@ -196,6 +226,7 @@ let run_all () =
   check "sharing_and_memoization" test_sharing_memoization;
   check "applicative_vs_map2_consistency" test_app_vs_map2;
   check "multiple_roots_independent_invalidations" test_multiple_roots;
-  check "quick_sample_flushes_queue" test_quick_sample
+  check "quick_sample_flushes_queue" test_quick_sample;
+  check "fix_dirty_bit_clearance" test_fix_dirty_bit_clearance
 
 let () = run_all ()
