@@ -650,10 +650,9 @@ let sub_sample queue =
                 result
             in
             let result = loop () in
-            if sub_is_damaged doc then (
-              t.value <- Eval_some result;
+            t.value <- Eval_some result;
+            if sub_is_damaged doc then
               do_invalidate self;
-            );
             result
           | Join x ->
             let intermediate =
