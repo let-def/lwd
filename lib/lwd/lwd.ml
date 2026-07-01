@@ -255,66 +255,30 @@ let unsafe_action_logger = ref default_unsafe_action_logger
 
 (* --- Invalidation Logic --- *)
 
-type status =
-  | Neutral (** No issues detected *)
-  | Safe    (** Invalidation occurred, but it's safe *)
-  | Unsafe  (** Invalidation occurred during evaluation (a bug/race) *)
+type status = {
+  mutable unsafe: bool;
+}
 
-(* The invalidation status evolves monotonically: it starts Neutral, can become
-   Safe then Unsafe, but can't go back. *)
-
-(* Called when we found that invalidation is safe in the current
-   context. *)
-let mark_safe status =
-  match !status with
-  | Neutral -> status := Safe
-  | Unsafe | Safe ->
-     (* Status has already been marked in another context.
-        If it was unsafe, we can't go back.
-        If is was safe, nothing to change. *)
-     ()
-
-type sensitivity =
-  | Strong   (** Force invalidation regardless of state *)
-  | Fragile  (** Only invalidate if the node is in a specific state *)
-
-(**
-    Recursively invalidates a node and its parents.
-    This is the "Push" phase of the incremental system.
-*)
-let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
-  fun status sensitivity node ->
-  match node, sensitivity with
-  | Pure _, _ -> assert false
-  | Root ({value; _} as t), _ ->
+let rec invalidate_node : type a . status -> a t_ -> unit = fun status -> function
+  | Pure _ -> assert false
+  | Root ({value; _} as t) ->
     t.value <- Eval_none;
     begin match value with
       | Eval_none -> ()
       | Eval_progress ->
         (* Invalidating a root being evaluated: unsafe *)
-        status := Unsafe
+        status.unsafe <- true
       | Eval_some x ->
-        begin match sensitivity with
-          | Strong -> ()
-          | Fragile -> status := Unsafe
-        end;
         t.on_invalidate x; (* user callback that {i observes} this root. *)
         begin match t.value with
         | Eval_none -> ()
         | _ -> !unsafe_action_logger `Nested_sampling
         end;
     end
-  | Operator {value = Eval_none; _}, Fragile ->
-    mark_safe status
-  | Operator {value = Eval_none; _}, _ -> ()
-  | Operator {desc = Fix {wrt = Operator {value; _}; _}; _}, Fragile ->
-    begin match value with
-      | Eval_none -> mark_safe status
-      | _ -> ()
-    end
-  | Operator {desc = Fix _; value = Eval_progress _; _}, _ ->
-    ()
-  | Operator {desc = Join {child = Operator {value = Eval_progress; _}; _}; _}, _ ->
+  | Operator {value = Eval_none; _} -> ()
+  | Operator ({desc = Fix _; value = Eval_progress; _} as t) ->
+    t.value <- Eval_none
+  | Operator {desc = Join {child = Operator {value = Eval_progress; _}; _}; _} ->
      (* While the child node (the "outer" graph) of a Join is evaluated, it is
         safe to invalidate the "inner" graph (because it will be re-evaluated
         next, if necessary).
@@ -324,43 +288,39 @@ let rec invalidate_node : type a . status ref -> sensitivity -> a t_ -> unit =
         I am not eager to do that, at the moment the model is that they are
         (morally) evaluated in "parallel". *)
      ()
-  | Operator t, _ ->
-    let sensitivity =
-      match t.value with Eval_progress -> Fragile | _ -> sensitivity
-    in
+  | Operator t ->
     t.value <- Eval_none;
     (* Propagate invalidation to parents *)
-    invalidate_trace status sensitivity t.trace
+    invalidate_trace status t.trace
 
 (** Iterates through the parent trace to invalidate all observers. *)
-and invalidate_trace status sensitivity = function
+and invalidate_trace status = function
   | T0 -> ()
-  | T1 x -> invalidate_node status sensitivity x
+  | T1 x -> invalidate_node status x
   | T2 (x, y) ->
-    invalidate_node status sensitivity x;
-    invalidate_node status sensitivity y
+    invalidate_node status x;
+    invalidate_node status y
   | T3 (x, y, z) ->
-    invalidate_node status sensitivity x;
-    invalidate_node status sensitivity y;
-    invalidate_node status sensitivity z
+    invalidate_node status x;
+    invalidate_node status y;
+    invalidate_node status z
   | T4 (x, y, z, w) ->
-    invalidate_node status sensitivity x;
-    invalidate_node status sensitivity y;
-    invalidate_node status sensitivity z;
-    invalidate_node status sensitivity w
+    invalidate_node status x;
+    invalidate_node status y;
+    invalidate_node status z;
+    invalidate_node status w
   | Tn t ->
     let active = t.active in
     t.active <- 0;
     for i = 0 to active - 1 do
-      invalidate_node status sensitivity t.entries.(i)
+      invalidate_node status t.entries.(i)
     done
 
-let do_invalidate sensitivity node =
-  let status = ref Neutral in
-  invalidate_node status sensitivity node;
-  match !status with
-  | Neutral | Safe -> ()
-  | Unsafe -> !unsafe_action_logger `Mutation
+let do_invalidate node =
+  let status = {unsafe = false} in
+  invalidate_node status node;
+  if status.unsafe then
+    !unsafe_action_logger `Mutation
 
 (* --- Variables --- *)
 
@@ -373,7 +333,7 @@ let set (vx:_ var) x : unit =
   match vx with
   | Operator ({desc = Var v; _}) ->
     v.binding <- x;
-    do_invalidate Strong vx
+    do_invalidate vx
   | _ -> assert false
 
 let peek = function
@@ -399,9 +359,10 @@ let invalidate x = match prj x with
   | Operator {desc = Prim p; value; _} as t ->
     begin match value with
       | Eval_none -> ()
-      | Eval_progress -> do_invalidate Fragile t;
+      | Eval_progress ->
+        do_invalidate t
       | Eval_some v ->
-        do_invalidate Strong t;
+        do_invalidate t;
         p.release x v
     end
   | _ -> assert false
@@ -673,8 +634,10 @@ let sub_sample queue =
                 result
             in
             let result = loop () in
-            if sub_is_damaged doc then
-              do_invalidate Fragile self;
+            if sub_is_damaged doc then (
+              t.value <- Eval_some result;
+              do_invalidate self;
+            );
             result
           | Join x ->
             let intermediate =
@@ -701,7 +664,7 @@ let sub_sample queue =
           | Prim t -> t.acquire (inj self)
         in
         begin match t.value with
-          | Eval_progress -> t.value <- Eval_some result;
+          | Eval_progress -> t.value <- Eval_some result
           | Eval_none | Eval_some _ -> ()
         end;
         (* [self] just became active, so it may invalidate [origin] in case its
