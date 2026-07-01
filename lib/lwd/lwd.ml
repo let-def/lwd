@@ -278,16 +278,17 @@ let rec invalidate_node : type a . status -> a t_ -> unit = fun status -> functi
   | Operator {value = Eval_none; _} -> ()
   | Operator ({desc = Fix _; value = Eval_progress; _} as t) ->
     t.value <- Eval_none
-  | Operator {desc = Join {child = Operator {value = Eval_progress; _}; _}; _} ->
-     (* While the child node (the "outer" graph) of a Join is evaluated, it is
-        safe to invalidate the "inner" graph (because it will be re-evaluated
-        next, if necessary).
-        In the same way, it is possible, in theory to relax the mutation
-        restriction of pairs: the lhs of a pair could be allowed to mutate the
-        rhs. This would make the evaluation of pairs part of the semantics...
-        I am not eager to do that, at the moment the model is that they are
-        (morally) evaluated in "parallel". *)
-     ()
+
+  (* During the evaluation of the child node of a Join (the "outer" graph), it
+     is safe to invalidate the "inner" graph (because it will be re-evaluated
+     next, if necessary).
+     In the same way, it is possible in theory to relax the mutation restriction
+     of pairs: the lhs of a pair could be allowed to mutate the rhs.  This would
+     make the evaluation of pairs part of the semantics... I am not eager to do
+     that, at the moment the model is that they are (morally) evaluated in
+     "parallel". *)
+  | Operator {desc = Join {child = Operator {value = Eval_progress; _}; _}; _} -> ()
+
   | Operator t ->
     t.value <- Eval_none;
     (* Propagate invalidation to parents *)
@@ -376,15 +377,75 @@ let fix doc ~wrt = match prj wrt with
 
 (* --- Resource Lifecycle Management --- *)
 
-type release_list =
-  | Release_done
-  | Release_more :
-      { origin : 'a t_; element : 'b t_; next : release_list } -> release_list
-
-type release_queue = release_list ref
-let make_release_queue () = ref Release_done
+type release_queue = Obj.t t_ list ref
+let make_release_queue () = ref []
 
 type release_failure = exn * Printexc.raw_backtrace
+
+(** Remove a reference from a trace.
+    Returns [true] if the object became unreferenced and should be scheduled for
+    release. *)
+
+let remove_reference (type a b) (origin: a t_) (self: b t_) : bool =
+  match self with
+  | Root _ -> assert false
+  | Pure _ -> false
+  | Operator t as self ->
+    (* Remove the origin from the parent trace *)
+    let origin = obj_t origin in
+    let trace = match t.trace with
+      | T0 -> assert false
+      | T1 x -> assert (obj_t x == origin); T0
+      | T2 (x, y) ->
+        if obj_t x == origin then T1 y
+        else if obj_t y == origin then T1 x
+        else assert false
+      | T3 (x, y, z) ->
+        if obj_t x == origin then T2 (y, z)
+        else if obj_t y == origin then T2 (x, z)
+        else if obj_t z == origin then T2 (x, y)
+        else assert false
+      | T4 (x, y, z, w) ->
+        if obj_t x == origin then T3 (y, z, w)
+        else if obj_t y == origin then T3 (x, z, w)
+        else if obj_t z == origin then T3 (x, y, w)
+        else if obj_t w == origin then T3 (x, y, z)
+        else assert false
+      | Tn tn as trace ->
+        let revidx = rem_idx self origin in
+        assert (tn.entries.(revidx) == origin);
+        let count = tn.count - 1 in
+        tn.count <- count;
+        if revidx < count then (
+          let obj = tn.entries.(count) in
+          tn.entries.(revidx) <- obj;
+          tn.entries.(count) <- dummy;
+          mov_idx self count revidx obj
+        ) else
+          tn.entries.(revidx) <- dummy;
+        if tn.active > count then tn.active <- count;
+        if count = 4 then (
+          (* Downgrade to T4 to save memory *)
+          let a = tn.entries.(0) and b = tn.entries.(1) in
+          let c = tn.entries.(2) and d = tn.entries.(3) in
+          ignore (rem_idx self a : int);
+          ignore (rem_idx self b : int);
+          ignore (rem_idx self c : int);
+          ignore (rem_idx self d : int);
+          T4 (a, b, c, d)
+        ) else (
+          let len = Array.length tn.entries in
+          if count <= len lsr 2 then
+            Tn { active = tn.active; count = tn.count;
+                 entries = Array.sub tn.entries 0 (len lsr 1) }
+          else
+            trace
+        )
+    in
+    t.trace <- trace;
+    match trace with
+    | T0 -> true
+    | _  -> false
 
 (**
     Handles the removal of a node from the graph.
@@ -400,64 +461,11 @@ type release_failure = exn * Printexc.raw_backtrace
     list.
 *)
 let rec sub_release
-  : type a b . release_failure list -> a t_ -> b t_ -> release_failure list
-  = fun failures origin -> function
-    | Root _ -> assert false
-    | Pure _ -> failures
+  : type a . release_failure list -> a t_ -> release_failure list
+  = fun failures -> function
+    | Root _ | Pure _ -> assert false
     | Operator t as self ->
-      (* Remove the origin from the parent trace *)
-      let origin = obj_t origin in
-      let trace = match t.trace with
-        | T0 -> assert false
-        | T1 x -> assert (obj_t x == origin); T0
-        | T2 (x, y) ->
-          if obj_t x == origin then T1 y
-          else if obj_t y == origin then T1 x
-          else assert false
-        | T3 (x, y, z) ->
-          if obj_t x == origin then T2 (y, z)
-          else if obj_t y == origin then T2 (x, z)
-          else if obj_t z == origin then T2 (x, y)
-          else assert false
-        | T4 (x, y, z, w) ->
-          if obj_t x == origin then T3 (y, z, w)
-          else if obj_t y == origin then T3 (x, z, w)
-          else if obj_t z == origin then T3 (x, y, w)
-          else if obj_t w == origin then T3 (x, y, z)
-          else assert false
-        | Tn tn as trace ->
-          let revidx = rem_idx self origin in
-          assert (tn.entries.(revidx) == origin);
-          let count = tn.count - 1 in
-          tn.count <- count;
-          if revidx < count then (
-            let obj = tn.entries.(count) in
-            tn.entries.(revidx) <- obj;
-            tn.entries.(count) <- dummy;
-            mov_idx self count revidx obj
-          ) else
-            tn.entries.(revidx) <- dummy;
-          if tn.active > count then tn.active <- count;
-          if count = 4 then (
-            (* Downgrade to T4 to save memory *)
-            let a = tn.entries.(0) and b = tn.entries.(1) in
-            let c = tn.entries.(2) and d = tn.entries.(3) in
-            ignore (rem_idx self a : int);
-            ignore (rem_idx self b : int);
-            ignore (rem_idx self c : int);
-            ignore (rem_idx self d : int);
-            T4 (a, b, c, d)
-          ) else (
-            let len = Array.length tn.entries in
-            if count <= len lsr 2 then
-              Tn { active = tn.active; count = tn.count;
-                   entries = Array.sub tn.entries 0 (len lsr 1) }
-            else
-              trace
-          )
-      in
-      t.trace <- trace;
-      match trace with
+      match t.trace with
       | T0 ->
         (* [self] is not active anymore, since it's not reachable
            from any root. We can release its cached value and
@@ -465,27 +473,27 @@ let rec sub_release
         let value = t.value in
         t.value <- Eval_progress;
         begin match t.desc with
-          | Map  (x, _) -> sub_release failures self x
+          | Map  (x, _) -> sub_release_child failures self x
           | Map2 (x, y, _) ->
-            sub_release (sub_release failures self x) self y
+            sub_release_child (sub_release_child failures self x) self y
           | Pair (x, y) ->
-            sub_release (sub_release failures self x) self y
+            sub_release_child (sub_release_child failures self x) self y
           | App  (x, y) ->
-            sub_release (sub_release failures self x) self y
+            sub_release_child (sub_release_child failures self x) self y
           | Join ({ child; intermediate } as t) ->
-            let failures = sub_release failures self child in
+            let failures = sub_release_child failures self child in
             begin match intermediate with
               | None -> failures
               | Some child' ->
                 t.intermediate <- None;
-                sub_release failures self child'
+                sub_release_child failures self child'
             end
           | Var  _ -> failures
           | Fix {doc; wrt} ->
-            sub_release (sub_release failures self wrt) self doc
+            sub_release_child (sub_release_child failures self wrt) self doc
           | Prim t ->
             begin match value with
-              | Eval_none  | Eval_progress -> failures
+              | Eval_none | Eval_progress -> failures
               | Eval_some x ->
                 begin match t.release (inj self) x with
                   | () -> failures
@@ -496,6 +504,14 @@ let rec sub_release
             end
         end
       | _ -> failures
+
+and sub_release_child
+  : type a b . release_failure list -> a t_ -> b t_ -> release_failure list
+  = fun failures origin self ->
+    if remove_reference origin self then
+      sub_release failures self
+    else
+      failures
 
 (**
     Activates a node and its children.
@@ -558,7 +574,7 @@ let rec sub_acquire : type a b . a t_ -> b t_ -> unit = fun origin ->
       | Fix  {doc; wrt} ->
         sub_acquire self doc;
         sub_acquire self wrt
-      | Join { child; intermediate } ->
+      | Join {child; intermediate} ->
         sub_acquire self child;
         begin match intermediate with
           | None -> ()
@@ -650,11 +666,8 @@ let sub_sample queue =
                 x.intermediate <- Some intermediate;
                 sub_acquire self intermediate;
               | Some x' when x' != intermediate ->
-                queue := Release_more {
-                    origin = self;
-                    element = x';
-                    next = !queue;
-                  };
+                if remove_reference self x' then
+                  queue := obj_t x' :: !queue;
                 x.intermediate <- Some intermediate;
                 sub_acquire self intermediate;
               | Some _ -> ()
@@ -693,16 +706,14 @@ exception Release_failure of exn option * release_failure list
 
 let raw_flush_release_queue queue =
   let rec aux failures = function
-    | Release_done -> failures
-    | Release_more t ->
-      let failures = sub_release failures t.origin t.element in
-      aux failures t.next
+    | [] -> failures
+    | x :: xs -> aux (sub_release failures x) xs
   in
   aux [] queue
 
 let flush_release_queue queue =
   let queue' = !queue in
-  queue := Release_done;
+  queue := [];
   raw_flush_release_queue queue'
 
 (** Samples the value of a root. *)
@@ -738,7 +749,8 @@ let release queue x = match prj x with
       (* release subtree, remove cached value *)
       t.value <- Eval_none;
       t.acquired <- false;
-      queue := Release_more { origin = self; element = t.child; next = !queue }
+      if remove_reference self t.child then
+        queue := obj_t t.child :: !queue
     )
 
 let set_on_invalidate x f =
@@ -753,14 +765,14 @@ let flush_or_fail main_exn queue =
 
 (** High-level API to sample a root without managing the release queue manually. *)
 let quick_sample root =
-  let queue = ref Release_done in
+  let queue = ref [] in
   match sample queue root with
   | result -> flush_or_fail None queue; result
   | exception exn -> flush_or_fail (Some exn) queue; raise exn
 
 (** High-level API to release a root. *)
 let quick_release root =
-  let queue = ref Release_done in
+  let queue = ref [] in
   release queue root;
   flush_or_fail None queue
 
