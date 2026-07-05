@@ -53,6 +53,16 @@ type ('a, 'b) map
 (** A map is function that receives a tape to record sub-transformations. *)
 val map : ?finalize:('a -> 'b -> unit) -> (tape -> 'a -> 'b) -> ('a, 'b) map
 
+(** Creates a placeholder map that has no implementation.
+    Calling [apply] or [transform] on a map created by [undefined] before it has
+    been filled by [define] raises [Failure]. *)
+val undefined : unit -> ('a, 'b) map
+
+(** Binds a concrete implementation to an existing [undefined] map.
+    Used to construct recursive maps by providing the transformation logic.
+    If the map has already been defined, [define] raises [Invalid_argument]. *)
+val define : ('a, 'b) map -> ?finalize:('a -> 'b -> unit) -> (tape -> 'a -> 'b) -> unit
+
 (** Given a tape, one can apply a map on a sub-value. *)
 val apply : tape -> ('a, 'b) map -> 'a t -> 'b
 

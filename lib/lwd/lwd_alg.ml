@@ -22,8 +22,9 @@ and handle = Handle : 'a t -> handle [@@ocaml.unboxed]
 and folder = handle list
 
 and ('a, 'b) map = {
-  func: tape -> 'a -> 'b;
-  finalize: 'a -> 'b -> unit;
+  mutable defined: bool;
+  mutable func: tape -> 'a -> 'b;
+  mutable finalize: 'a -> 'b -> unit;
   mutable slot: ('b * trace) option;
 }
 
@@ -47,7 +48,24 @@ let map ?finalize func =
           Printf.eprintf "Lwd_alg.finalize exception: %s\n"
             (Printexc.to_string exn))
   in
-  { func; finalize; slot = None }
+  { defined = true; func; finalize; slot = None }
+
+let undefined () = {
+  defined = false;
+  func = (fun _ -> failwith "Lwd_alg.undefined: map has not been defined before use");
+  finalize = (fun _ _ -> ());
+  slot = None;
+}
+
+let define map ?finalize func =
+  if map.defined then
+    invalid_arg "Lwd_alg.define: map has already been defined";
+  map.defined <- true;
+  map.func <- func;
+  begin match finalize with
+    | None -> ()
+    | Some f -> map.finalize <- f
+  end
 
 (* How to update a computation, given a tape
    -----------------------------------------
@@ -198,7 +216,7 @@ let rec clear_cacheline = function
     tr.map.finalize tr.input.value tr.output;
     clear_cacheline next
 
-let rec clear_cache (Trace tr) =
+let clear_cache (Trace tr) =
   clear_cacheline tr.input.cache;
   tr.input.cache <- Done;
   if tr.input.mark land mark_new = mark_new then
