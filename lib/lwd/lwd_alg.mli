@@ -1,4 +1,4 @@
-(** {0 Incremental transformation on custom data types}
+(** {0 Incremental transformation on custom data types}:
 
     This library provides the logic to memoize custom transformations on custom
     datatypes, generalizing `Lwd_seq` to your own algebraic data types.
@@ -26,13 +26,14 @@ type !'a t
 
 type folder_kind
 type folder
-val add : 'a t -> folder_kind -> folder -> folder
 
 (**
     We get an [a t] by equipping [a] with [a foldable]
    (the function that accumulates all sub-values to a folder).
 *)
-type 'a foldable = 'a -> folder_kind -> folder -> folder
+type 'a foldable = folder_kind -> folder -> 'a -> folder
+val add : 'a t foldable
+
 
 (** Lift an [a] to an [a t] *)
 val make : 'a -> 'a foldable -> 'a t
@@ -40,45 +41,53 @@ val make : 'a -> 'a foldable -> 'a t
 (** Access the [a] that was lifted *)
 val peek : 'a t -> 'a
 
-(** Map and traces: constructing incremental computations *)
+(** Map and tapes: constructing incremental computations *)
 
-(** A trace is an opaque type we use to track the sub-computations. *)
-type trace
+(** A tape is an opaque type we use to track the sub-computations. *)
+type tape
 
 (** An [('a, 'b) map] represents an incremental computation transformation from
     ['a t] to ['b t]. *)
 type ('a, 'b) map
 
-(** A map is function that receives a trace that can be applied when decomposing
-    the transformation. *)
-val map : ?finalize:('a -> 'b -> unit) -> (trace -> 'a -> 'b) -> ('a, 'b) map
+(** A map is function that receives a tape to record sub-transformations. *)
+val map : ?finalize:('a -> 'b -> unit) -> (tape -> 'a -> 'b) -> ('a, 'b) map
 
-(** Given a trace, one can apply a map on a sub-value. *)
-val apply : trace -> ('a, 'b) map -> 'a t -> 'b
+(** Given a tape, one can apply a map on a sub-value. *)
+val apply : tape -> ('a, 'b) map -> 'a t -> 'b
 
-(** Resumptions
-
-    A function ['a -> 'b] transforms values of type ['a] to ['b].
-    To incrementalize this transformation we need to remember the intermediate
-    steps that could be re-used when transforming an updated version of the data
-    structure.
-
-    This "function application with memory" is represented by a resumption: a
-    function that produces a result and an updated version of the
-    transformation.
-
-    Let's assume that
-      [f : 'a -> b] is a transformation, and
-      [r : ('a, 'b) resumption] it's incrementalized version.
-    We can apply both:
-    - [y = f x]
-    - [R (y, r') = r x]
-    Now if we have an [x'], then
-    - [y' = f x'] will recompute everything, but
-    - [R (y', r'') = r' x'] recompute only the delta between [x] and [x'].
+(** An incrementalized applicationt of a map.
+    if [f = transform map], then running sequentially:
+    1. first [y = f x] computes a complete transformation,
+    2. then [y' = f x'] recomputes just the delta between [y'] and [y]
 *)
-type ('a, 'b) resumption = R of ('a -> 'b * ('a, 'b) resumption) [@@ocaml.unboxed]
+val transform : ('a, 'b) map -> 'a t -> 'b
 
-(** Instantiating an incremental computation yields a resumption consumming
-    incremental values. *)
-val transform : ('a, 'b) map -> ('a t, 'b) resumption
+module Resumption : sig
+  (** Resumptions
+
+      A function ['a -> 'b] transforms values of type ['a] to ['b].
+      To incrementalize this transformation we need to remember the intermediate
+      steps that could be re-used when transforming an updated version of the data
+      structure.
+
+      This "function application with memory" is represented by a resumption: a
+      function that produces a result and an updated version of the
+      transformation.
+
+      Let's assume that
+        [f : 'a -> b] is a transformation, and
+        [r : 'a -> ('a, 'b) r] it's incrementalized version.
+      We can apply both:
+      - [y = f x]
+      - [ry = r x] where [ry.result = y]
+      Now if we have an [x'], then:
+      - [y' = f x'] will recompute everything, but
+      - [ry' = ry.next x'] recompute only the delta between [x] and [x'].
+  *)
+  type ('a, 'b) r = {result: 'b; next: 'a -> ('a, 'b) r }
+
+  (** Instantiating an incremental computation yields a resumption consumming
+      incremental values. *)
+  val of_map : ('a, 'b) map -> 'a t -> ('a t, 'b) r
+end

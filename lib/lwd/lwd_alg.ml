@@ -15,7 +15,7 @@ and cache =
   | More of {trace: trace; mutable next: cache}
   | Done
 
-and 'a foldable = 'a -> folder_kind -> folder -> folder
+and 'a foldable = folder_kind -> folder -> 'a -> folder
 
 and handle = Handle : 'a t -> handle [@@ocaml.unboxed]
 
@@ -38,8 +38,6 @@ and tape = trace list ref
 
 let make value fold = {fold; value; mark = 0; cache = Done}
 let peek t = t.value
-
-type ('a, 'b) resumption = R of ('a -> 'b * ('a, 'b) resumption) [@@ocaml.unboxed]
 
 let map ?finalize func =
   let finalize = match finalize with
@@ -118,7 +116,7 @@ let rec saturate_marks = function
   | Handle x :: xs ->
     if x.mark = mark_old || x.mark = mark_new then (
       x.mark <- mark_both;
-      saturate_marks (x.fold x.value Accumulate xs)
+      saturate_marks (x.fold Accumulate xs x.value)
     ) else
       saturate_marks xs
 
@@ -130,7 +128,7 @@ let clear t xs =
     Handle t :: xs
   )
 
-let add (type a) (t : a t) kind xs =
+let add (type a) kind xs (t : a t) =
   match kind with
   | Accumulate -> Handle t :: xs
   | Mark_new ->
@@ -156,9 +154,9 @@ let add (type a) (t : a t) kind xs =
 
 let propagate_mark t acc =
   if t.mark = mark_old then (
-    t.fold t.value Mark_old acc
+    t.fold Mark_old acc t.value
   ) else if t.mark = mark_new then (
-    t.fold t.value Mark_new acc
+    t.fold Mark_new acc t.value
   ) else (
     assert (t.mark = mark_both);
     acc
@@ -183,7 +181,7 @@ let rec clear_submarks = function
   | [] -> ()
   | Handle t :: xs ->
     assert (t.mark = 0);
-    clear_submarks (t.fold t.value Clear xs)
+    clear_submarks (t.fold Clear xs t.value)
 
 let clear_roots told tnew =
   clear_submarks (clear told (clear tnew []))
@@ -210,20 +208,52 @@ let cleanup traces told tnew =
   List.iter clear_cache traces;
   clear_roots told tnew
 
-let rec delta_transform traces map told tnew =
-  mark_roots told tnew;
-  List.iter populate_cache traces;
-  let tape = ref [] in
-  match apply tape map tnew with
-  | exception exn ->
-    cleanup traces told tnew;
-    raise exn
-  | result ->
-    cleanup traces told tnew;
-    (result, R (delta_transform !tape map tnew))
+let delta_transform r map =
+  let rec run traces told tnew =
+    mark_roots told tnew;
+    List.iter populate_cache traces;
+    let tape = ref [] in
+    match apply tape map tnew with
+    | exception exn ->
+      cleanup traces told tnew;
+      raise exn
+    | result ->
+      cleanup traces told tnew;
+      r := run !tape tnew;
+      result
+  in
+  run
 
 let transform map =
-  R (fun input ->
-      let tape = ref [] in
-      let result = apply tape map input in
-      (result, R (delta_transform !tape map input)))
+  let r = ref (fun _ -> assert false) in
+  let first input =
+    let tape = ref [] in
+    let result = apply tape map input in
+    r := delta_transform r map !tape input;
+    result
+  in
+  r := first;
+  fun x -> !r x
+
+module Resumption = struct
+  type ('a, 'b) r = {result: 'b; next: 'a -> ('a, 'b) r}
+
+  let rec delta traces map told tnew =
+    mark_roots told tnew;
+    List.iter populate_cache traces;
+    let tape = ref [] in
+    match apply tape map tnew with
+    | exception exn ->
+      cleanup traces told tnew;
+      raise exn
+    | result ->
+      cleanup traces told tnew;
+      {result; next = delta !tape map tnew}
+
+  (** Instantiating an incremental computation yields a resumption consumming
+      incremental values. *)
+  let of_map map input =
+    let tape = ref [] in
+    let result = apply tape map input in
+    {result; next = delta !tape map input}
+end
