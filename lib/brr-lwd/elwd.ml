@@ -409,3 +409,29 @@ let ul = cons Name.ul
 let var = cons Name.var
 let video = cons Name.video
 let wbr = void_cons Name.wbr
+
+type token = t Lwd.root
+
+let insert_sibling where anchor reactive =
+  let root = Lwd.observe reactive in
+  let last_element = ref (Lwd.quick_sample root) in
+  El.insert_siblings where anchor [ !last_element ];
+  let on_invalidate _ =
+    let _ : int =
+      G.request_animation_frame @@ fun _ ->
+      let new_element = Lwd.quick_sample root in
+      if !last_element = new_element then ()
+      else (
+        El.insert_siblings `Replace !last_element [ new_element ];
+        last_element := new_element
+      )
+    in
+    ()
+  in
+  Lwd.set_on_invalidate root on_invalidate;
+  root
+
+let remove_sibling root =
+  let element = Lwd.quick_sample root in
+  El.remove element;
+  Lwd.quick_release root
