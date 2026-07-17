@@ -16,6 +16,12 @@ type 'a col = [
 type handler (* An event handler *)
 val handler : ?opts:Ev.listen_opts -> 'a Ev.type' -> ('a Ev.t -> unit) -> handler
 
+type token
+
+val insert_sibling : [ `Before | `After | `Replace ] -> t -> t Lwd.t -> token
+
+val remove_sibling : token -> unit
+
 val v : ?d:document -> ?at:At.t col -> ?ev:handler col -> tag_name -> t col -> t Lwd.t
 (** [v ?d ?at name cs] is an element [name] with attribute [at]
     (defaults to [[]]) and children [cs]. If [at] specifies an
