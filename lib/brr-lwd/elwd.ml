@@ -456,7 +456,4 @@ let set_children el children =
   Lwd.set_on_invalidate root on_invalidate;
   root
 
-let release root =
-  let element = Lwd.quick_sample root in
-  El.remove element;
-  Lwd.quick_release root
+let release root = Lwd.quick_release root

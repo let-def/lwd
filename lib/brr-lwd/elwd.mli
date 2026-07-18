@@ -39,6 +39,7 @@ val set_children : t -> t col -> root
     set is updated until the return value is passed to {!release}. *)
 
 val release : root -> unit
+(** Stop updating the reactive elements, leaving what is currently there. *)
 
 (** {1:els Element constructors} *)
 
