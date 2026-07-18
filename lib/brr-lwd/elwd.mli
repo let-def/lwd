@@ -16,13 +16,6 @@ type 'a col = [
 type handler (* An event handler *)
 val handler : ?opts:Ev.listen_opts -> 'a Ev.type' -> ('a Ev.t -> unit) -> handler
 
-type token
-
-val insert_sibling : [ `Before | `After | `Replace ] -> t -> t Lwd.t -> token
-val set_children : t -> t col -> token
-
-val remove_sibling : token -> unit
-
 val v : ?d:document -> ?at:At.t col -> ?ev:handler col -> tag_name -> t col -> t Lwd.t
 (** [v ?d ?at name cs] is an element [name] with attribute [at]
     (defaults to [[]]) and children [cs]. If [at] specifies an
@@ -30,6 +23,22 @@ val v : ?d:document -> ?at:At.t col -> ?ev:handler col -> tag_name -> t col -> t
     exception of {!At.class'} whose occurences accumulate to define
     the final value. [d] is the document on which the element is
     defined it defaults {!Brr.G.document}. *)
+
+
+(** {1 Inserting reactive elements in the DOM}  *)
+
+type root
+
+val insert_sibling : [ `Before | `After | `Replace ] -> t -> t Lwd.t -> root
+(** Inserts a reactive element in the DOM, right before/after/instead of the
+    given element. The element is updated until the return value is passed to
+    {!release}. *)
+
+val set_children : t -> t col -> root
+(** Sets a set of reactive elements as the children of the given element. The
+    set is updated until the return value is passed to {!release}. *)
+
+val release : root -> unit
 
 (** {1:els Element constructors} *)
 

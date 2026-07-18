@@ -410,7 +410,7 @@ let var = cons Name.var
 let video = cons Name.video
 let wbr = void_cons Name.wbr
 
-type token = t Lwd.root
+type root = t Lwd.root
 
 let insert_sibling where anchor reactive =
   let root = Lwd.observe reactive in
@@ -452,7 +452,7 @@ let set_children el children =
   Lwd.set_on_invalidate root on_invalidate;
   root
 
-let remove_sibling root =
+let release root =
   let element = Lwd.quick_sample root in
   El.remove element;
   Lwd.quick_release root
