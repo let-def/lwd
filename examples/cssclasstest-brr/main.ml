@@ -40,7 +40,7 @@ let ui =
       Lwd_seq.monoid
       squares
   in
-  Elwd.div ~at:[ `P (At.class' (Jstr.v "game-board")) ] [
+  [
     `S (Lwd_seq.lift board)
   ]
 
@@ -51,8 +51,8 @@ let defer_after_dom_loading f =
 
 let () =
   defer_after_dom_loading @@ fun () ->
-  match El.find_first_by_selector (Jstr.v "#main") with
-  | None -> failwith "#main could not be found, check your html"
+  match El.find_first_by_selector (Jstr.v ".game-board") with
+  | None -> failwith ".game-board could not be found, check your html"
   | Some main ->
-    let _remove_token = Elwd.insert_sibling `Replace main ui in
+    let _remove_token = Elwd.set_children main ui in
     ()

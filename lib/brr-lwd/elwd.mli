@@ -19,6 +19,7 @@ val handler : ?opts:Ev.listen_opts -> 'a Ev.type' -> ('a Ev.t -> unit) -> handle
 type token
 
 val insert_sibling : [ `Before | `After | `Replace ] -> t -> t Lwd.t -> token
+val set_children : t -> t col -> token
 
 val remove_sibling : token -> unit
 

@@ -431,6 +431,27 @@ let insert_sibling where anchor reactive =
   Lwd.set_on_invalidate root on_invalidate;
   root
 
+let set_children el children =
+  let reactive =
+    let children, impure_children = consume_children children in
+    match impure_children with
+    | None -> El.set_children el children; Lwd.pure el
+    | Some children ->
+      update_children el children
+  in
+  let root = Lwd.observe reactive in
+  let _el = Lwd.quick_sample root in
+  let on_invalidate _ =
+    let _ : int =
+      G.request_animation_frame @@ fun _ ->
+      let _el = Lwd.quick_sample root in
+      ()
+    in
+    ()
+  in
+  Lwd.set_on_invalidate root on_invalidate;
+  root
+
 let remove_sibling root =
   let element = Lwd.quick_sample root in
   El.remove element;
