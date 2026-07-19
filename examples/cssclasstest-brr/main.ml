@@ -46,7 +46,9 @@ let ui =
 
 let defer_after_dom_loading f =
   let on_load _ = f () in
-  ignore (Ev.listen Ev.dom_content_loaded on_load (Window.as_target G.window));
+  let _listen_id =
+    Ev.listen Ev.dom_content_loaded on_load (Window.as_target G.window)
+  in
   ()
 
 let () =
