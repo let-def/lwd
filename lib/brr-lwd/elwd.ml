@@ -412,10 +412,10 @@ let wbr = void_cons Name.wbr
 
 type root = t Lwd.root
 
-let insert_sibling where anchor reactive =
+let insert first_insert anchor reactive =
   let root = Lwd.observe reactive in
   let last_element = ref (Lwd.quick_sample root) in
-  El.insert_siblings where anchor [ !last_element ];
+  first_insert anchor [!last_element];
   let on_invalidate _ =
     let _ : int =
       G.request_animation_frame @@ fun _ ->
@@ -430,6 +430,16 @@ let insert_sibling where anchor reactive =
   in
   Lwd.set_on_invalidate root on_invalidate;
   root
+
+let insert_sibling where anchor reactive =
+  let first_insert = El.insert_siblings where in
+  insert first_insert anchor reactive
+
+let append_child anchor reactive =
+  insert El.append_children anchor reactive
+
+let prepend_child anchor reactive =
+  insert El.prepend_children anchor reactive
 
 let set_children el children =
   let reactive =
