@@ -40,18 +40,21 @@ let ui =
       Lwd_seq.monoid
       squares
   in
-  Elwd.div ~at:[ `P (At.class' (Jstr.v "game-board")) ] [
+  [
     `S (Lwd_seq.lift board)
   ]
 
+let defer_after_dom_loading f =
+  let on_load _ = f () in
+  let _listen_id =
+    Ev.listen Ev.dom_content_loaded on_load (Window.as_target G.window)
+  in
+  ()
+
 let () =
-  let ui = Lwd.observe ui in
-  let on_invalidate _ =
-    ignore @@ G.request_animation_frame @@ fun _ ->
-      ignore @@ Lwd.quick_sample ui
-  in
-  let on_load _ =
-    El.append_children (Document.body G.document) [ Lwd.quick_sample ui ];
-    Lwd.set_on_invalidate ui on_invalidate
-  in
-  ignore @@ Ev.listen Ev.dom_content_loaded on_load (Window.as_target G.window)
+  defer_after_dom_loading @@ fun () ->
+  match El.find_first_by_selector (Jstr.v ".game-board") with
+  | None -> failwith ".game-board could not be found, check your html"
+  | Some main ->
+    let _remove_token = Elwd.set_children main ui in
+    ()

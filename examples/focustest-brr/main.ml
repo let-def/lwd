@@ -46,22 +46,17 @@ let ui =
     `S (Lwd_seq.map El.txt' values);
   ]
 
-let () =
-  let ui = Lwd.observe ui in
-  let on_invalidate _ =
-    Console.(log [str "on invalidate"]);
-    let _ : int =
-      G.request_animation_frame @@ fun _ ->
-      let _ui = Lwd.quick_sample ui in
-      (*El.set_children (Document.body G.document) [ui]*)
-      ()
-    in
-    ()
+let defer_after_dom_loading f =
+  let on_load _ = f () in
+  let _listen_id =
+    Ev.listen Ev.dom_content_loaded on_load (Window.as_target G.window)
   in
-  let on_load _ =
-    Console.(log [str "onload"]);
-    El.append_children (Document.body G.document) [Lwd.quick_sample ui];
-    Lwd.set_on_invalidate ui on_invalidate
-  in
-  ignore (Ev.listen Ev.dom_content_loaded on_load (Window.as_target G.window));
   ()
+
+let () =
+  defer_after_dom_loading @@ fun () ->
+  match El.find_first_by_selector (Jstr.v "#main") with
+  | None -> failwith "#main could not be found, check your html"
+  | Some main ->
+    let _remove_token = Elwd.insert_sibling `Replace main ui in
+    ()
