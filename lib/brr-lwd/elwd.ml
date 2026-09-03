@@ -446,12 +446,7 @@ let set_children el children =
     let children, impure_children = consume_children children in
     match impure_children with
     | None -> El.set_children el children; Lwd.pure el
-    | Some children ->
-      let root = Lwd.observe children in
-      let c = Lwd.quick_sample root in
-      El.set_children el (Lwd_seq.to_list c);
-      Lwd.quick_release root;
-      update_children el children
+    | Some children -> update_children el children
   in
   let root = Lwd.observe reactive in
   let _el = Lwd.quick_sample root in
