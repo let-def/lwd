@@ -36,7 +36,7 @@ val add : 'a t foldable
 
 
 (** Lift an [a] to an [a t] *)
-val make : 'a -> 'a foldable -> 'a t
+val make : 'a foldable -> 'a -> 'a t
 
 (** Access the [a] that was lifted *)
 val peek : 'a t -> 'a

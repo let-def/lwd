@@ -37,7 +37,7 @@ and trace = Trace : {
 
 and tape = trace list ref
 
-let make value fold = {fold; value; mark = 0; cache = Done}
+let make fold value = {fold; value; mark = 0; cache = Done}
 let peek t = t.value
 
 let map ?finalize func =
