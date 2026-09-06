@@ -119,6 +119,8 @@ sig
         remaining space (or 0 if the UI doesn't extend over free space)
   *)
 
+  val make_layout : ?w:int -> ?h:int -> ?sw:int -> ?sh:int -> unit -> layout_spec
+
   val pp_layout_spec : Format.formatter -> layout_spec -> unit
   (** Printing layout specification *)
 
