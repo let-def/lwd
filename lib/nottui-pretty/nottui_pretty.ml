@@ -77,9 +77,9 @@ let (++) (x : requirement) (y : requirement) : requirement =
 type ui = Nottui.ui
 
 (* Category of intermediate nodes *)
-type flat
-type nonflat
-type uncached
+type flat = private Flat
+type nonflat = private Nonflat
+type uncached = private Uncached
 
 type 'a ui_cache =
   | (* A placeholder for a cache that is empty *)
