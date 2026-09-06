@@ -59,6 +59,7 @@ and _ desc =
 *)
 and trace =
   | T0
+  | TA (* Like T0 but the node is still acquired (it is in a release queue somewhere ...) *)
   | T1 : _ t_ -> trace
   | T2 : _ t_ * _ t_ -> trace
   | T3 : _ t_ * _ t_ * _ t_ -> trace
@@ -156,7 +157,7 @@ let rec dump_trace : type a. a t_ -> unit =
   | Operator t ->
     Printf.eprintf "%a: Operator _ -> %a\n%!" addr obj dump_trace_aux t.trace;
     begin match t.trace with
-      | T0 -> ()
+      | T0 | TA -> ()
       | T1 a -> dump_trace a
       | T2 (a,b) -> dump_trace a; dump_trace b
       | T3 (a,b,c) -> dump_trace a; dump_trace b; dump_trace c
@@ -167,6 +168,7 @@ let rec dump_trace : type a. a t_ -> unit =
 
 and dump_trace_aux oc = function
   | T0 -> Printf.fprintf oc "T0"
+  | TA -> Printf.fprintf oc "TA"
   | T1 a -> Printf.fprintf oc "T1 %a" addr a
   | T2 (a,b) ->
     Printf.fprintf oc "T2 (%a, %a)" addr a addr b
@@ -297,6 +299,7 @@ let rec invalidate_node : type a . status -> a t_ -> unit = fun status -> functi
 (** Iterates through the parent trace to invalidate all observers. *)
 and invalidate_trace status = function
   | T0 -> ()
+  | TA -> ()
   | T1 x -> invalidate_node status x
   | T2 (x, y) ->
     invalidate_node status x;
@@ -394,8 +397,8 @@ let remove_reference (type a b) (origin: a t_) (self: b t_) : bool =
     (* Remove the origin from the parent trace *)
     let origin = obj_t origin in
     let trace = match t.trace with
-      | T0 -> assert false
-      | T1 x -> assert (obj_t x == origin); T0
+      | T0 | TA -> assert false
+      | T1 x -> assert (obj_t x == origin); TA
       | T2 (x, y) ->
         if obj_t x == origin then T1 y
         else if obj_t y == origin then T1 x
@@ -444,7 +447,7 @@ let remove_reference (type a b) (origin: a t_) (self: b t_) : bool =
     in
     t.trace <- trace;
     match trace with
-    | T0 -> true
+    | TA -> true
     | _  -> false
 
 (**
@@ -466,7 +469,8 @@ let rec sub_release
     | Root _ | Pure _ -> assert false
     | Operator t as self ->
       match t.trace with
-      | T0 ->
+      | TA ->
+        t.trace <- T0;
         (* [self] is not active anymore, since it's not reachable
            from any root. We can release its cached value and
            recursively release its subtree. *)
@@ -528,7 +532,7 @@ let rec sub_acquire : type a b . a t_ -> b t_ -> unit = fun origin ->
        is used, in which case we need to acquire its children *)
     let acquire = match t.trace with T0 -> true | _ -> false in
     let trace = match t.trace with
-      | T0 -> T1 origin
+      | T0 | TA -> T1 origin
       | T1 x -> T2 (origin, x)
       | T2 (x, y) -> T3 (origin, x, y)
       | T3 (x, y, z) -> T4 (origin, x, y, z)
