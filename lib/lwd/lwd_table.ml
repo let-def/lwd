@@ -545,6 +545,7 @@ let last : 'a t -> 'a row option = function
 let next : 'a row -> 'a row option = function
   | Root _ -> assert false
   | Leaf -> None
+  | Node {parent = Leaf; _} -> None
   | Node n as self ->
     match left_most n.right with
     | Some _ as x -> x
@@ -563,6 +564,7 @@ let next : 'a row -> 'a row option = function
 let prev : 'a row -> 'a row option = function
   | Root _ -> assert false
   | Leaf -> None
+  | Node {parent = Leaf; _} -> None
   | Node n as self ->
     match right_most n.left with
     | Some _ as x -> x
