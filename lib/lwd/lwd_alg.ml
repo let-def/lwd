@@ -77,14 +77,14 @@ let define map ?finalize func =
      past occurrence of this transformation
 *)
 
-external ( =!= ) : _ map -> _ map -> bool = "%noteq"
+external not_eq : _ map -> _ map -> bool = "%noteq"
 
 let rec find_next_cached map = function
   | Done -> assert false
   | More {next = Done; _} -> ()
-  | More ({next = More t' as next} as t) ->
+  | More ({next = More t' as next; _} as t) ->
     let Trace tr = t'.trace in
-    if tr.map =!= map then
+    if not_eq tr.map map then
       find_next_cached map next
     else (
       assert (Option.is_none tr.map.slot);
@@ -100,7 +100,7 @@ let apply tape map input =
     | Done -> ()
     | More t' ->
       let Trace tr = t'.trace in
-      if tr.map =!= map then
+      if not_eq tr.map map then
         find_next_cached map input.cache
       else (
         assert (Option.is_none tr.map.slot);
