@@ -209,6 +209,7 @@ struct
   }
   and desc =
     | Atom of image
+    | Paint of (w:int -> h:int -> image)
     | Size_sensor of t * size_sensor
     | Transient_sensor of t * frame_sensor
     | Permanent_sensor of t * frame_sensor
@@ -242,6 +243,13 @@ struct
       h = I.height img; sh = 0;
       focus = Focus.empty; flags = flags_none;
       desc = Atom img;
+      sensor_cache = None; cache; }
+
+  let paint ({w;h;sw;sh} : layout_spec) f : t =
+    { w; sw;
+      h; sh;
+      focus = Focus.empty; flags = flags_none;
+      desc = Paint f;
       sensor_cache = None; cache; }
 
   let space_1_0 = atom (I.void 1 0)
@@ -343,7 +351,8 @@ struct
       t.w t.h t.sw t.sh pp_desc t.desc
 
   and pp_desc ppf = function
-    | Atom _   -> Format.fprintf ppf "Atom _"
+    | Atom _  -> Format.fprintf ppf "Atom _"
+    | Paint _ -> Format.fprintf ppf "Paint _"
     | Size_sensor (desc, _) ->
       Format.fprintf ppf "Size_sensor (@[%a,@ _@])" pp desc
     | Transient_sensor (desc, _) ->
@@ -367,7 +376,7 @@ struct
     | Z (a, b) -> Format.fprintf ppf "Z (@[%a,@ %a@])" pp a pp b
 
   let iter f ui = match ui.desc with
-    | Atom _ -> ()
+    | Atom _ | Paint _ -> ()
     | Size_sensor (u, _) | Transient_sensor (u, _) | Permanent_sensor (u, _)
     | Resize (u, _, _) | Mouse_handler (u, _)
     | Focus_area (u, _) | Shift_area (u, _, _) | Event_filter (u, _)
@@ -448,7 +457,7 @@ struct
       if has_permanent_sensor ui.flags then
         ui.sensor_cache <- Some (ox, oy, sw, sh);
       match ui.desc with
-      | Atom _ -> ()
+      | Atom _ | Paint _ -> ()
       | Size_sensor (t, _) | Mouse_handler (t, _)
       | Focus_area (t, _) | Event_filter (t, _) ->
         update_sensors ox oy sw sh t
@@ -501,7 +510,7 @@ struct
     in
     let rec aux ox oy sw sh t =
       match t.desc with
-      | Atom _ -> false
+      | Atom _ | Paint _ -> false
       | X (a, b) ->
         let aw, bw = split ~a:a.w ~sa:a.sw ~b:b.w ~sb:b.sw sw in
         if x - ox < aw
@@ -596,6 +605,10 @@ struct
           { vx = Interval.make 0 sw;
             vy = Interval.make 0 sh;
             image = resize_canvas sw sh image }
+        | Paint f ->
+          { vx = Interval.make 0 sw;
+            vy = Interval.make 0 sh;
+            image = resize_canvas sw sh (f ~w:sw ~h:sh) }
         | Size_sensor (desc, handler) ->
           handler ~w:sw ~h:sh;
           render_node vx1 vy1 vx2 vy2 sw sh desc
@@ -677,7 +690,7 @@ struct
       | [] -> `Unhandled
       | ui :: tl ->
         begin match ui.desc with
-          | Atom _ -> iter tl
+          | Atom _ | Paint _ -> iter tl
           | X (a, b) | Y (a, b) | Z (a, b) ->
             (* Try left/top most branch first *)
             let st' =
@@ -720,7 +733,7 @@ struct
 
   let rec dispatch_focus t dir =
     match t.desc with
-    | Atom _ -> false
+    | Atom _ | Paint _ -> false
     | Mouse_handler (t, _) | Size_sensor (t, _)
     | Transient_sensor (t, _) | Permanent_sensor (t, _)
     | Shift_area (t, _, _) | Resize (t, _, _) | Event_filter (t, _) ->
