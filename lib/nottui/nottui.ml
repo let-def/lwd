@@ -221,7 +221,7 @@ struct
     | Y of t * t
     | Z of t * t
 
-
+  let make_layout ?(w=0) ?(h=0) ?(sw=0) ?(sh=0) () = {w;h;sw;sh}
   let layout_spec t : layout_spec =
     { w = t.w; h = t.h; sw = t.sw; sh = t.sh }
   let layout_width t = t.w
