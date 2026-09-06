@@ -147,6 +147,9 @@ sig
   val atom : image -> t
   (** Primitive surface that displays a Notty image *)
 
+  val paint : layout_spec -> (w:int -> h:int -> image) -> t
+  (** Like [atom], but adapts the image dynamically based on size *)
+
   val space : int -> int -> t
   (** Void space of dimensions [x,y]. Useful for padding and interstitial
       space. *)
