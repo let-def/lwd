@@ -577,3 +577,5 @@ let prev : 'a row -> 'a row option = function
           )
       in
       walk_root self n.parent
+
+let equal_row = (==)

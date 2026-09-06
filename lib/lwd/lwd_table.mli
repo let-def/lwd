@@ -78,6 +78,9 @@ val set : 'a row -> 'a -> unit
 val unset : 'a row -> unit
 (** Unset the value associated with a row *)
 
+val equal_row : 'a row -> 'a row -> bool
+(** Are two rows physically equal **)
+
 (** {2 Removing rows} *)
 
 val is_bound : 'a row -> bool
