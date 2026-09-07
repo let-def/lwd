@@ -192,7 +192,8 @@ let mark_roots told tnew =
   assert (told.mark = 0);
   assert (tnew.mark = 0);
   told.mark <- mark_old;
-  tnew.mark <- mark_new;
+  (* [lor]: when [told == tnew], the root is shared and marking stops there *)
+  tnew.mark <- tnew.mark lor mark_new;
   propagate_marks [] [Handle told; Handle tnew]
 
 let rec clear_submarks = function
@@ -204,26 +205,60 @@ let rec clear_submarks = function
 let clear_roots told tnew =
   clear_submarks (clear told (clear tnew []))
 
+(* Offering old traces for reuse
+   -----------------------------
+
+   After marking, a value is:
+   - [mark_old]: only reachable from the old root, it has been dropped;
+   - [mark_new] bit set: reachable from the new root (shared with the old one,
+     or the new root itself when it is physically equal to the old one);
+   - 0: never visited, the value lives below the frontier of shared values.
+
+   The marked region is O(delta), and old traces are only walked inside it:
+   traces of dropped values are traversed, and the first trace met on a
+   shared value is offered for reuse without looking further: its whole
+   sub-computation comes along if it is claimed by [apply].
+
+   Not looking below the frontier also guarantees that a trace is never
+   claimed more than once, so traces always form a tree. A trace that is not
+   claimed is therefore dead along with all its sub-traces, which can be
+   finalized without risking to finalize a trace that is still in use. *)
+
 let rec populate_cache (Trace tr as trace) =
-  if tr.input.mark land mark_new = mark_new then (
-    tr.input.cache <- More {trace; next = tr.input.cache};
+  let mark = tr.input.mark in
+  if mark land mark_new <> 0 then
+    tr.input.cache <- More {trace; next = tr.input.cache}
+  else if mark = mark_old then
     List.iter populate_cache tr.sub
-  )
 
-let rec clear_cacheline = function
+let rec finalize_trace (Trace tr) =
+  tr.map.finalize tr.input.value tr.output;
+  List.iter finalize_trace tr.sub
+
+let rec clear_cacheline finalize = function
   | Done -> ()
-  | More {trace = Trace tr; next} ->
-    tr.map.finalize tr.input.value tr.output;
-    clear_cacheline next
+  | More {trace; next} ->
+    if finalize then finalize_trace trace;
+    clear_cacheline finalize next
 
-let clear_cache (Trace tr) =
-  clear_cacheline tr.input.cache;
-  tr.input.cache <- Done;
-  if tr.input.mark land mark_new = mark_new then
-    List.iter populate_cache tr.sub
+(* Symmetric with [populate_cache]: resets the caches populated during the
+   traversal and, when [finalize] is set, finalizes the traces that have not
+   been claimed. On failure, [finalize] is false: the old traces are kept for
+   the next attempt. *)
+let rec clear_cache finalize (Trace tr as trace) =
+  let mark = tr.input.mark in
+  if mark land mark_new <> 0 then (
+    clear_cacheline finalize tr.input.cache;
+    tr.input.cache <- Done
+  ) else if mark = mark_old then (
+    if finalize then tr.map.finalize tr.input.value tr.output;
+    List.iter (clear_cache finalize) tr.sub
+  ) else if finalize then
+    (* Not visited by marking, but owned by a dropped trace *)
+    finalize_trace trace
 
-let cleanup traces told tnew =
-  List.iter clear_cache traces;
+let cleanup ~finalize traces told tnew =
+  List.iter (clear_cache finalize) traces;
   clear_roots told tnew
 
 let delta_transform r map =
@@ -233,10 +268,10 @@ let delta_transform r map =
     let tape = ref [] in
     match apply tape map tnew with
     | exception exn ->
-      cleanup traces told tnew;
+      cleanup ~finalize:false traces told tnew;
       raise exn
     | result ->
-      cleanup traces told tnew;
+      cleanup ~finalize:true traces told tnew;
       r := run !tape tnew;
       result
   in
@@ -262,10 +297,10 @@ module Resumption = struct
     let tape = ref [] in
     match apply tape map tnew with
     | exception exn ->
-      cleanup traces told tnew;
+      cleanup ~finalize:false traces told tnew;
       raise exn
     | result ->
-      cleanup traces told tnew;
+      cleanup ~finalize:true traces told tnew;
       {result; next = delta !tape map tnew}
 
   (** Instantiating an incremental computation yields a resumption consumming

@@ -31,23 +31,27 @@ bugs".
 **Update 6:** the pass was extended to `Lwd_alg`, a new module, which
 turned up the finding below.
 
+**Update 7:** the `Lwd_alg` finding below was then fixed directly, in
+`lib/lwd/lwd_alg.ml` (`populate_cache`/`clear_cache`). See "Fix applied"
+at the end of this section.
+
 ## `Lwd_alg`
 
 `Lwd_alg` is new on this branch (not present on `master`): a generalization
 of `Lwd_seq`'s incremental reuse-by-physical-identity scheme to arbitrary
 user-defined recursive algebraic data types.
 
-### BUG: incremental reuse only ever fires when the top-level input is entirely unchanged — any real edit forces a full recompute of the whole tree
+### FIXED: incremental reuse only ever fired when the top-level input was entirely unchanged — any real edit forced a full recompute of the whole tree
 
 The module's own documentation is explicit about the contract:
 
 > \[...\] then `y' = f x'` recomputes just the delta between `y'` and `y`.
 
-This does not hold. Built a plain binary tree (`Leaf of int | Node of tree
+This did not hold. Built a plain binary tree (`Leaf of int | Node of tree
 Lwd_alg.t * tree Lwd_alg.t`, wired up with a `fold_tree : tree Lwd_alg.foldable`
 per the intended usage pattern), and a memoizing sum via `Lwd_alg.transform`.
 Changing a *single* leaf, while passing the *exact same, physically unchanged*
-`Lwd_alg.t` values for every other leaf, still re-invokes the map function for
+`Lwd_alg.t` values for every other leaf, re-invoked the map function for
 **every node in the tree**, including leaves with no relationship whatsoever
 to the one that changed:
 
@@ -57,13 +61,13 @@ let t1 = node (node l1 l2) l3 in
 ignore (f t1);                          (* 5 calls: 2 Node + 3 Leaf *)
 let l3' = leaf 30 in
 let t2 = node (node l1 l2) l3' in       (* l1, l2 reused as-is *)
-ignore (f t2);                          (* STILL 5 calls, not 3 *)
+ignore (f t2);                          (* was 5 calls again, not 3 *)
 ```
 
-Reusing an intermediate (non-leaf) node physically unchanged doesn't help
-either — the same full recompute happens whether the untouched subtree is one
-leaf, several leaves, or a whole reused `Node`. It doesn't matter whether the
-call goes through `transform` or through `Resumption.of_map`/`.next`
+Reusing an intermediate (non-leaf) node physically unchanged didn't help
+either — the same full recompute happened whether the untouched subtree was
+one leaf, several leaves, or a whole reused `Node`. It didn't matter whether
+the call went through `transform` or through `Resumption.of_map`/`.next`
 (ruling out a `transform`-specific glue bug — both share the same
 `delta_transform`/`apply` machinery).
 
@@ -71,10 +75,11 @@ call goes through `transform` or through `Resumption.of_map`/`.next`
 *one* top-level `Trace` per call — the one produced by the single outermost
 `apply` at the root — and nests everything else inside its `sub` field.
 `populate_cache`, which is what makes a previously-computed result available
-for reuse on the next call, only recurses into `tr.sub` if `tr.input` (the
-trace's *own* root) is currently marked `mark_new`/`mark_both`:
+for reuse on the next call, used to only recurse into `tr.sub` if `tr.input`
+(the trace's *own* root) was currently marked `mark_new`/`mark_both`:
 
 ```ocaml
+(* before the fix *)
 let rec populate_cache (Trace tr as trace) =
   if tr.input.mark land mark_new = mark_new then (
     tr.input.cache <- More {trace; next = tr.input.cache};
@@ -89,10 +94,10 @@ root — there is no other way to thread an updated child into a `Node`. That
 means the top-level root passed to `transform`/`Resumption.next` is, by
 construction, *never* the same physical object as last time unless literally
 nothing changed anywhere. And the moment it isn't, `populate_cache`'s check
-fails at the very first (root) level, so it never even looks at `tr.sub` —
-the reuse opportunity for every deeper, genuinely-unchanged node is discarded
-before it's ever examined, regardless of how much of the tree is actually
-shared.
+used to fail at the very first (root) level, so it never even looked at
+`tr.sub` — the reuse opportunity for every deeper, genuinely-unchanged node
+was discarded before it was ever examined, regardless of how much of the
+tree was actually shared.
 
 `Lwd_seq`'s own reducer does not have this problem: `Marking.unsafe_traverse`
 and `Reducer.diff` traverse the *raw new sequence* and look up reuse
@@ -101,32 +106,75 @@ during a whole-tree BFS), not gated by whether some ancestor trace was also
 reused. Given `Lwd_alg` is pitched as generalizing exactly this behavior to
 custom types, and confirmed working for `Lwd_seq` under the equivalent
 "rebuild the spine, reuse the leaves" pattern (see `test_lwd_seq.ml`'s
-incrementality test), this looks like a real gap in the new design rather
+incrementality test), this looked like a real gap in the new design rather
 than an intentional restriction.
 
-**Consequence for `finalize`:** since `populate_cache` never marks the
-dropped leaves as reusable, `clear_cache` never gets to walk their (empty)
-cache and never invokes their `finalize` callback either — dropped nodes are
+**Consequence for `finalize`:** since `populate_cache` never marked the
+dropped leaves as reusable, `clear_cache` never got to walk their (empty)
+cache and never invoked their `finalize` callback either — dropped nodes were
 just silently abandoned as ordinary garbage rather than explicitly finalized.
-If `finalize` is used for resource cleanup (releasing something tied to a
-transformed value, e.g. disposing a widget), those resources are never
-released via this hook whenever a subtree is unnecessarily recomputed instead
-of genuinely dropped — which, per the above, is *always*, for any change
-anywhere in the tree.
+Since `finalize` is meant for resource cleanup (releasing something tied to a
+transformed value, e.g. disposing a widget), those resources would never have
+been released via this hook whenever a subtree was unnecessarily recomputed
+instead of genuinely dropped — which, per the above, was *always*, for any
+change anywhere in the tree.
 
-**Net effect:** for any recursive type built the natural way (immutable
-constructors wrapping `Lwd_alg.t` children — there's no other way to build
-one), `transform`/`Resumption` provide no incremental benefit over
+**Net effect (before the fix):** for any recursive type built the natural way
+(immutable constructors wrapping `Lwd_alg.t` children — there's no other way
+to build one), `transform`/`Resumption` provided no incremental benefit over
 recomputing from scratch on every call, other than the degenerate case of the
 exact same input recurring unchanged.
 
-Pinned by: `test/test_lwd_alg.ml`:
-- *"BUG: changing a single leaf forces recomputation of the ENTIRE tree ..."*
-- *"the same full-recompute happens through Resumption.of_map/.next ..."*
-- *"reusing an intermediate (non-leaf) wrapper unchanged does not help either ..."*
-- *"finalize is never invoked in the full-recompute scenario above ..."*
-- *"calling the SAME unchanged (physically identical) top-level value again is fully cached ..."* — the one case that **does** work, included for contrast.
+#### Fix applied
 
+A first attempt made `populate_cache` and `clear_cache` recurse into `tr.sub`
+unconditionally. That restored reuse, but walked (and allocated a cache cell
+for) every trace of the old computation on every edit, turning an O(delta)
+update into an O(size of the tree) one; it also finalized the
+sub-computations of reused traces, which are still live.
+
+The actual fix keeps the walk inside the region visited by marking, which is
+O(delta), like `Lwd_seq.Reducer`'s `unmark_old`:
+
+- a trace whose input is `mark_old` (dropped) is walked through: its
+  sub-traces may be reusable, and it is finalized afterward;
+- the first trace met on a shared input (`mark_new` bit set) is offered for
+  reuse and the walk stops there: if claimed, its sub-computations come along
+  with it; if not, it is finalized together with its sub-traces;
+- traces of unmarked inputs are not offered (they live below a shared value);
+  if one is owned by a dropped trace, it is finalized with it.
+
+Since nothing below a shared value is offered, a trace is never claimed
+twice, so traces always form a tree and finalizing an unclaimed trace with
+its sub-traces never touches a live one. Two smaller issues were fixed along
+the way: when `told == tnew`, marking now stops at the root instead of
+traversing the whole value; and a transform that raises no longer finalizes
+the old traces, which are the ones the next transform starts from.
+
+Verified with the demo above (now only `Leaf 30` and the outer `Node` get
+recomputed), and with a 200-case randomized property test
+(`test/test_lwd_alg.ml`, *"randomized: single-leaf edits on random tree
+shapes always recompute exactly the edited leaf's path to the root ..."*)
+that builds random tree shapes, performs random single-leaf edits, and
+checks on every round both that the result is correct and that the number of
+`map.func` invocations is *exactly* the depth of the edited leaf — no more
+(wasted work), no less (incorrect reuse).
+
+Pinned by: `test/test_lwd_alg.ml`:
+- *"FIXED: changing a single leaf only recomputes that leaf and its ancestors on the path to the root ..."*
+- *"FIXED: the same delta-only recompute happens through Resumption.of_map/.next ..."*
+- *"FIXED: reusing an intermediate (non-leaf) wrapper unchanged now correctly avoids recomputing it ..."*
+- *"FIXED: finalize now fires for a leaf that is genuinely dropped ..."*
+- *"FIXED: dropping a whole subtree (not just a single leaf) finalizes every leaf underneath it ..."*
+- *"two different maps applied to the SAME tree keep independent caches ..."*
+- *"a single-leaf edit visits O(depth) nodes, not O(size of the tree)"*
+- *"transforming the same value again does not traverse it"*
+- *"finalize is not called on the sub-computations of a reused computation"*
+- *"an exception during a delta transform does not finalize the old computations ..."*
+- *"randomized: single-leaf edits on random tree shapes always recompute exactly the edited leaf's path to the root ..."*
+- *"calling the SAME unchanged (physically identical) top-level value again is fully cached ..."* — already worked before the fix, included for contrast.
+
+Standalone, runnable repro (now a demonstration of the fix): `examples/alg_bug_demo.ml`.
 
 ## Fixed since the initial pass (previously reported against `master`)
 

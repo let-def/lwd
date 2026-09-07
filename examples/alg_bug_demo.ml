@@ -1,9 +1,10 @@
-(* Minimal repro for the Lwd_alg incrementality bug (see FINDINGS.md).
+(* Minimal repro for the Lwd_alg incrementality bug, now FIXED (see
+   FINDINGS.md and lib/lwd/lwd_alg.ml's populate_cache/clear_cache).
 
-   Expected (per lwd_alg.mli's documented contract): after changing a single
-   leaf, only that leaf and its ancestors on the path to the root should be
-   recomputed. Actual: every node in the tree is recomputed, including
-   leaves that are completely unrelated to the change. *)
+   Per lwd_alg.mli's documented contract, after changing a single leaf, only
+   that leaf and its ancestors on the path to the root should be recomputed.
+   That used to not hold (every node in the tree was recomputed, including
+   ones completely unrelated to the change); this now demonstrates the fix. *)
 
 type tree =
   | Leaf of int
@@ -46,7 +47,6 @@ let () =
   let t2 = node l12 l3' in
 
   print_endline "== round 2: only l3 changed, l12 = (node l1 l2) reused wholesale ==";
-  print_endline "expected: only \"recomputing Leaf 30\" (plus the outer Node) -- l12's own";
-  print_endline "Node computation, and l1/l2, shouldn't need to be touched at all";
-  print_endline "actual:";
+  print_endline "expected (and, since the fix, actual): only \"recomputing Leaf 30\" and";
+  print_endline "the outer Node -- l12's own Node computation, and l1/l2, are not touched:";
   Printf.printf "sum = %d\n%!" (f t2)

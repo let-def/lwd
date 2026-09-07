@@ -75,17 +75,22 @@ let () =
        assert (f t = 6);
        assert (!calls = 0))
 
+(* The following four tests originally pinned a real bug (see FINDINGS.md,
+   "Lwd_alg: incremental reuse only ever fires when the top-level input is
+   entirely unchanged"): `populate_cache`'s reuse lookup was gated on the
+   enclosing trace's own root identity, which is unavoidably fresh on every
+   genuine edit because [Lwd_alg.t]'s [value] field is immutable, so any
+   change anywhere defeated caching for the WHOLE tree. That's now fixed in
+   lwd_alg.ml (`populate_cache`/`clear_cache` walk through the traces of
+   dropped values, down to the first shared value, instead of stopping at
+   the first non-reused parent), and
+   these tests now confirm the fix: changing one leaf only recomputes that
+   leaf and its ancestors on the path to the root. *)
+
 let () =
-  test "BUG: changing a single leaf forces recomputation of the ENTIRE tree, including \
-        completely unrelated, physically-unchanged sibling subtrees -- not just the path \
-        from the changed leaf to the root. This contradicts the documented contract of \
-        `transform`/`Resumption` (\"recomputes just the delta\"), and the module's own \
-        stated goal of generalizing Lwd_seq (whose reducer DOES only recompute the \
-        changed element under an equivalent rebuilt-spine/reused-leaves pattern -- see \
-        test_lwd_seq.ml's incrementality test). See FINDINGS.md for the root-cause \
-        analysis (populate_cache's reuse lookup is gated by the enclosing trace's own \
-        root identity, which is unavoidably fresh on every genuine change because a \
-        parent's cached [value] field is immutable)."
+  test "FIXED: changing a single leaf only recomputes that leaf and its \
+        ancestors on the path to the root -- physically-unchanged sibling \
+        subtrees are correctly reused, not recomputed"
     (fun () ->
        let m, calls = make_counting_sum_map () in
        let f = Lwd_alg.transform m in
@@ -98,37 +103,37 @@ let () =
        let l3' = leaf 30 in
        let t2 = node (node l1 l2) l3' in
        assert (f t2 = 33);
-       (* if incrementality worked as documented, only l3' (and the 2
-          ancestor Node wrappers on its path to the root) would be
-          recomputed: 3 calls. Instead, everything is recomputed: 5 calls
-          (2 Node + Leaf 1 + Leaf 2 + Leaf 30), including l1 and l2 which
-          are completely unrelated to the change and were passed in as the
-          exact same physical Lwd_alg.t values as before. *)
-       assert (!calls = 5))
+       (* only l3' and its 2 ancestor Node wrappers are recomputed; l1 and l2
+          (unrelated, physically reused) are not touched at all *)
+       assert (!calls = 3))
 
 let () =
-  test "the same full-recompute happens through Resumption.of_map/.next, not just \
-        `transform` (rules out a transform-specific glue bug)"
+  test "FIXED: the same delta-only recompute happens through Resumption.of_map/.next, \
+        not just `transform`"
     (fun () ->
        let m, calls = make_counting_sum_map () in
        let l1 = leaf 1 and l2 = leaf 2 and l3 = leaf 3 and l4 = leaf 4 in
-       let t1 = node (node (node l1 l2) l3) l4 in
+       (* `mid` is bound once and reused physically below -- writing the
+          equivalent expression out twice would allocate two distinct
+          Lwd_alg.t wrappers with the same logical shape, which the library
+          has no way to tell apart from a genuine change (it only ever
+          compares by physical identity, never structurally) *)
+       let mid = node (node l1 l2) l3 in
+       let t1 = node mid l4 in
        let r1 = Lwd_alg.Resumption.of_map m t1 in
        assert (r1.result = 10);
        calls := 0;
        let l4' = leaf 40 in
-       let t2 = node (node (node l1 l2) l3) l4' in
+       let t2 = node mid l4' in
        let r2 = r1.next t2 in
        assert (r2.result = 46);
-       (* documented expectation: only l4' + the single ancestor Node on its
-          path to the root should be recomputed (2 calls). Observed: every
-          node is recomputed (7 calls: 3 Node + 4 Leaf). *)
-       assert (!calls = 7))
+       (* only l4' + the single ancestor Node on its path to the root
+          (the outermost one) are recomputed *)
+       assert (!calls = 2))
 
 let () =
-  test "reusing an intermediate (non-leaf) wrapper unchanged does not help either: the \
-        cache lookup is gated by the OUTERMOST recorded trace's root identity, not by \
-        how deep the actual physical sharing goes"
+  test "FIXED: reusing an intermediate (non-leaf) wrapper unchanged now correctly \
+        avoids recomputing it and everything beneath it"
     (fun () ->
        let m, calls = make_counting_sum_map () in
        let f = Lwd_alg.transform m in
@@ -143,19 +148,14 @@ let () =
           Node and l3 are new *)
        let t2 = node inner l3' in
        assert (f t2 = 33);
-       (* if reuse were keyed off physical identity independently of
-          ancestry, this would be 2 calls (outer Node + l3'). Observed: 5
-          (outer Node + inner Node + l1 + l2 + l3'), i.e. `inner` being
-          untouched bought nothing. *)
-       assert (!calls = 5))
+       (* only the outer Node + l3' are recomputed; `inner` (and l1, l2
+          beneath it) are reused wholesale, without even being visited *)
+       assert (!calls = 2))
 
 let () =
-  test "finalize is never invoked in the full-recompute scenario above: dropped leaves \
-        are silently abandoned rather than explicitly finalized, since populate_cache \
-        never got a chance to register them as \"reused\" in the first place. This \
-        matters if `finalize` is used for resource cleanup (e.g. releasing something \
-        associated with a transformed value): those resources would never be released \
-        via this hook when a whole subtree is (unnecessarily) recomputed."
+  test "FIXED: finalize now fires for a leaf that is genuinely dropped (replaced by a \
+        new one), even though it's nested under an ancestor that also had to be \
+        rebuilt"
     (fun () ->
        let finalized = ref [] in
        let m : (tree, int) Lwd_alg.map = Lwd_alg.undefined () in
@@ -173,7 +173,62 @@ let () =
        assert (f (node (node l1 l2) l3) = 6);
        let l2' = leaf 20 in
        assert (f (node (node l1 l2') l3) = 24);
-       assert (!finalized = []))
+       (* l2 (value 2, output 2) was dropped in favor of l2'; l1 and l3 are
+          still live (reused) and must not be finalized *)
+       assert (!finalized = [ (2, 2) ]))
+
+let () =
+  test "FIXED: dropping a whole subtree (not just a single leaf) finalizes every leaf \
+        underneath it, not just the ones directly touched"
+    (fun () ->
+       let finalized = ref [] in
+       let m : (tree, int) Lwd_alg.map = Lwd_alg.undefined () in
+       Lwd_alg.define m
+         ~finalize:(fun t out ->
+             match t with
+             | Leaf n -> finalized := (n, out) :: !finalized
+             | Node _ -> ())
+         (fun tape t ->
+            match t with
+            | Leaf n -> n
+            | Node (l, r) -> Lwd_alg.apply tape m l + Lwd_alg.apply tape m r);
+       let f = Lwd_alg.transform m in
+       let l1 = leaf 1 and l2 = leaf 2 and l3 = leaf 3 in
+       assert (f (node (node l1 l2) l3) = 6);
+       (* replace the whole (l1, l2) subtree with a fresh one; only l3 survives *)
+       let l4 = leaf 4 and l5 = leaf 5 in
+       assert (f (node (node l4 l5) l3) = 12);
+       assert (List.sort compare !finalized = [ (1, 1); (2, 2) ]))
+
+let () =
+  test "two different maps applied to the SAME tree keep independent caches (a node's \
+        cache list holds one entry per map, matched by identity, not overwritten)"
+    (fun () ->
+       let sum_m, sum_calls = make_counting_sum_map () in
+       let prod_calls = ref 0 in
+       let prod_m : (tree, int) Lwd_alg.map = Lwd_alg.undefined () in
+       Lwd_alg.define prod_m (fun tape t ->
+           incr prod_calls;
+           match t with
+           | Leaf n -> n
+           | Node (l, r) -> Lwd_alg.apply tape prod_m l * Lwd_alg.apply tape prod_m r);
+       let f_sum = Lwd_alg.transform sum_m in
+       let f_prod = Lwd_alg.transform prod_m in
+       let l1 = leaf 2 and l2 = leaf 3 and l3 = leaf 4 in
+       let mid = node l1 l2 in
+       let t1 = node mid l3 in
+       assert (f_sum t1 = 9);
+       assert (f_prod t1 = 24);
+       sum_calls := 0;
+       prod_calls := 0;
+       let l3' = leaf 40 in
+       let t2 = node mid l3' in
+       assert (f_sum t2 = 45);
+       assert (f_prod t2 = 240);
+       (* both maps independently only recompute the changed path (2 calls
+          each: the outer Node + l3'), regardless of the other map's cache *)
+       assert (!sum_calls = 2);
+       assert (!prod_calls = 2))
 
 let () =
   test "undefined: calling apply/transform on a map that was never `define`d raises Failure"
@@ -237,5 +292,222 @@ let () =
        assert (fa (node a1 a2') = 21);
        let b2' = leaf 2000 in
        assert (fb (node b1 b2') = 2100))
+
+(* --- traversal cost: an edit must cost O(delta), not O(size of the tree) ---
+
+   Counting map.func invocations only shows what was recomputed, not what was
+   traversed to find out. Walking the whole old trace tree on every edit
+   recomputes the right things while costing O(n) per edit, as does marking
+   below the frontier of shared values. The fold calls (marking) and the
+   allocated words (populating the caches allocates one cell per visited
+   trace) give a deterministic account of that cost. *)
+
+let fold_calls = ref 0
+
+let counting_fold_tree : tree Lwd_alg.foldable =
+ fun kind acc t -> incr fold_calls; fold_tree kind acc t
+
+let cleaf n = Lwd_alg.make counting_fold_tree (Leaf n)
+let cnode l r = Lwd_alg.make counting_fold_tree (Node (l, r))
+
+(* A complete tree of the given depth, with a function rebuilding its
+   leftmost spine around a fresh leaf. *)
+let rec complete depth =
+  if depth = 0 then cleaf 0 else cnode (complete (depth - 1)) (complete (depth - 1))
+
+let rec edit_leftmost v t =
+  match Lwd_alg.peek t with
+  | Leaf _ -> cleaf v
+  | Node (l, r) -> cnode (edit_leftmost v l) r
+
+(* Average (fold calls, minor words) per single-leaf edit *)
+let edit_cost depth =
+  let m, calls = make_counting_sum_map () in
+  let f = Lwd_alg.transform m in
+  let t = ref (complete depth) in
+  ignore (f !t);
+  let rounds = 64 in
+  fold_calls := 0;
+  calls := 0;
+  let words = Gc.minor_words () in
+  for i = 1 to rounds do
+    t := edit_leftmost i !t;
+    assert (f !t = i)
+  done;
+  let words = Gc.minor_words () -. words in
+  assert (!calls = rounds * (depth + 1));
+  (!fold_calls / rounds, int_of_float words / rounds)
+
+let () =
+  test "a single-leaf edit visits O(depth) nodes, not O(size of the tree)"
+    (fun () ->
+       let small_folds, small_words = edit_cost 6 in
+       let large_folds, large_words = edit_cost 16 in
+       (* 1024x more leaves, 17/7 times deeper: the cost must follow the
+          depth. A walk over the whole tree would multiply it by ~1000. *)
+       if large_folds > 4 * small_folds || large_words > 4 * small_words then
+         failwith
+           (Printf.sprintf
+              "edit cost does not scale with depth: \
+               depth 6: %d folds, %d words; depth 16: %d folds, %d words"
+              small_folds small_words large_folds large_words))
+
+let () =
+  test "transforming the same value again does not traverse it" (fun () ->
+      let m, calls = make_counting_sum_map () in
+      let f = Lwd_alg.transform m in
+      let t = complete 10 in
+      ignore (f t);
+      fold_calls := 0;
+      calls := 0;
+      ignore (f t);
+      assert (!calls = 0);
+      (* only the root is visited, to clear its mark *)
+      assert (!fold_calls <= 1))
+
+let make_finalizing_sum_map () =
+  let finalized = ref [] in
+  let m : (tree, int) Lwd_alg.map = Lwd_alg.undefined () in
+  Lwd_alg.define m
+    ~finalize:(fun t out ->
+        match t with
+        | Leaf n -> finalized := (n, out) :: !finalized
+        | Node _ -> ())
+    (fun tape t ->
+       match t with
+       | Leaf n -> n
+       | Node (l, r) -> Lwd_alg.apply tape m l + Lwd_alg.apply tape m r);
+  (m, finalized)
+
+let () =
+  test "finalize is not called on the sub-computations of a reused computation"
+    (fun () ->
+       let m, finalized = make_finalizing_sum_map () in
+       let f = Lwd_alg.transform m in
+       let x = node (leaf 1) (leaf 2) in
+       assert (f x = 3);
+       (* the old root is now nested in the new one: reused, with l1 and l2 *)
+       assert (f (node x (leaf 3)) = 6);
+       assert (!finalized = []);
+       (* and nested deeper, under a node which is dropped afterward *)
+       assert (f (node (node x (leaf 4)) (leaf 5)) = 12);
+       assert (List.sort compare !finalized = [ (3, 3) ]))
+
+let () =
+  test "an exception during a delta transform does not finalize the old computations, \
+        which are still the ones the next transform starts from"
+    (fun () ->
+       let finalized = ref [] in
+       let m : (tree, int) Lwd_alg.map = Lwd_alg.undefined () in
+       Lwd_alg.define m
+         ~finalize:(fun t out ->
+             match t with
+             | Leaf n -> finalized := (n, out) :: !finalized
+             | Node _ -> ())
+         (fun tape t ->
+            match t with
+            | Leaf 99 -> failwith "boom"
+            | Leaf n -> n
+            | Node (l, r) -> Lwd_alg.apply tape m l + Lwd_alg.apply tape m r);
+       let f = Lwd_alg.transform m in
+       let l1 = leaf 1 and l2 = leaf 2 in
+       assert (f (node l1 l2) = 3);
+       (try ignore (f (node l2 (leaf 99))); failwith "expected exception"
+        with Failure msg -> assert (msg = "boom"));
+       assert (!finalized = []);
+       assert (f (node (leaf 5) l2) = 7);
+       assert (!finalized = [ (1, 1) ]))
+
+(* --- randomized stress test: single-leaf edits on random tree shapes ---
+
+   Rather than hand-picked shapes, generate a random tree, then repeatedly
+   replace ONE random leaf (rebuilding only its ancestors, exactly like a
+   real incremental caller would), checking on every round that:
+   - the result matches a naive from-scratch sum
+   - the number of map.func invocations is EXACTLY the depth of the edited
+     leaf (its own recompute + one per ancestor up to the root) -- not more
+     (that would mean unrelated work was redone) and not less (that would
+     mean something was wrongly reused). *)
+
+type htree =
+  | HLeaf of { mutable cur : tree Lwd_alg.t; mutable value : int }
+  | HNode of { l : htree; r : htree; mutable cur : tree Lwd_alg.t }
+
+let cur_of = function HLeaf r -> r.cur | HNode r -> r.cur
+
+let fresh_value = let c = ref 0 in fun () -> incr c; !c
+
+let rec build_htree = function
+  | `Leaf ->
+    let v = fresh_value () in
+    HLeaf { cur = leaf v; value = v }
+  | `Node (a, b) ->
+    let ha = build_htree a and hb = build_htree b in
+    HNode { l = ha; r = hb; cur = node (cur_of ha) (cur_of hb) }
+
+let rec count_leaves = function
+  | HLeaf _ -> 1
+  | HNode { l; r; _ } -> count_leaves l + count_leaves r
+
+let rec to_list = function
+  | HLeaf r -> [ r.value ]
+  | HNode { l; r; _ } -> to_list l @ to_list r
+
+(* Replaces the [idx]-th leaf (in-order) with a fresh value, mutating [.cur]
+   along the path to the root. Returns the depth of the replaced leaf
+   (number of nodes recomputed: itself + every ancestor). *)
+let rec replace_leaf idx = function
+  | HLeaf r ->
+    let v = fresh_value () in
+    r.cur <- leaf v;
+    r.value <- v;
+    1
+  | HNode { l; r; _ } as self ->
+    let nl = count_leaves l in
+    let depth =
+      if idx < nl then replace_leaf idx l else replace_leaf (idx - nl) r
+    in
+    (match self with
+     | HNode t -> t.cur <- node (cur_of l) (cur_of r)
+     | HLeaf _ -> assert false);
+    depth + 1
+
+let gen_shape =
+  QCheck.Gen.(
+    sized_size (0 -- 6) (fix (fun self n ->
+        if n = 0 then return `Leaf
+        else map2 (fun a b -> `Node (a, b)) (self (n / 2)) (self (n / 2)))))
+
+let qcheck_random_edits =
+  QCheck.Test.make ~count:200 ~name:"random single-leaf edits recompute exactly the path to the root"
+    (QCheck.make (QCheck.Gen.pair gen_shape (QCheck.Gen.list_size QCheck.Gen.(1 -- 20) QCheck.Gen.nat)))
+    (fun (shape, edits) ->
+       let m, calls = make_counting_sum_map () in
+       let f = Lwd_alg.transform m in
+       let ht = build_htree shape in
+       let n = count_leaves ht in
+       assert (f (cur_of ht) = List.fold_left ( + ) 0 (to_list ht));
+       List.iter
+         (fun idx ->
+            let idx = idx mod n in
+            calls := 0;
+            let expected_depth = replace_leaf idx ht in
+            let expected_sum = List.fold_left ( + ) 0 (to_list ht) in
+            let actual_sum = f (cur_of ht) in
+            if actual_sum <> expected_sum then
+              failwith
+                (Printf.sprintf "sum mismatch: expected %d, got %d" expected_sum actual_sum);
+            if !calls <> expected_depth then
+              failwith
+                (Printf.sprintf "recompute count mismatch at leaf %d: expected %d (tree depth), got %d"
+                   idx expected_depth !calls))
+         edits;
+       true)
+
+let () =
+  test "randomized: single-leaf edits on random tree shapes always recompute exactly \
+        the edited leaf's path to the root, never more, never less (property test, \
+        200 random shapes x up to 20 edits each)"
+    (fun () -> qcheck_test "lwd_alg random single-leaf edits" qcheck_random_edits)
 
 let init = ()
