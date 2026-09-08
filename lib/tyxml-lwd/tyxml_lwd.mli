@@ -47,8 +47,8 @@ module Svg : sig
   val a_requiredExtensions : spacestrings Lwd.t -> [>`RequiredExtension] attrib
   val a_systemLanguage :
     commastrings Lwd.t -> [>`SystemLanguage] attrib
-  val a_externalRessourcesRequired :
-    bool Lwd.t -> [>`ExternalRessourcesRequired] attrib
+  val a_externalResourcesRequired :
+    bool Lwd.t -> [>`ExternalResourcesRequired] attrib
   val a_id : uri Lwd.t -> [>`Id] attrib
   val a_user_data : uri -> uri Lwd.t -> [>`User_data] attrib
   val a_xml_lang : uri Lwd.t -> [>`Xml_Lang] attrib
@@ -181,7 +181,7 @@ module Svg : sig
   val a_stdDeviation : number_optional_number Lwd.t -> [>`StdDeviation] attrib
   val a_feMorphology_operator : [<`Dilate|`Erode] Lwd.t -> [>`OperatorMorphology] attrib
   val a_radius : number_optional_number Lwd.t -> [>`Radius] attrib
-  val a_baseFrenquency : number_optional_number Lwd.t -> [>`BaseFrequency] attrib
+  val a_baseFrequency : number_optional_number Lwd.t -> [>`BaseFrequency] attrib
   val a_numOctaves : int Lwd.t -> [>`NumOctaves] attrib
   val a_seed : float Lwd.t -> [>`Seed] attrib
   val a_stitchTiles : [<`NoStitch|`Stitch] Lwd.t -> [>`StitchTiles] attrib
