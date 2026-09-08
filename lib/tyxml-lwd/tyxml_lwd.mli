@@ -275,7 +275,7 @@ module Svg : sig
   val a_stroke : paint Lwd.t -> [>`Stroke] attrib
   val a_stroke_width : Unit.length Lwd.t -> [>`Stroke_Width] attrib
   val a_stroke_linecap : [<`Butt|`Round|`Square] Lwd.t -> [>`Stroke_Linecap] attrib
-  val a_stroke_linejoin : [<`Bever|`Miter|`Round] Lwd.t -> [>`Stroke_Linejoin] attrib
+  val a_stroke_linejoin : [<`Bevel|`Miter|`Round] Lwd.t -> [>`Stroke_Linejoin] attrib
   val a_stroke_miterlimit : float Lwd.t -> [>`Stroke_Miterlimit] attrib
   val a_stroke_dasharray : Unit.length list Lwd.t -> [>`Stroke_Dasharray] attrib
   val a_stroke_dashoffset : Unit.length Lwd.t -> [>`Stroke_Dashoffset] attrib
@@ -510,7 +510,7 @@ module Html : sig
   val a_integrity : string Lwd.t -> [>`Integrity] attrib
   val a_mediagroup : string Lwd.t -> [>`Mediagroup] attrib
   val a_challenge : string Lwd.t -> [>`Challenge] attrib
-  val a_contenteditable : bool Lwd.t -> [>`Contenteditable] attrib
+  val a_contenteditable : [`True | `False | `Plaintext_only] Lwd.t -> [>`Contenteditable] attrib
   val a_contextmenu : string Lwd.t -> [>`Contextmenu] attrib
   val a_controls : unit -> [>`Controls] attrib
   val a_dir : [<`Ltr|`Rtl] Lwd.t -> [>`Dir] attrib
@@ -520,7 +520,7 @@ module Html : sig
   val a_formenctype : string Lwd.t -> [>`Formenctype] attrib
   val a_formnovalidate : unit -> [>`Formnovalidate] attrib
   val a_formtarget : string Lwd.t -> [>`Formtarget] attrib
-  val a_hidden : unit -> [>`Hidden] attrib
+  val a_hidden : [`Hidden | `Until_found] Lwd.t -> [>`Hidden] attrib
   val a_high : float Lwd.t -> [>`High] attrib
   val a_icon : Xml.uri Lwd.t -> [>`Icon] attrib
   val a_ismap : unit -> [>`Ismap] attrib

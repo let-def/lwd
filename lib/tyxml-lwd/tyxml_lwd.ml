@@ -620,7 +620,7 @@ module Svg : sig
   val a_stroke : paint Lwd.t -> [>`Stroke] attrib
   val a_stroke_width : Unit.length Lwd.t -> [>`Stroke_Width] attrib
   val a_stroke_linecap : [<`Butt|`Round|`Square] Lwd.t -> [>`Stroke_Linecap] attrib
-  val a_stroke_linejoin : [<`Bever|`Miter|`Round] Lwd.t -> [>`Stroke_Linejoin] attrib
+  val a_stroke_linejoin : [<`Bevel|`Miter|`Round] Lwd.t -> [>`Stroke_Linejoin] attrib
   val a_stroke_miterlimit : float Lwd.t -> [>`Stroke_Miterlimit] attrib
   val a_stroke_dasharray : Unit.length list Lwd.t -> [>`Stroke_Dasharray] attrib
   val a_stroke_dashoffset : Unit.length Lwd.t -> [>`Stroke_Dashoffset] attrib
@@ -788,7 +788,7 @@ end = struct
   let a_href                       = Raw_svg.a_href
   let a_requiredExtensions         = Raw_svg.a_requiredExtensions
   let a_systemLanguage             = Raw_svg.a_systemLanguage
-  let a_externalRessourcesRequired = Raw_svg.a_externalRessourcesRequired
+  let a_externalRessourcesRequired = Raw_svg.a_externalResourcesRequired
   let a_id                         = Raw_svg.a_id
   let a_user_data                  = Raw_svg.a_user_data
   let a_xml_lang                   = Raw_svg.a_xml_lang
@@ -891,7 +891,7 @@ end = struct
   let a_stdDeviation               = Raw_svg.a_stdDeviation
   let a_feMorphology_operator      = Raw_svg.a_feMorphology_operator
   let a_radius                     = Raw_svg.a_radius
-  let a_baseFrenquency             = Raw_svg.a_baseFrenquency
+  let a_baseFrenquency             = Raw_svg.a_baseFrequency
   let a_numOctaves                 = Raw_svg.a_numOctaves
   let a_seed                       = Raw_svg.a_seed
   let a_stitchTiles                = Raw_svg.a_stitchTiles
@@ -1190,7 +1190,7 @@ module Html : sig
   val a_integrity : string Lwd.t -> [>`Integrity] attrib
   val a_mediagroup : string Lwd.t -> [>`Mediagroup] attrib
   val a_challenge : string Lwd.t -> [>`Challenge] attrib
-  val a_contenteditable : bool Lwd.t -> [>`Contenteditable] attrib
+  val a_contenteditable : [`True | `False | `Plaintext_only] Lwd.t -> [>`Contenteditable] attrib
   val a_contextmenu : string Lwd.t -> [>`Contextmenu] attrib
   val a_controls : unit -> [>`Controls] attrib
   val a_dir : [<`Ltr|`Rtl] Lwd.t -> [>`Dir] attrib
@@ -1200,7 +1200,7 @@ module Html : sig
   val a_formenctype : string Lwd.t -> [>`Formenctype] attrib
   val a_formnovalidate : unit -> [>`Formnovalidate] attrib
   val a_formtarget : string Lwd.t -> [>`Formtarget] attrib
-  val a_hidden : unit -> [>`Hidden] attrib
+  val a_hidden : [`Hidden | `Until_found] Lwd.t -> [>`Hidden] attrib
   val a_high : float Lwd.t -> [>`High] attrib
   val a_icon : Xml.uri Lwd.t -> [>`Icon] attrib
   val a_ismap : unit -> [>`Ismap] attrib
