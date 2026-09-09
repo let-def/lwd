@@ -3,14 +3,14 @@
 	  "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
-    <title>Minesweeper</title>
+    <title>Minesweeper embryo</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <script type="text/javascript" src="main.js"></script>
 <style>
 .square {
-  width: 1px;;
-  height: 1px;
-  padding: 1px;
+  width: 10px;;
+  height: 10px;
+  padding: 10px;
   border: solid 1px;
 }
 .square-on {
@@ -19,9 +19,14 @@
 .square-off {
   background-color: blue;
 }
+.game-board {
+  width:800px;
+  display: flex;
+  flex-wrap: wrap;
+}
 </style>
   </head>
   <body>
-    <div id="main"></div>
+    <div class="game-board"></div>
   </body>
 </html>
