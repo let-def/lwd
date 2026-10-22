@@ -1,4 +1,4 @@
 (test
  (name run_tests)
- (modules framework test_lwd test_lwd_table test_lwd_seq test_lwd_utils run_tests)
+ (modules framework test_lwd test_lwd_alg test_lwd_table test_lwd_seq test_lwd_utils run_tests)
  (libraries lwd unix qcheck))

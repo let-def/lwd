@@ -1,7 +1,7 @@
 # Stress-testing findings for `lwd`
 
-This documents what came out of a stress-testing pass over `lwd`, `lwd_table`,
-`lwd_seq` and `lwd_utils`. The corresponding testsuite lives in
+This documents what came out of a stress-testing pass over `lwd`, `lwd_alg`,
+`lwd_table`, `lwd_seq` and `lwd_utils`. The corresponding testsuite lives in
 `test/` (`dune build test/run_tests.exe && ./_build/default/test/run_tests.exe`,
 or `dune test`); every finding below has a test pinning it down, referenced by
 name and file.
@@ -27,6 +27,105 @@ unsafe-mutation diagnostic) was fixed in `lib/lwd/lwd.ml` (`sample`). See
 **Update 5:** cycles are now detected and raise `Lwd.Cycle` (previously
 listed under "Notable, apparently-intentional behaviors"). See "Still-open
 bugs".
+
+**Update 6:** the pass was extended to `Lwd_alg`, a new module, which
+turned up the finding below.
+
+## `Lwd_alg`
+
+`Lwd_alg` is new on this branch (not present on `master`): a generalization
+of `Lwd_seq`'s incremental reuse-by-physical-identity scheme to arbitrary
+user-defined recursive algebraic data types.
+
+### BUG: incremental reuse only ever fires when the top-level input is entirely unchanged — any real edit forces a full recompute of the whole tree
+
+The module's own documentation is explicit about the contract:
+
+> \[...\] then `y' = f x'` recomputes just the delta between `y'` and `y`.
+
+This does not hold. Built a plain binary tree (`Leaf of int | Node of tree
+Lwd_alg.t * tree Lwd_alg.t`, wired up with a `fold_tree : tree Lwd_alg.foldable`
+per the intended usage pattern), and a memoizing sum via `Lwd_alg.transform`.
+Changing a *single* leaf, while passing the *exact same, physically unchanged*
+`Lwd_alg.t` values for every other leaf, still re-invokes the map function for
+**every node in the tree**, including leaves with no relationship whatsoever
+to the one that changed:
+
+```ocaml
+let l1 = leaf 1 and l2 = leaf 2 and l3 = leaf 3 in
+let t1 = node (node l1 l2) l3 in
+ignore (f t1);                          (* 5 calls: 2 Node + 3 Leaf *)
+let l3' = leaf 30 in
+let t2 = node (node l1 l2) l3' in       (* l1, l2 reused as-is *)
+ignore (f t2);                          (* STILL 5 calls, not 3 *)
+```
+
+Reusing an intermediate (non-leaf) node physically unchanged doesn't help
+either — the same full recompute happens whether the untouched subtree is one
+leaf, several leaves, or a whole reused `Node`. It doesn't matter whether the
+call goes through `transform` or through `Resumption.of_map`/`.next`
+(ruling out a `transform`-specific glue bug — both share the same
+`delta_transform`/`apply` machinery).
+
+**Root cause** (lwd_alg.ml): a `transform`/`Resumption` chain records exactly
+*one* top-level `Trace` per call — the one produced by the single outermost
+`apply` at the root — and nests everything else inside its `sub` field.
+`populate_cache`, which is what makes a previously-computed result available
+for reuse on the next call, only recurses into `tr.sub` if `tr.input` (the
+trace's *own* root) is currently marked `mark_new`/`mark_both`:
+
+```ocaml
+let rec populate_cache (Trace tr as trace) =
+  if tr.input.mark land mark_new = mark_new then (
+    tr.input.cache <- More {trace; next = tr.input.cache};
+    List.iter populate_cache tr.sub
+  )
+```
+
+But `'a Lwd_alg.t` is an immutable record (`value` is not a `mutable` field),
+so the *only* way to represent "the tree changed somewhere below the root" is
+to allocate a fresh wrapper for every ancestor from the change site up to the
+root — there is no other way to thread an updated child into a `Node`. That
+means the top-level root passed to `transform`/`Resumption.next` is, by
+construction, *never* the same physical object as last time unless literally
+nothing changed anywhere. And the moment it isn't, `populate_cache`'s check
+fails at the very first (root) level, so it never even looks at `tr.sub` —
+the reuse opportunity for every deeper, genuinely-unchanged node is discarded
+before it's ever examined, regardless of how much of the tree is actually
+shared.
+
+`Lwd_seq`'s own reducer does not have this problem: `Marking.unsafe_traverse`
+and `Reducer.diff` traverse the *raw new sequence* and look up reuse
+independently at every node (via a `shared_x` table keyed by identity found
+during a whole-tree BFS), not gated by whether some ancestor trace was also
+reused. Given `Lwd_alg` is pitched as generalizing exactly this behavior to
+custom types, and confirmed working for `Lwd_seq` under the equivalent
+"rebuild the spine, reuse the leaves" pattern (see `test_lwd_seq.ml`'s
+incrementality test), this looks like a real gap in the new design rather
+than an intentional restriction.
+
+**Consequence for `finalize`:** since `populate_cache` never marks the
+dropped leaves as reusable, `clear_cache` never gets to walk their (empty)
+cache and never invokes their `finalize` callback either — dropped nodes are
+just silently abandoned as ordinary garbage rather than explicitly finalized.
+If `finalize` is used for resource cleanup (releasing something tied to a
+transformed value, e.g. disposing a widget), those resources are never
+released via this hook whenever a subtree is unnecessarily recomputed instead
+of genuinely dropped — which, per the above, is *always*, for any change
+anywhere in the tree.
+
+**Net effect:** for any recursive type built the natural way (immutable
+constructors wrapping `Lwd_alg.t` children — there's no other way to build
+one), `transform`/`Resumption` provide no incremental benefit over
+recomputing from scratch on every call, other than the degenerate case of the
+exact same input recurring unchanged.
+
+Pinned by: `test/test_lwd_alg.ml`:
+- *"BUG: changing a single leaf forces recomputation of the ENTIRE tree ..."*
+- *"the same full-recompute happens through Resumption.of_map/.next ..."*
+- *"reusing an intermediate (non-leaf) wrapper unchanged does not help either ..."*
+- *"finalize is never invoked in the full-recompute scenario above ..."*
+- *"calling the SAME unchanged (physically identical) top-level value again is fully cached ..."* — the one case that **does** work, included for contrast.
 
 
 ## Fixed since the initial pass (previously reported against `master`)

@@ -33,3 +33,9 @@
  (modules long)
  (modes byte exe)
  (libraries lwd))
+
+(executable
+ (name alg_bug_demo)
+ (modules alg_bug_demo)
+ (modes byte exe)
+ (libraries lwd))
