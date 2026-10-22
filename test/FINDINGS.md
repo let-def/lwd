@@ -20,6 +20,10 @@ unsafe-mutation diagnostic) was fixed in `lib/lwd/lwd.ml` (`sample`). See
 (previously listed under "Notable, apparently-intentional behaviors"). See
 "Still-open bugs".
 
+**Update 4:** released nodes are now reset to `Eval_none` rather than
+`Eval_progress`, so a re-acquired graph behaves like a fresh one. See
+"Still-open bugs".
+
 
 ## Fixed since the initial pass (previously reported against `master`)
 
@@ -132,8 +136,7 @@ positive.
 
 The inner operators on the path of the exception are deliberately left at
 `Eval_progress`: for an operator that is not being evaluated, that state
-already behaves like `Eval_none` everywhere (`sub_release` leaves released
-nodes in it too). `sub_sample` recomputes it, and `invalidate_node` resets
+behaves like `Eval_none`. `sub_sample` recomputes it, and `invalidate_node` resets
 and propagates it. The two cases that stop propagation, `Fix` and the `Join`
 carve-out, are harmless there, because a stuck node never has an ancestor
 holding a cached value derived from it: every ancestor on the exception's
@@ -174,6 +177,26 @@ are evaluated left to right; `lwd.mli` documents this for `map2` and `app`
 
 Pinned by: `test/test_lwd.ml`, *"FIXED: map2/pair/app evaluate their
 operands left to right ..."*, which also checks a nested combination.
+
+### FIXED: a released and re-acquired graph did not behave like a fresh one
+
+`sub_release` left released nodes at `Eval_progress` instead of `Eval_none`
+(since `e299f31`, without a stated reason). The two states only differ in
+`invalidate_node`: `Eval_none` stops an invalidation, `Eval_progress` resets
+the node and propagates to its parents. A released node has no parents, but
+once a root acquires the graph again, the parts not evaluated yet are
+acquired but not computed, and user code running meanwhile could observe the
+difference. For instance, in a `map2` whose left operand sets a var read by
+the right one, the mutation was not flagged on a fresh graph but was flagged
+as unsafe after a release and re-observe.
+
+**Fix applied:** `sub_release` resets released nodes to `Eval_none`. This
+also keeps `Eval_progress` meaningful (see "No cycle detection" below). As
+a side effect, a node released in the middle of its own evaluation no
+longer caches the result when that evaluation finishes.
+
+Pinned by: `test/test_lwd.ml`, *"a released and re-acquired graph behaves
+like a fresh one ..."*.
 
 ## Notable, apparently-intentional behaviors (not bugs, but easy to trip over)
 

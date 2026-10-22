@@ -654,6 +654,25 @@ let () =
        Lwd.quick_release o)
 
 let () =
+  test "a released and re-acquired graph behaves like a fresh one: the left operand \
+        mutating a dependency of the right one is not flagged in either case \
+        (released nodes used to be left at Eval_progress, so the invalidation \
+        propagated up to the root and was flagged)"
+    (fun () ->
+       let x = Lwd.var 0 and y = Lwd.var 0 in
+       let lhs = Lwd.map ~f:(fun v -> Lwd.set y (v + 100); v) (Lwd.get x) in
+       let rhs = Lwd.map ~f:(fun v -> v) (Lwd.get y) in
+       let d = Lwd.map2 lhs rhs ~f:(fun a b -> (a, b)) in
+       let o = Lwd.observe d in
+       let logged = capture_unsafe (fun () -> assert (Lwd.quick_sample o = (0, 100))) in
+       assert (logged = []);
+       Lwd.quick_release o;
+       let o = Lwd.observe d in
+       let logged = capture_unsafe (fun () -> assert (Lwd.quick_sample o = (0, 100))) in
+       assert (logged = []);
+       Lwd.quick_release o)
+
+let () =
   test "bind: mutating a var read by the freshly-selected branch, during that branch's \
         own evaluation, is flagged unsafe"
     (fun () ->

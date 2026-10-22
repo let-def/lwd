@@ -475,7 +475,7 @@ let rec sub_release
            from any root. We can release its cached value and
            recursively release its subtree. *)
         let value = t.value in
-        t.value <- Eval_progress;
+        t.value <- Eval_none;
         begin match t.desc with
           | Map  (x, _) -> sub_release_child failures self x
           | Map2 (x, y, _) ->
