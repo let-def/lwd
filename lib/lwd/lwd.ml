@@ -641,9 +641,20 @@ let sub_sample queue =
         t.value <- Eval_progress;
         let result : b = match t.desc with
           | Map  (x, f) -> f (aux self x)
-          | Map2 (x, y, f) -> f (aux self x) (aux self y)
-          | Pair (x, y) -> (aux self x, aux self y)
-          | App  (f, x) -> (aux self f) (aux self x)
+          (* Operands are evaluated left to right: OCaml leaves the
+             evaluation order of [f a b] and [(a, b)] unspecified. *)
+          | Map2 (x, y, f) ->
+            let x = aux self x in
+            let y = aux self y in
+            f x y
+          | Pair (x, y) ->
+            let x = aux self x in
+            let y = aux self y in
+            (x, y)
+          | App  (f, x) ->
+            let f = aux self f in
+            let x = aux self x in
+            f x
           | Fix {doc; wrt} ->
             let rec loop () =
               let _ = aux self wrt in

@@ -16,6 +16,10 @@ findings that no longer reproduce are marked **FIXED**. The core library was
 unsafe-mutation diagnostic) was fixed in `lib/lwd/lwd.ml` (`sample`). See
 "Still-open bugs".
 
+**Update 3:** `map2`/`pair`/`app` now evaluate their operands left to right
+(previously listed under "Notable, apparently-intentional behaviors"). See
+"Still-open bugs".
+
 
 ## Fixed since the initial pass (previously reported against `master`)
 
@@ -151,6 +155,26 @@ Pinned by: `test/test_lwd.ml`:
   checks values, `on_invalidate` calls, prim acquire/release balance and the
   unsafe-mutation logger.
 
+### FIXED: `map2`/`pair`/`app` evaluated their right operand before their left one
+
+`sub_sample`'s cases for these three combinators were written as direct
+nested applications, e.g. `f (aux self x) (aux self y)` for `Map2`. OCaml's
+evaluation order for function arguments is unspecified by the language, and
+both the bytecode and native backends evaluate `f a b` as "compute `b`, then
+`a`, then apply" — so for `Lwd.map2 lhs rhs ~f`, `rhs` was sampled before
+`lhs`, `Lwd.pair a b` sampled `b` before `a`, and `Lwd.app fdoc xdoc`
+sampled `xdoc` before `fdoc`. Since this fell out of an unspecified language
+behavior, it was not guaranteed to be stable across OCaml
+versions/optimization settings either.
+
+**Fix applied:** operands are now bound with `let` in source order, so they
+are evaluated left to right; `lwd.mli` documents this for `map2` and `app`
+(and `pair`, defined as a `map2`). This matches the order in which
+`sub_acquire` and `sub_release` already visit them.
+
+Pinned by: `test/test_lwd.ml`, *"FIXED: map2/pair/app evaluate their
+operands left to right ..."*, which also checks a nested combination.
+
 ## Notable, apparently-intentional behaviors (not bugs, but easy to trip over)
 
 All of the following were re-verified against `fixes` and still hold exactly
@@ -158,40 +182,28 @@ as originally described against `master` — the invalidation-logic rewrite
 changed *how* unsafe mutations are detected (see above) but not these
 user-visible outcomes.
 
-### `map2`/`pair`/`app` evaluate their right operand before their left one
-
-`sub_sample`'s cases for these three combinators are written as direct nested
-applications, e.g. `f (aux self x) (aux self y)` for `Map2`. OCaml's
-evaluation order for function arguments is unspecified by the language
-(and famously not left-to-right in practice); both the bytecode and native
-backends evaluate `f a b` as "compute `b`, then `a`, then apply" — this project
-inherits that ordering. So for `Lwd.map2 lhs rhs ~f`, `rhs` is sampled before
-`lhs`, `Lwd.pair a b` samples `b` before `a`, and `Lwd.app fdoc xdoc` samples
-`xdoc` before `fdoc`. Since this falls out of an unspecified language
-behavior rather than a documented contract, it is also not guaranteed to be
-stable across OCaml versions/optimization settings — code that relies on it
-is relying on an implementation accident.
-
-Practically: any side effect performed by one operand of `map2`/`pair`/`app`
-(most commonly, mutating an `Lwd.var`) should not assume it runs before or
-after its sibling's side effects.
-
-Pinned by: `test/test_lwd.ml`, *"map2/pair/app evaluate their RIGHT operand
-before their left one ..."*.
-
-### Cross-sibling mutation in `map2`/`pair`/`app` is always flagged unsafe
+### Cross-sibling mutation in `map2`/`pair`/`app` is flagged unsafe, unless the target was never evaluated
 
 A comment above `invalidate_node` in `lwd.ml` floats the idea of treating
 `map2`/`pair`/`app` operands as independent enough that one could mutate a
 variable the other one reads, since they're "morally" evaluated in parallel,
 but explicitly says this was never implemented. Still true post-rewrite:
-mutating a dependency of the sibling operand (regardless of which one
-physically runs first) is flagged `` `Mutation `` exactly like any other
-re-entrant mutation, because the invalidation still propagates up to the
-currently-`Eval_progress` root regardless of which sibling triggered it.
+the right operand mutating a dependency of the left one, which was already
+read, is flagged `` `Mutation `` exactly like any other re-entrant mutation,
+because the invalidation propagates up to the currently-`Eval_progress` root.
 
-Pinned by: `test/test_lwd.ml`, *"map2: mutating a dependency of the sibling
-operand is flagged unsafe ..."*.
+The left operand mutating a dependency of the right one depends on whether
+that dependency holds a cached value. If it was never evaluated (typically on
+the first sample), `invalidate_node` stops at its `Eval_none` state: nothing
+is flagged, and the right operand, which runs next, reads the new value. On
+later samples the dependency is cached, so the same mutation is flagged. The
+diagnostic is conservative here: the value read is not stale either way.
+Before operands were evaluated left to right, the same applied with the roles
+swapped.
+
+Pinned by: `test/test_lwd.ml`, *"map2: the right operand mutating a
+dependency of the left one ..."* and *"map2: the left operand mutating a
+dependency of the right one is only flagged ..."*.
 
 ### The "safe inner invalidation during a Join's outer evaluation" carve-out is real, and narrow
 
@@ -316,7 +328,7 @@ recording so the reasoning isn't lost:
   construction time (`Pure vx -> Pure (f vx)` in `lwd.ml`), bypassing
   `sub_sample` entirely — so the test was unknowingly measuring OCaml's
   argument-evaluation order for the *test's own* function calls, not `lwd`'s
-  operand evaluation order at all. It happened to agree with the real
-  answer by coincidence (both are instances of the same right-to-left
-  convention). Rewritten to use `Lwd.var`/`Lwd.get` as the base document,
+  operand evaluation order at all. It happened to agree with the
+  answer at the time by coincidence (both were instances of the same
+  right-to-left convention). Rewritten to use `Lwd.var`/`Lwd.get` as the base document,
   which forces a genuine, lazily-evaluated `Operator` node.

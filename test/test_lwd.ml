@@ -136,13 +136,9 @@ let () =
 (* --- Evaluation order --- *)
 
 let () =
-  test "map2/pair/app evaluate their RIGHT operand before their left one -- the reverse \
-        of what the argument order in source suggests. This isn't a documented Lwd \
-        contract: sub_sample's Map2/Pair/App cases are written as direct applications \
-        like `f (aux self x) (aux self y)`, and OCaml's evaluation order for function \
-        arguments is unspecified by the language, just consistently right-to-left in \
-        both the bytecode and native backends. Code with side effects in operands \
-        (e.g. mutating a var) must not assume left-to-right evaluation. See FINDINGS.md."
+  test "FIXED: map2/pair/app evaluate their operands left to right, as documented. \
+        They used to evaluate the right one first, an accident of OCaml's unspecified \
+        argument evaluation order. See FINDINGS.md."
     (fun () ->
        (* [mk]'s base document must NOT be pure ([Lwd.return]/[Lwd.pure]):
           [Lwd.map] over a pure value is folded into a new pure value
@@ -150,8 +146,8 @@ let () =
           vx)] branch of [map] in lwd.ml), bypassing [sub_sample] entirely.
           An earlier version of this test used [Lwd.return] here and
           "passed" for the wrong reason: it was measuring OCaml's
-          right-to-left function-argument evaluation at the call to [mk],
-          not sub_sample's operand evaluation order at all. Using a
+          function-argument evaluation order at the call to [mk], not
+          sub_sample's operand evaluation order at all. Using a
           [Lwd.var] keeps this a genuine [Operator] node whose [f] only
           runs later, during actual sampling. *)
        let trigger = Lwd.var () in
@@ -165,13 +161,20 @@ let () =
          (v, List.rev !order, label)
        in
        let v, ord, label = check_one "map2" (Lwd.map2 (mk "L" 1) (mk "R" 2) ~f:( + )) in
-       assert (v = 3 && ord = [ "R"; "L" ] && label = "map2");
+       assert (v = 3 && ord = [ "L"; "R" ] && label = "map2");
        let v, ord, label = check_one "pair" (Lwd.pair (mk "L" 1) (mk "R" 2)) in
-       assert (v = (1, 2) && ord = [ "R"; "L" ] && label = "pair");
+       assert (v = (1, 2) && ord = [ "L"; "R" ] && label = "pair");
        let v, ord, label =
          check_one "app" (Lwd.app (Lwd.map ~f:( + ) (mk "L" 1)) (mk "R" 2))
        in
-       assert (v = 3 && ord = [ "R"; "L" ] && label = "app"))
+       assert (v = 3 && ord = [ "L"; "R" ] && label = "app");
+       let v, ord, label =
+         check_one "nested"
+           (Lwd.map2 ~f:( + )
+              (Lwd.map2 (mk "A" 1) (mk "B" 2) ~f:( + ))
+              (Lwd.app (Lwd.map ~f:( + ) (mk "C" 3)) (mk "D" 4)))
+       in
+       assert (v = 10 && ord = [ "A"; "B"; "C"; "D" ] && label = "nested"))
 
 (* --- Lifecycle --- *)
 
@@ -615,20 +618,38 @@ let () =
       Lwd.quick_release o)
 
 let () =
-  test "map2: mutating a dependency of the sibling operand is flagged unsafe (siblings \
-        are NOT treated as isolated, despite being conceptually parallel; true regardless \
-        of which operand actually runs first -- see the evaluation-order test above)"
+  test "map2: the right operand mutating a dependency of the left one, which was \
+        already read, is flagged unsafe (siblings are NOT treated as isolated, despite \
+        being conceptually parallel)"
     (fun () ->
        (* Per a comment in lwd.ml above invalidate_node, the author considered
           (but did not implement) relaxing this so that map2/pair/app operands
           could mutate each other's dependencies freely. Today, doing so is
           flagged the same as any other re-entrant mutation. *)
        let x = Lwd.var 0 and y = Lwd.var 0 in
-       let lhs = Lwd.map ~f:(fun v -> Lwd.set y 100; v) (Lwd.get x) in
+       let lhs = Lwd.get x in
+       let rhs = Lwd.map ~f:(fun v -> Lwd.set x 100; v) (Lwd.get y) in
+       let d = Lwd.map2 lhs rhs ~f:(fun a b -> (a, b)) in
+       let o = Lwd.observe d in
+       let logged = capture_unsafe (fun () -> assert (Lwd.quick_sample o = (0, 0))) in
+       assert (logged = [ `Mutation ]);
+       Lwd.quick_release o)
+
+let () =
+  test "map2: the left operand mutating a dependency of the right one is only flagged \
+        if that dependency already holds a cached value: on the first sample it was \
+        never evaluated, so the invalidation stops there and the right operand reads \
+        the new value; on later samples it is cached and the mutation is flagged"
+    (fun () ->
+       let x = Lwd.var 0 and y = Lwd.var 0 in
+       let lhs = Lwd.map ~f:(fun v -> Lwd.set y (v + 100); v) (Lwd.get x) in
        let rhs = Lwd.get y in
        let d = Lwd.map2 lhs rhs ~f:(fun a b -> (a, b)) in
        let o = Lwd.observe d in
-       let logged = capture_unsafe (fun () -> ignore (Lwd.quick_sample o)) in
+       let logged = capture_unsafe (fun () -> assert (Lwd.quick_sample o = (0, 100))) in
+       assert (logged = []);
+       Lwd.set x 1;
+       let logged = capture_unsafe (fun () -> assert (Lwd.quick_sample o = (1, 101))) in
        assert (logged = [ `Mutation ]);
        Lwd.quick_release o)
 
