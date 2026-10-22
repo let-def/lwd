@@ -6,11 +6,16 @@ This documents what came out of a stress-testing pass over `lwd`, `lwd_table`,
 or `dune test`); every finding below has a test pinning it down, referenced by
 name and file.
 
-**Update:** this pass was first run against `master` (818ce8a), then re-run
+**Update 1:** this pass was first run against `master` (818ce8a), then re-run
 against a branch that turned out to already contain fixes for several of the
 bugs found the first time around. This revision reflects that branch:
 findings that no longer reproduce are marked **FIXED**. The core library was
 **not modified** as part of either pass.
+
+**Update 2:** the last open bug (an exception during evaluation confusing the
+unsafe-mutation diagnostic) was fixed in `lib/lwd/lwd.ml` (`sample`). See
+"Still-open bugs".
+
 
 ## Fixed since the initial pass (previously reported against `master`)
 
@@ -103,24 +108,48 @@ for this specific historical bug.
 
 ## Still-open bugs
 
-### An exception during evaluation leaves a node's diagnostic state confused
+None.
 
-Still reproduces on `fixes`, via a slightly different path than originally
-described (the invalidation-logic rewrite above changed *how* this happens,
-not *whether* it happens): if a computation raises while being evaluated,
-`sample`/`sub_sample` never get to run the code that would cache the result,
-so both the failing node *and the observing root itself* are left at
-`Eval_progress`. The root being stuck this way is what matters: the very next
-time anything invalidates it — even a completely unrelated, perfectly
-ordinary `Lwd.set` — `invalidate_node`'s `Root` case sees `Eval_progress` and
-unconditionally sets `status.unsafe <- true`, exactly as if a real re-entrant
-sample were in progress. Recomputation itself still works correctly
-afterwards (the stale state gets reset to `Eval_none` as a side effect of
-being invalidated); only the diagnostic is a false positive, which could
-still send someone chasing a phantom bug in their own code.
+### FIXED: an exception during evaluation left the root's diagnostic state confused
 
-Pinned by: `test/test_lwd.ml`, *"BUG: after an exception escapes evaluation,
-the node is left stuck at Eval_progress, ..."*.
+If a computation raised while being evaluated, `sample`/`sub_sample` never
+got to run the code that caches the result, so both the failing node *and the
+observing root itself* were left at `Eval_progress`. The root being stuck this
+way is what mattered: the very next time anything invalidated it — even a
+completely unrelated, perfectly ordinary `Lwd.set` — `invalidate_node`'s
+`Root` case saw `Eval_progress` and unconditionally set
+`status.unsafe <- true`, exactly as if a real re-entrant sample were in
+progress. Recomputation itself was correct; only the diagnostic was a false
+positive.
+
+**Fix applied:** `sample` now resets the root to `Eval_none` when
+`sub_sample` raises, then re-raises. This costs one exception handler per
+`sample` call, not per node.
+
+The inner operators on the path of the exception are deliberately left at
+`Eval_progress`: for an operator that is not being evaluated, that state
+already behaves like `Eval_none` everywhere (`sub_release` leaves released
+nodes in it too). `sub_sample` recomputes it, and `invalidate_node` resets
+and propagates it. The two cases that stop propagation, `Fix` and the `Join`
+carve-out, are harmless there, because a stuck node never has an ancestor
+holding a cached value derived from it: every ancestor on the exception's
+path is stuck too, and any other ancestor was already invalidated when the
+node was. Adding a handler per node in `sub_sample` would put it on the hot
+path for no observable benefit.
+
+The one consequence: `Eval_progress` on an operator does not mean "currently
+being evaluated". Cycle detection based on that state (see "No cycle
+detection" below) would need a distinct state.
+
+Pinned by: `test/test_lwd.ml`:
+- *"FIXED: after an exception escapes evaluation, the root is reset to Eval_none ..."*
+- the *"exceptions: ..."* tests that follow it, which check that inner nodes
+  left at `Eval_progress` are harmless: deep chains, repeated failures,
+  stuck nodes shared between roots or with more than 4 parents (`Tn`
+  traces), `fix` and `bind` (selector or branch raising), prims whose
+  `acquire` raises, and releasing a root right after a failed sample. Each
+  checks values, `on_invalidate` calls, prim acquire/release balance and the
+  unsafe-mutation logger.
 
 ## Notable, apparently-intentional behaviors (not bugs, but easy to trip over)
 

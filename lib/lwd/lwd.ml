@@ -732,7 +732,16 @@ let sample queue x = match prj x with
         sub_acquire self t.child;
       );
       t.value <- Eval_progress;
-      let value = sub_sample queue self t.child in
+      let value =
+        match sub_sample queue self t.child with
+        | value -> value
+        | exception exn ->
+          (* Operators left at [Eval_progress] behave like [Eval_none], but a
+             root at [Eval_progress] would flag the next invalidation as
+             unsafe. *)
+          t.value <- Eval_none;
+          raise exn
+      in
       begin match t.value with
         | Eval_progress -> t.value <- Eval_some value; (* cache value *)
         | Eval_none | Eval_some _ -> ()

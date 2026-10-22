@@ -228,23 +228,283 @@ let () =
        Lwd.quick_release o)
 
 let () =
-  test "BUG: after an exception escapes evaluation, the node is left stuck at \
-        Eval_progress, so the NEXT (otherwise perfectly ordinary and unrelated) `set` \
-        that invalidates it is spuriously flagged `Mutation` -- a false positive with \
-        no actual concurrent/re-entrant evaluation involved. The graph still recomputes \
-        correctly afterwards (invalidation resets the stale state to Eval_none as a \
-        side effect), so this is a diagnostic false positive, not a correctness bug. \
+  test "FIXED: after an exception escapes evaluation, the root is reset to \
+        Eval_none, so the NEXT (otherwise perfectly ordinary and unrelated) `set` \
+        that invalidates it is no longer spuriously flagged `Mutation`. \
         See FINDINGS.md."
     (fun () ->
        let x = Lwd.var 0 in
        let d = Lwd.map ~f:(fun v -> if v = 0 then failwith "boom" else v * 2) (Lwd.get x) in
        let o = Lwd.observe d in
        (try ignore (Lwd.quick_sample o) with Failure _ -> ());
+       assert (Lwd.is_damaged o);
        (* nothing is being evaluated right now: this `set` is entirely ordinary *)
        let logged = capture_unsafe (fun () -> Lwd.set x 5) in
-       assert (logged = [ `Mutation ]);
+       assert (logged = []);
        assert (Lwd.quick_sample o = 10);
        Lwd.quick_release o)
+
+(* --- Exceptions: inner nodes left at Eval_progress ---
+
+   When an exception escapes [sub_sample], every operator on the path from
+   the raising node up to the root is left at [Eval_progress]. Only the root's
+   state matters for the unsafe-mutation diagnostic; the tests below check
+   that the inner nodes left in that state are harmless: values, invalidation
+   callbacks, primitive acquire/release balance and the diagnostic must all
+   behave as if those nodes had been reset to [Eval_none].
+
+   They rely on the root itself being reset when sampling raises (see the
+   "FIXED:" test above). *)
+
+let sample_fails o =
+  match Lwd.quick_sample o with
+  | _ -> failwith "expected an exception"
+  | exception Failure msg -> assert (msg = "boom")
+
+let counting_root d =
+  let invalidations = ref 0 in
+  let o = Lwd.observe ~on_invalidate:(fun _ -> incr invalidations) d in
+  o, invalidations
+
+let no_unsafe f = assert (capture_unsafe f = [])
+
+let () =
+  test "exceptions: a deep chain left at Eval_progress recovers, recomputes once \
+        per node, and is never flagged unsafe"
+    (fun () ->
+       let x = Lwd.var 0 in
+       let calls = ref 0 in
+       let step d = Lwd.map d ~f:(fun v -> incr calls; v + 1) in
+       let leaf = Lwd.map (Lwd.get x) ~f:(fun v ->
+           incr calls; if v = 0 then failwith "boom" else v) in
+       let d = step (step (step leaf)) in
+       let o, invalidations = counting_root d in
+       sample_fails o;
+       assert (!calls = 1);
+       assert (Lwd.is_damaged o);
+       (* every invalidation walks through stuck nodes up to the root *)
+       no_unsafe (fun () -> Lwd.set x 0);
+       no_unsafe (fun () -> Lwd.set x 1);
+       (* the observer never received a value, so it is not notified *)
+       assert (!invalidations = 0);
+       calls := 0;
+       assert (Lwd.quick_sample o = 4);
+       assert (!calls = 4);
+       (* back to normal: invalidation reaches the root and caching works *)
+       no_unsafe (fun () -> Lwd.set x 2);
+       assert (!invalidations = 1);
+       calls := 0;
+       assert (Lwd.quick_sample o = 5);
+       assert (Lwd.quick_sample o = 5);
+       assert (!calls = 4);
+       Lwd.quick_release o)
+
+let () =
+  test "exceptions: failing twice in a row, then recovering, is never flagged unsafe"
+    (fun () ->
+       let x = Lwd.var 0 in
+       let d = Lwd.map (Lwd.map (Lwd.get x) ~f:(fun v ->
+           if v <= 0 then failwith "boom" else v)) ~f:succ in
+       let o, invalidations = counting_root d in
+       sample_fails o;
+       no_unsafe (fun () -> Lwd.set x (-1));
+       sample_fails o;
+       no_unsafe (fun () -> Lwd.set x 1);
+       assert (Lwd.quick_sample o = 2);
+       (* and failing again after a success *)
+       no_unsafe (fun () -> Lwd.set x 0);
+       assert (!invalidations = 1);
+       sample_fails o;
+       no_unsafe (fun () -> Lwd.set x 3);
+       assert (!invalidations = 1);
+       assert (Lwd.quick_sample o = 4);
+       Lwd.quick_release o)
+
+let () =
+  test "exceptions: a stuck node shared with another root is recomputed by that \
+        root, and invalidations then reach both roots correctly"
+    (fun () ->
+       let x = Lwd.var 0 and fail = Lwd.var true in
+       let calls = ref 0 in
+       let shared = Lwd.map2 (Lwd.get x) (Lwd.get fail) ~f:(fun v fail ->
+           incr calls; if fail then failwith "boom" else v) in
+       let mid = Lwd.map shared ~f:(fun v -> v * 10) in
+       let oa, inv_a = counting_root (Lwd.map mid ~f:succ) in
+       let ob, inv_b = counting_root mid in
+       sample_fails oa;
+       no_unsafe (fun () -> Lwd.set fail false);
+       (* [ob] recomputes the stuck [shared] and [mid] on its own *)
+       assert (Lwd.quick_sample ob = 0);
+       assert (!calls = 2);
+       (* [oa] reuses what [ob] cached *)
+       assert (Lwd.quick_sample oa = 1);
+       assert (!calls = 2);
+       no_unsafe (fun () -> Lwd.set x 7);
+       assert (!inv_a = 1 && !inv_b = 1);
+       assert (Lwd.quick_sample oa = 71);
+       assert (Lwd.quick_sample ob = 70);
+       assert (!calls = 3);
+       Lwd.quick_release oa;
+       Lwd.quick_release ob)
+
+let () =
+  test "exceptions: a stuck node with more than 4 parents (Tn trace) recovers"
+    (fun () ->
+       let x = Lwd.var 0 in
+       let shared = Lwd.map (Lwd.get x) ~f:(fun v ->
+           if v = 0 then failwith "boom" else v) in
+       let roots = List.init 6 (fun i -> counting_root (Lwd.map shared ~f:(( + ) i))) in
+       List.iter (fun (o, _) -> sample_fails o) roots;
+       no_unsafe (fun () -> Lwd.set x 1);
+       List.iteri (fun i (o, _) -> assert (Lwd.quick_sample o = i + 1)) roots;
+       no_unsafe (fun () -> Lwd.set x 2);
+       List.iteri (fun i (o, inv) ->
+           assert (!inv = 1);
+           assert (Lwd.quick_sample o = i + 2)) roots;
+       List.iter (fun (o, _) -> Lwd.quick_release o) roots)
+
+let () =
+  test "exceptions: a fix whose body raises is left at Eval_progress; invalidating \
+        it stops there, yet the root is still damaged and the fix is re-armed \
+        after recovery"
+    (fun () ->
+       let x = Lwd.var 0 in
+       let wrt = Lwd.var () in
+       let body = Lwd.map2 (Lwd.get x) (Lwd.get wrt) ~f:(fun v () ->
+           if v = 0 then failwith "boom" else v) in
+       let o, invalidations = counting_root (Lwd.map (Lwd.fix body ~wrt:(Lwd.get wrt)) ~f:succ) in
+       sample_fails o;
+       (* reaches the stuck Fix node through [body], which resets it to
+          Eval_none without propagating any further *)
+       no_unsafe (fun () -> Lwd.set x 1);
+       assert (Lwd.is_damaged o);
+       assert (Lwd.quick_sample o = 2);
+       no_unsafe (fun () -> Lwd.set x 2);
+       assert (!invalidations = 1);
+       assert (Lwd.quick_sample o = 3);
+       no_unsafe (fun () -> Lwd.set wrt ());
+       assert (!invalidations = 2);
+       assert (Lwd.quick_sample o = 3);
+       Lwd.quick_release o)
+
+let () =
+  test "exceptions: a bind whose selector raises is left at Eval_progress; an \
+        invalidation of the previous branch is ignored by the Join, but the root \
+        recovers and the old branch is released exactly once"
+    (fun () ->
+       let acquired = ref 0 and released = ref 0 in
+       let branch_var = Lwd.var 10 in
+       let old_branch =
+         Lwd.map2 (Lwd.get branch_var)
+           (Lwd.get_prim (Lwd.prim
+                            ~acquire:(fun _ -> incr acquired; 0)
+                            ~release:(fun _ _ -> incr released)))
+           ~f:( + )
+       in
+       let sel = Lwd.var `Old in
+       let d = Lwd.bind (Lwd.get sel) ~f:(function
+           | `Old -> old_branch
+           | `Fail -> failwith "boom"
+           | `New -> Lwd.return 42) in
+       let o, invalidations = counting_root d in
+       assert (Lwd.quick_sample o = 10);
+       no_unsafe (fun () -> Lwd.set sel `Fail);
+       assert (!invalidations = 1);
+       sample_fails o;
+       (* the Join is still holding [old_branch] as its intermediate; this
+          invalidation hits the Join while its child is at Eval_progress *)
+       no_unsafe (fun () -> Lwd.set branch_var 20);
+       assert (!invalidations = 1);
+       assert (Lwd.is_damaged o);
+       no_unsafe (fun () -> Lwd.set sel `Old);
+       assert (Lwd.quick_sample o = 20);
+       assert (!acquired = 1 && !released = 0);
+       no_unsafe (fun () -> Lwd.set branch_var 30);
+       assert (!invalidations = 2);
+       assert (Lwd.quick_sample o = 30);
+       no_unsafe (fun () -> Lwd.set sel `New);
+       assert (Lwd.quick_sample o = 42);
+       assert (!acquired = 1 && !released = 1);
+       Lwd.quick_release o;
+       assert (!acquired = 1 && !released = 1))
+
+let () =
+  test "exceptions: a bind whose selected branch raises keeps that branch \
+        acquired; switching away releases its primitives exactly once"
+    (fun () ->
+       let acquired = ref 0 and released = ref 0 in
+       let bad_branch =
+         Lwd.map2
+           (Lwd.get_prim (Lwd.prim
+                            ~acquire:(fun _ -> incr acquired; 0)
+                            ~release:(fun _ _ -> incr released)))
+           (Lwd.return ())
+           ~f:(fun _ () -> failwith "boom")
+       in
+       let sel = Lwd.var true in
+       let d = Lwd.bind (Lwd.get sel) ~f:(fun bad ->
+           if bad then bad_branch else Lwd.return 1) in
+       let o, _ = counting_root d in
+       sample_fails o;
+       assert (!acquired = 1 && !released = 0);
+       (* sampling again reuses the cached primitive *)
+       no_unsafe (fun () -> Lwd.set sel true);
+       sample_fails o;
+       assert (!acquired = 1 && !released = 0);
+       no_unsafe (fun () -> Lwd.set sel false);
+       assert (Lwd.quick_sample o = 1);
+       assert (!acquired = 1 && !released = 1);
+       Lwd.quick_release o;
+       assert (!acquired = 1 && !released = 1))
+
+let () =
+  test "exceptions: a prim whose acquire raises is retried on the next sample, \
+        Lwd.invalidate on it does not call release, and release stays balanced"
+    (fun () ->
+       let attempts = ref 0 and acquired = ref 0 and released = ref 0 in
+       let self = ref None in
+       let p = Lwd.prim
+           ~acquire:(fun p ->
+               self := Some p;
+               incr attempts;
+               if !attempts = 1 then failwith "boom";
+               incr acquired; !attempts)
+           ~release:(fun _ _ -> incr released)
+       in
+       let o, _ = counting_root (Lwd.map (Lwd.get_prim p) ~f:succ) in
+       sample_fails o;
+       (match !self with
+        | None -> assert false
+        | Some p -> no_unsafe (fun () -> Lwd.invalidate p));
+       assert (!released = 0);
+       assert (Lwd.quick_sample o = 3);
+       assert (!acquired = 1 && !released = 0);
+       Lwd.quick_release o;
+       assert (!acquired = 1 && !released = 1))
+
+let () =
+  test "exceptions: releasing a root right after a failed sample releases the \
+        primitives that were acquired, and the graph can be observed again"
+    (fun () ->
+       let acquired = ref 0 and released = ref 0 in
+       let p = Lwd.prim
+           ~acquire:(fun _ -> incr acquired; 1)
+           ~release:(fun _ _ -> incr released)
+       in
+       let x = Lwd.var 0 in
+       let d = Lwd.map2 (Lwd.get_prim p) (Lwd.get x) ~f:(fun a v ->
+           if v = 0 then failwith "boom" else a + v) in
+       let o, _ = counting_root (Lwd.map d ~f:succ) in
+       sample_fails o;
+       assert (!acquired = 1);
+       Lwd.quick_release o;
+       assert (!released = 1);
+       no_unsafe (fun () -> Lwd.set x 1);
+       let o', _ = counting_root (Lwd.map d ~f:succ) in
+       assert (Lwd.quick_sample o' = 3);
+       assert (!acquired = 2 && !released = 1);
+       Lwd.quick_release o';
+       assert (!released = 2))
 
 (* --- Primitives --- *)
 
