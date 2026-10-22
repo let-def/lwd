@@ -131,6 +131,11 @@ val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 (** Change the callback for the root.
     See [observe] for more details. *)
 
+exception Cycle
+(** Raised by {!sample} when a document depends on its own value, which can
+    only happen through {!join} or {!bind}. To iterate until a value
+    stabilizes, use {!fix}. *)
+
 val sample : release_queue -> 'a root -> 'a
 (** Force the computation of the value for this root.
     The value is cached, so this is idempotent until the next invalidation. *)

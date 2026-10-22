@@ -880,21 +880,130 @@ let () =
 
 (* --- absence of cycle detection --- *)
 
+let sample_cycles o =
+  match Lwd.quick_sample o with
+  | _ -> failwith "expected Lwd.Cycle"
+  | exception Lwd.Cycle -> ()
+
+let counting_prim v =
+  let acquired = ref 0 and released = ref 0 in
+  let p = Lwd.prim ~acquire:(fun _ -> incr acquired; v) ~release:(fun _ _ -> incr released) in
+  Lwd.get_prim p, acquired, released
+
 let () =
-  test "no cycle detection: a self-referential document overflows the stack rather \
-        than raising a clean error, despite `eval`'s `Eval_progress` state being \
-        documented as \"used to detect cycles\" -- no code path actually inspects \
-        that state to reject a cycle. See FINDINGS.md."
+  test "FIXED: a self-referential document raises Lwd.Cycle instead of overflowing the \
+        stack, and the root recovers once the cycle is gone. See FINDINGS.md."
     (fun () ->
        let x = Lwd.var 0 in
        let rec d =
-         lazy (Lwd.bind (Lwd.get x) ~f:(fun v -> if v > 3 then Lwd.return v else Lazy.force self_ref))
-       and self_ref = lazy (Lazy.force d) in
+         lazy (Lwd.bind (Lwd.get x) ~f:(fun v -> if v > 3 then Lwd.return v else Lazy.force d))
+       in
        let o = Lwd.observe (Lazy.force d) in
-       match with_timeout 5 (fun () -> Lwd.quick_sample o) with
-       | `Result _ -> failwith "expected Stack_overflow or a timeout, got a value instead"
-       | `Timeout -> ()
-       | exception Stack_overflow -> ())
+       let logged = capture_unsafe (fun () ->
+           (match with_timeout 5 (fun () -> sample_cycles o) with
+            | `Result () -> ()
+            | `Timeout -> failwith "timeout");
+           assert (Lwd.is_damaged o);
+           Lwd.set x 5;
+           assert (Lwd.quick_sample o = 5);
+           Lwd.set x 0;
+           sample_cycles o;
+           Lwd.set x 4;
+           assert (Lwd.quick_sample o = 4))
+       in
+       assert (logged = []);
+       Lwd.quick_release o)
+
+let () =
+  test "cycle: the intermediate closing the cycle is dropped, so the loop of references \
+        is broken and every primitive is released"
+    (fun () ->
+       let sel = Lwd.var true in
+       let p_child, acq_child, rel_child = counting_prim 0 in
+       let p_cycle, acq_cycle, rel_cycle = counting_prim 0 in
+       let rec j =
+         lazy (Lwd.bind (Lwd.map2 (Lwd.get sel) p_child ~f:(fun b _ -> b)) ~f:(fun b ->
+             if b then Lwd.map2 p_cycle (Lazy.force j) ~f:( + ) else Lwd.return 1))
+       in
+       let o = Lwd.observe (Lazy.force j) in
+       sample_cycles o;
+       (* the branch closing the cycle was released when the queue was flushed *)
+       assert (!acq_cycle = 1 && !rel_cycle = 1);
+       Lwd.set sel false;
+       assert (Lwd.quick_sample o = 1);
+       Lwd.set sel true;
+       sample_cycles o;
+       assert (!acq_cycle = 2 && !rel_cycle = 2);
+       (* nothing references the join anymore: it is released with the root *)
+       assert (!acq_child = 1 && !rel_child = 0);
+       Lwd.quick_release o;
+       assert (!acq_child = 1 && !rel_child = 1))
+
+let () =
+  test "cycle: a cycle entering the join through its child is detected, and broken by \
+        dropping the intermediate of the inner join"
+    (fun () ->
+       let v = Lwd.var () in
+       let p_child, acq_child, rel_child = counting_prim () in
+       let p_cycle, acq_cycle, rel_cycle = counting_prim 0 in
+       let rec j =
+         lazy (
+           let inner = Lwd.bind (Lwd.get v) ~f:(fun () ->
+               Lwd.map2 p_cycle (Lazy.force j) ~f:( + )) in
+           Lwd.join (Lwd.map2 p_child inner ~f:(fun () _ -> Lwd.return 0)))
+       in
+       let o = Lwd.observe (Lazy.force j) in
+       sample_cycles o;
+       assert (!acq_cycle = 1 && !rel_cycle = 1);
+       Lwd.quick_release o;
+       assert (!acq_child = 1 && !rel_child = 1))
+
+let () =
+  test "cycle: no false positives for a join reached twice in the same sample, a join \
+        whose evaluation raised, or a join released and re-acquired"
+    (fun () ->
+       let x = Lwd.var 0 in
+       let j = Lwd.bind (Lwd.get x) ~f:(fun v ->
+           if v < 0 then failwith "boom" else Lwd.return v) in
+       let o = Lwd.observe (Lwd.map2 j (Lwd.map j ~f:succ) ~f:( + )) in
+       assert (Lwd.quick_sample o = 1);
+       Lwd.set x (-1);
+       (match Lwd.quick_sample o with
+        | _ -> failwith "expected an exception"
+        | exception Failure _ -> ());
+       Lwd.set x 1;
+       let o' = Lwd.observe j in
+       assert (Lwd.quick_sample o' = 1);
+       assert (Lwd.quick_sample o = 3);
+       Lwd.quick_release o;
+       Lwd.quick_release o';
+       let o = Lwd.observe (Lwd.map j ~f:succ) in
+       assert (Lwd.quick_sample o = 2);
+       Lwd.quick_release o)
+
+let () =
+  test "cycle: no false positives when sampling again right after a join's evaluation \
+        raised, whether it raised in its child or in its intermediate"
+    (fun () ->
+       let fails o =
+         match Lwd.quick_sample o with
+         | _ -> failwith "expected an exception"
+         | exception Failure msg -> assert (msg = "boom")
+       in
+       let in_child = Lwd.bind (Lwd.get (Lwd.var ())) ~f:(fun () -> failwith "boom") in
+       let in_intermediate =
+         Lwd.bind (Lwd.get (Lwd.var ())) ~f:(fun () ->
+             Lwd.map (Lwd.get (Lwd.var ())) ~f:(fun () -> failwith "boom"))
+       in
+       List.iter (fun d ->
+           let o = Lwd.observe d in
+           fails o;
+           fails o;
+           let o' = Lwd.observe d in
+           fails o';
+           Lwd.quick_release o;
+           Lwd.quick_release o')
+         [in_child; in_intermediate])
 
 (* --- deep chains --- *)
 

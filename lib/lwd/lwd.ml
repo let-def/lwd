@@ -7,7 +7,8 @@
 (** The state of a cached value. *)
 type 'a eval =
   | Eval_none       (** Value is not computed or has been invalidated *)
-  | Eval_progress   (** Value is currently being computed (used to detect cycles) *)
+  | Eval_progress   (** Value is currently being computed (used to detect cycles,
+                        see [sub_sample]) *)
   | Eval_some of 'a (** Value is cached and valid *)
 
 (** The internal representation of a node in the dependency graph. *)
@@ -618,9 +619,21 @@ let sub_is_damaged = function
     | Eval_some _ -> false
     | Eval_progress -> assert false
 
+exception Cycle
+
+(* Raised when [node], a join being evaluated, is reached again.
+   Turned into [Cycle] once it reaches [node]'s own evaluation. *)
+exception Cycle_at of Obj.t t_
+
 (**
     The "Pull" phase. Computes the value of a node by recursively
     sampling its dependencies.
+
+    Cycles are detected on joins: other operators only refer to nodes that
+    existed before them, so every cycle goes through the intermediate of a
+    join. Reaching a join that is at [Eval_progress] means it is being
+    evaluated, since joins are reset to [Eval_none] when their evaluation
+    raises and nodes are reset to [Eval_none] when released.
 
     [sub_sample] raise if any user-provided computation raises.
     Graph will be left in a coherent state but exception will be propagated
@@ -637,6 +650,8 @@ let sub_sample queue =
       | Eval_some value ->
         activate_tracing self origin t.trace;
         value
+      | Eval_progress when (match t.desc with Join _ -> true | _ -> false) ->
+        raise (Cycle_at (obj_t self))
       | _ ->
         t.value <- Eval_progress;
         let result : b = match t.desc with
@@ -673,7 +688,14 @@ let sub_sample queue =
             let intermediate =
               (* We haven't touched any state yet,
                  it is safe for [aux] to raise *)
-              aux self x.child
+              match aux self x.child with
+              | intermediate -> intermediate
+              | exception (Cycle_at node) when node == obj_t self ->
+                t.value <- Eval_none;
+                raise Cycle
+              | exception exn ->
+                t.value <- Eval_none;
+                raise exn
             in
             begin match x.intermediate with
               | None ->
@@ -686,7 +708,21 @@ let sub_sample queue =
                 sub_acquire self intermediate;
               | Some _ -> ()
             end;
-            aux self intermediate
+            begin match aux self intermediate with
+              | result -> result
+              | exception (Cycle_at node) ->
+                (* The cycle goes through [intermediate], which (indirectly)
+                   holds a reference to [self]: drop it, or the loop of
+                   references would never be released. *)
+                x.intermediate <- None;
+                if remove_reference self intermediate then
+                  queue := obj_t intermediate :: !queue;
+                t.value <- Eval_none;
+                if node == obj_t self then raise Cycle else raise (Cycle_at node)
+              | exception exn ->
+                t.value <- Eval_none;
+                raise exn
+            end
           | Var  x -> x.binding
           | Prim t -> t.acquire (inj self)
         in
@@ -746,10 +782,14 @@ let sample queue x = match prj x with
       let value =
         match sub_sample queue self t.child with
         | value -> value
+        (* Operators left at [Eval_progress] behave like [Eval_none], but a
+           root at [Eval_progress] would flag the next invalidation as
+           unsafe. *)
+        | exception (Cycle_at _) ->
+          (* Only reachable if the cycle went through a nested sampling *)
+          t.value <- Eval_none;
+          raise Cycle
         | exception exn ->
-          (* Operators left at [Eval_progress] behave like [Eval_none], but a
-             root at [Eval_progress] would flag the next invalidation as
-             unsafe. *)
           t.value <- Eval_none;
           raise exn
       in

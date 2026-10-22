@@ -24,6 +24,10 @@ unsafe-mutation diagnostic) was fixed in `lib/lwd/lwd.ml` (`sample`). See
 `Eval_progress`, so a re-acquired graph behaves like a fresh one. See
 "Still-open bugs".
 
+**Update 5:** cycles are now detected and raise `Lwd.Cycle` (previously
+listed under "Notable, apparently-intentional behaviors"). See "Still-open
+bugs".
+
 
 ## Fixed since the initial pass (previously reported against `master`)
 
@@ -145,8 +149,9 @@ node was. Adding a handler per node in `sub_sample` would put it on the hot
 path for no observable benefit.
 
 The one consequence: `Eval_progress` on an operator does not mean "currently
-being evaluated". Cycle detection based on that state (see "No cycle
-detection" below) would need a distinct state.
+being evaluated". Joins are the exception: their evaluation resets them to
+`Eval_none` when it raises, which is what cycle detection relies on (see
+below).
 
 Pinned by: `test/test_lwd.ml`:
 - *"FIXED: after an exception escapes evaluation, the root is reset to Eval_none ..."*
@@ -197,6 +202,52 @@ longer caches the result when that evaluation finishes.
 
 Pinned by: `test/test_lwd.ml`, *"a released and re-acquired graph behaves
 like a fresh one ..."*.
+
+### FIXED: no cycle detection: a self-referential document overflowed the stack
+
+The `eval` type's `Eval_progress` constructor was commented as "used to
+detect cycles", but no code path inspected that state to *reject* a cycle.
+A document that, through `bind`/`join`, ends up depending on itself
+(constructible via a `let rec`/`Lazy.t` indirection) recursed without bound
+and overflowed the stack, rather than raising a clean, diagnosable error.
+
+Cyclic documents have no legitimate use. `map`/`map2`/`pair`/`app` can only
+refer to nodes that already exist, so every cycle closes through the
+intermediate of a join. A join only acquires its intermediate to sample it,
+so a cycle in the acquired graph is always re-entered during sampling, and
+re-entering a join has no base case: its child is cached and returns the same
+intermediate. The only way out is to mutate a var during evaluation, which is
+already flagged unsafe. Computations that need to reach a fixed point have
+`Lwd.fix`.
+
+**Fix applied:** `sub_sample` raises `Lwd.Cycle` when it reaches a join that
+is at `Eval_progress`. For that state to mean "being evaluated" on joins,
+released nodes are reset to `Eval_none` (see above), and a join whose
+evaluation raises resets itself to `Eval_none`; other operators are not
+checked, so they can stay at `Eval_progress` after an exception. The handler
+is only installed on joins, so the hot path of other operators is unchanged.
+
+Raising is not enough: by the time the cycle is detected, the intermediate
+of a join refers back to that join, and this loop of references would never
+be released. Internally, the cycle is propagated as `Cycle_at node` up to the
+evaluation of `node`, the join that was reached again; every join on that path
+whose intermediate was being evaluated drops it (and queues it for release),
+which always includes the edge closing the cycle. It is then turned into
+`Lwd.Cycle`.
+
+A cycle that only exists through a mutation during evaluation is not reported
+as a cycle: the mutation resets the join to `Eval_none`, so it is evaluated
+again rather than detected, and the mutation is flagged unsafe as before.
+
+Pinned by: `test/test_lwd.ml`:
+- *"FIXED: a self-referential document raises Lwd.Cycle instead of
+  overflowing the stack, and the root recovers once the cycle is gone"*
+- *"cycle: the intermediate closing the cycle is dropped ..."* and *"cycle: a
+  cycle entering the join through its child is detected ..."*, which check
+  that every primitive is released, both in the cycle and in the join itself.
+- *"cycle: no false positives ..."* (two tests): a join reached twice in the
+  same sample, released and re-acquired, or sampled again after its
+  evaluation raised, in its child or in its intermediate.
 
 ## Notable, apparently-intentional behaviors (not bugs, but easy to trip over)
 
@@ -261,23 +312,6 @@ callback alone, to tell which observer actually misbehaved.
 
 Pinned by: `test/test_lwd.ml`, *"unsafe status is a per-`set`-call flag, not
 per-observer ..."*.
-
-### No cycle detection: a self-referential document overflows the stack
-
-The `eval` type's `Eval_progress` constructor is commented as "used to detect
-cycles", but no code path actually inspects that state to *reject* a cycle —
-`sub_sample`'s cache-lookup match treats `Eval_progress` exactly like
-`Eval_none` (both fall into the same `| _ ->` branch that starts a fresh
-evaluation). A document that, through `bind`/`join`, ends up depending on
-itself (constructible via a `let rec`/`Lazy.t` indirection) recurses without
-bound and overflows the stack, rather than raising a clean, diagnosable
-error. `Lwd.dump_trace` exists for debugging trace shapes, but nothing calls
-it automatically on this path.
-
-Pinned by: `test/test_lwd.ml`, *"no cycle detection: a self-referential
-document overflows the stack ..."* — guarded by a wall-clock alarm so the
-testsuite itself can't hang if the behavior ever changes to "loops forever"
-instead of a stack overflow.
 
 ### `fix` has no built-in iteration cap
 
