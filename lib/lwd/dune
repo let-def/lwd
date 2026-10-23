@@ -19,3 +19,8 @@
 (executable
  (name pp)
  (modules pp))
+
+(test
+ (name lwd_test)
+ (modules lwd_test)
+ (libraries lwd))
