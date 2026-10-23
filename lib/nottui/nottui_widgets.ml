@@ -180,8 +180,8 @@ let vscroll_area ~state ~change t =
     |> Ui.resize ~h:0 ~sh:1
     |> Ui.size_sensor (fun ~w:_ ~h ->
         let tchange =
-          if !total <> (Ui.layout_spec t).Ui.h
-          then (total := (Ui.layout_spec t).Ui.h; true)
+          if !total <> Ui.layout_height t
+          then (total := Ui.layout_height t; true)
           else false
         in
         let vchange =
@@ -473,7 +473,7 @@ let flex_box ?(w=Lwd.return 80) (l: Ui.t Lwd.t list) : Ui.t Lwd.t =
     match l with
     | [] -> acc
     | ui0 :: tl ->
-      let w0 = (Ui.layout_spec ui0).Ui.w in
+      let w0 = Ui.layout_width ui0 in
       if i + w0 >= w_limit then (
         (* newline starting with ui0 *)
         Ui.join_y acc (box_render ui0 w0 tl)
@@ -513,12 +513,12 @@ let unfoldable ?(folded_by_default=true) summary (f: unit -> Ui.t Lwd.t) : Ui.t 
     ~f:(fun summary fold ->
       (* TODO: make this configurable/optional *)
       (* newline if it's too big to fit on one line nicely *)
-      let spec_sum = Ui.layout_spec summary in
-      let spec_fold = Ui.layout_spec fold in
       (* TODO: somehow, probe for available width here? *)
       let too_big =
-        spec_fold.Ui.h > 1 ||
-        (spec_fold.Ui.h>0 && spec_sum.Ui.w + spec_fold.Ui.w > 60)
+        let fold_h = Ui.layout_height fold in
+        fold_h > 1 ||
+        (fold_h > 0 &&
+         Ui.layout_width summary + Ui.layout_width fold > 60)
       in
       if too_big
       then Ui.join_y summary (Ui.join_x (string " ") fold)
@@ -595,7 +595,7 @@ let grid
     (fun row ->
        List.iteri
          (fun col_j cell ->
-           let w = (Ui.layout_spec cell).Ui.w in
+           let w = Ui.layout_width cell in
            col_widths.(col_j) <- maxi col_widths.(col_j) w)
          row)
     rows;
@@ -617,7 +617,7 @@ let grid
     List.map
       (fun row ->
          let row_h =
-           List.fold_left (fun n c -> maxi n (Ui.layout_spec c).Ui.h) 0 row
+           List.fold_left (fun n c -> maxi n (Ui.layout_height c)) 0 row
          in
          let row_h = match max_h with
            | None -> row_h

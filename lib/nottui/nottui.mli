@@ -119,6 +119,8 @@ sig
         remaining space (or 0 if the UI doesn't extend over free space)
   *)
 
+  val make_layout : ?w:int -> ?h:int -> ?sw:int -> ?sh:int -> unit -> layout_spec
+
   val pp_layout_spec : Format.formatter -> layout_spec -> unit
   (** Printing layout specification *)
 
@@ -144,6 +146,9 @@ sig
 
   val atom : image -> t
   (** Primitive surface that displays a Notty image *)
+
+  val paint : layout_spec -> (w:int -> h:int -> image) -> t
+  (** Like [atom], but adapts the image dynamically based on size *)
 
   val space : int -> int -> t
   (** Void space of dimensions [x,y]. Useful for padding and interstitial
