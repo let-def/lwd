@@ -1,0 +1,538 @@
+# Stress-testing findings for `lwd`
+
+This documents what came out of a stress-testing pass over `lwd`, `lwd_alg`,
+`lwd_table`, `lwd_seq` and `lwd_utils`. The corresponding testsuite lives in
+`test/` (`dune build test/run_tests.exe && ./_build/default/test/run_tests.exe`,
+or `dune test`); every finding below has a test pinning it down, referenced by
+name and file.
+
+**Update 1:** this pass was first run against `master` (818ce8a), then re-run
+against a branch that turned out to already contain fixes for several of the
+bugs found the first time around. This revision reflects that branch:
+findings that no longer reproduce are marked **FIXED**. The core library was
+**not modified** as part of either pass.
+
+**Update 2:** the last open bug (an exception during evaluation confusing the
+unsafe-mutation diagnostic) was fixed in `lib/lwd/lwd.ml` (`sample`). See
+"Still-open bugs".
+
+**Update 3:** `map2`/`pair`/`app` now evaluate their operands left to right
+(previously listed under "Notable, apparently-intentional behaviors"). See
+"Still-open bugs".
+
+**Update 4:** released nodes are now reset to `Eval_none` rather than
+`Eval_progress`, so a re-acquired graph behaves like a fresh one. See
+"Still-open bugs".
+
+**Update 5:** cycles are now detected and raise `Lwd.Cycle` (previously
+listed under "Notable, apparently-intentional behaviors"). See "Still-open
+bugs".
+
+**Update 6:** the pass was extended to `Lwd_alg`, a new module, which
+turned up the finding below.
+
+**Update 7:** the `Lwd_alg` finding below was then fixed directly, in
+`lib/lwd/lwd_alg.ml` (`populate_cache`/`clear_cache`). See "Fix applied"
+at the end of this section.
+
+## `Lwd_alg`
+
+`Lwd_alg` is new on this branch (not present on `master`): a generalization
+of `Lwd_seq`'s incremental reuse-by-physical-identity scheme to arbitrary
+user-defined recursive algebraic data types.
+
+### FIXED: incremental reuse only ever fired when the top-level input was entirely unchanged — any real edit forced a full recompute of the whole tree
+
+The module's own documentation is explicit about the contract:
+
+> \[...\] then `y' = f x'` recomputes just the delta between `y'` and `y`.
+
+This did not hold. Built a plain binary tree (`Leaf of int | Node of tree
+Lwd_alg.t * tree Lwd_alg.t`, wired up with a `fold_tree : tree Lwd_alg.foldable`
+per the intended usage pattern), and a memoizing sum via `Lwd_alg.transform`.
+Changing a *single* leaf, while passing the *exact same, physically unchanged*
+`Lwd_alg.t` values for every other leaf, re-invoked the map function for
+**every node in the tree**, including leaves with no relationship whatsoever
+to the one that changed:
+
+```ocaml
+let l1 = leaf 1 and l2 = leaf 2 and l3 = leaf 3 in
+let t1 = node (node l1 l2) l3 in
+ignore (f t1);                          (* 5 calls: 2 Node + 3 Leaf *)
+let l3' = leaf 30 in
+let t2 = node (node l1 l2) l3' in       (* l1, l2 reused as-is *)
+ignore (f t2);                          (* was 5 calls again, not 3 *)
+```
+
+Reusing an intermediate (non-leaf) node physically unchanged didn't help
+either — the same full recompute happened whether the untouched subtree was
+one leaf, several leaves, or a whole reused `Node`. It didn't matter whether
+the call went through `transform` or through `Resumption.of_map`/`.next`
+(ruling out a `transform`-specific glue bug — both share the same
+`delta_transform`/`apply` machinery).
+
+**Root cause** (lwd_alg.ml): a `transform`/`Resumption` chain records exactly
+*one* top-level `Trace` per call — the one produced by the single outermost
+`apply` at the root — and nests everything else inside its `sub` field.
+`populate_cache`, which is what makes a previously-computed result available
+for reuse on the next call, used to only recurse into `tr.sub` if `tr.input`
+(the trace's *own* root) was currently marked `mark_new`/`mark_both`:
+
+```ocaml
+(* before the fix *)
+let rec populate_cache (Trace tr as trace) =
+  if tr.input.mark land mark_new = mark_new then (
+    tr.input.cache <- More {trace; next = tr.input.cache};
+    List.iter populate_cache tr.sub
+  )
+```
+
+But `'a Lwd_alg.t` is an immutable record (`value` is not a `mutable` field),
+so the *only* way to represent "the tree changed somewhere below the root" is
+to allocate a fresh wrapper for every ancestor from the change site up to the
+root — there is no other way to thread an updated child into a `Node`. That
+means the top-level root passed to `transform`/`Resumption.next` is, by
+construction, *never* the same physical object as last time unless literally
+nothing changed anywhere. And the moment it isn't, `populate_cache`'s check
+used to fail at the very first (root) level, so it never even looked at
+`tr.sub` — the reuse opportunity for every deeper, genuinely-unchanged node
+was discarded before it was ever examined, regardless of how much of the
+tree was actually shared.
+
+`Lwd_seq`'s own reducer does not have this problem: `Marking.unsafe_traverse`
+and `Reducer.diff` traverse the *raw new sequence* and look up reuse
+independently at every node (via a `shared_x` table keyed by identity found
+during a whole-tree BFS), not gated by whether some ancestor trace was also
+reused. Given `Lwd_alg` is pitched as generalizing exactly this behavior to
+custom types, and confirmed working for `Lwd_seq` under the equivalent
+"rebuild the spine, reuse the leaves" pattern (see `test_lwd_seq.ml`'s
+incrementality test), this looked like a real gap in the new design rather
+than an intentional restriction.
+
+**Consequence for `finalize`:** since `populate_cache` never marked the
+dropped leaves as reusable, `clear_cache` never got to walk their (empty)
+cache and never invoked their `finalize` callback either — dropped nodes were
+just silently abandoned as ordinary garbage rather than explicitly finalized.
+Since `finalize` is meant for resource cleanup (releasing something tied to a
+transformed value, e.g. disposing a widget), those resources would never have
+been released via this hook whenever a subtree was unnecessarily recomputed
+instead of genuinely dropped — which, per the above, was *always*, for any
+change anywhere in the tree.
+
+**Net effect (before the fix):** for any recursive type built the natural way
+(immutable constructors wrapping `Lwd_alg.t` children — there's no other way
+to build one), `transform`/`Resumption` provided no incremental benefit over
+recomputing from scratch on every call, other than the degenerate case of the
+exact same input recurring unchanged.
+
+#### Fix applied
+
+A first attempt made `populate_cache` and `clear_cache` recurse into `tr.sub`
+unconditionally. That restored reuse, but walked (and allocated a cache cell
+for) every trace of the old computation on every edit, turning an O(delta)
+update into an O(size of the tree) one; it also finalized the
+sub-computations of reused traces, which are still live.
+
+The actual fix keeps the walk inside the region visited by marking, which is
+O(delta), like `Lwd_seq.Reducer`'s `unmark_old`:
+
+- a trace whose input is `mark_old` (dropped) is walked through: its
+  sub-traces may be reusable, and it is finalized afterward;
+- the first trace met on a shared input (`mark_new` bit set) is offered for
+  reuse and the walk stops there: if claimed, its sub-computations come along
+  with it; if not, it is finalized together with its sub-traces;
+- traces of unmarked inputs are not offered (they live below a shared value);
+  if one is owned by a dropped trace, it is finalized with it.
+
+Since nothing below a shared value is offered, a trace is never claimed
+twice, so traces always form a tree and finalizing an unclaimed trace with
+its sub-traces never touches a live one. Two smaller issues were fixed along
+the way: when `told == tnew`, marking now stops at the root instead of
+traversing the whole value; and a transform that raises no longer finalizes
+the old traces, which are the ones the next transform starts from.
+
+Verified with the demo above (now only `Leaf 30` and the outer `Node` get
+recomputed), and with a 200-case randomized property test
+(`test/test_lwd_alg.ml`, *"randomized: single-leaf edits on random tree
+shapes always recompute exactly the edited leaf's path to the root ..."*)
+that builds random tree shapes, performs random single-leaf edits, and
+checks on every round both that the result is correct and that the number of
+`map.func` invocations is *exactly* the depth of the edited leaf — no more
+(wasted work), no less (incorrect reuse).
+
+Pinned by: `test/test_lwd_alg.ml`:
+- *"FIXED: changing a single leaf only recomputes that leaf and its ancestors on the path to the root ..."*
+- *"FIXED: the same delta-only recompute happens through Resumption.of_map/.next ..."*
+- *"FIXED: reusing an intermediate (non-leaf) wrapper unchanged now correctly avoids recomputing it ..."*
+- *"FIXED: finalize now fires for a leaf that is genuinely dropped ..."*
+- *"FIXED: dropping a whole subtree (not just a single leaf) finalizes every leaf underneath it ..."*
+- *"two different maps applied to the SAME tree keep independent caches ..."*
+- *"a single-leaf edit visits O(depth) nodes, not O(size of the tree)"*
+- *"transforming the same value again does not traverse it"*
+- *"finalize is not called on the sub-computations of a reused computation"*
+- *"an exception during a delta transform does not finalize the old computations ..."*
+- *"randomized: single-leaf edits on random tree shapes always recompute exactly the edited leaf's path to the root ..."*
+- *"calling the SAME unchanged (physically identical) top-level value again is fully cached ..."* — already worked before the fix, included for contrast.
+
+Standalone, runnable repro (now a demonstration of the fix): `examples/alg_bug_demo.ml`.
+
+## Fixed since the initial pass (previously reported against `master`)
+
+### `Lwd_table.next`/`prev` used to crash on a row that was bound and then removed
+
+Fixed by commit `3b17bcf` ("Lwd_table: fix `{prev,next}` on deleted rows"),
+which adds a `| Node {parent = Leaf; _} -> None` case ahead of the
+tree-walking logic in both functions. `lwd_table.mli` documents `next`/`prev`
+as returning `None` "if the input row is unbound"; this used to only hold for
+a row that was *never* bound, and crashed with `Assert_failure` for a row
+that used to be bound and became unbound via `remove` or `clear` (root cause:
+`remove`/`clear` sever a node by pointing its `.parent` straight at `Leaf`,
+which the fallback tree-walk in the old `next`/`prev` treated as an
+impossible case).
+
+Pinned (as a fix-confirmation, not a bug pin) by: `test/test_lwd_table.ml`,
+*"FIXED: next/prev on a row that WAS bound and became unbound via
+remove/clear now correctly return None ..."*.
+
+### `Lwd_table.row` structural-equality hazard now has a sanctioned escape hatch
+
+`'a Lwd_table.row` is still a genuinely cyclic mutable value (a tree node
+with a `parent` back-pointer), so comparing two rows with structural
+equality/`compare` is still unsafe in principle — see the still-relevant
+writeup under finding #9 below. What's new: `lwd_table.mli` now exposes
+`equal_row : 'a row -> 'a row -> bool` (`= (==)`), a documented, sanctioned
+way to compare rows that sidesteps the hazard entirely. Pinned by:
+`test/test_lwd_table.ml`, *"equal_row is the safe (physical-equality-based)
+way to compare rows ..."*.
+
+### The invalidation-safety diagnostic no longer misfires on `fix`'s own internal self-mutation
+
+On `master`, three of the scenarios upstream's own new `lib/lwd/lwd_test.ml`
+exercises (`fix_stabilization_loop`, `fix_with_dynamic_bind`,
+`fix_dirty_bit_clearance`) failed with "Unexpected unsafe action": every
+mutation of `fix`'s witness variable from within its own body — the entire
+point of `fix` — was flagged as an unsafe re-entrant mutation. Commits
+`2b1884b` ("Fix too optimistic invalidation logic") and `10e2ff7`
+("Simplify and correct fix logic") replaced the old `Strong`/`Fragile`
+sensitivity-propagation scheme with a much simpler model: invalidating a
+`Fix` node that's mid-evaluation just quietly resets it to `Eval_none`
+(`Operator {desc = Fix _; value = Eval_progress; _} -> t.value <- Eval_none`)
+without flagging anything or propagating further. Verified: all 12 tests in
+`lib/lwd/lwd_test.ml` pass on `fixes`; running that same file against
+`master` reproduces the 3 failures above.
+
+### `fix` is now correctly "re-armed" after it converges
+
+On `master`, once a `fix` computation stabilized, a later, independent
+mutation of the witness variable could fail to reach the observing root at
+all — `is_damaged` stayed `false` and `on_invalidate` was never called, even
+though a later explicit re-sample *would* still have recomputed correctly.
+This is a real hazard for reactive-UI-style consumers that rely on
+`on_invalidate` to know when to schedule a re-render: the notification is
+what silently goes missing, not the underlying data. Root cause and fix:
+commits `7390d23`/`6a1f474` ("fix was not re-armed after convergence"),
+together with `sub_sample`'s `Fix` case now unconditionally caching
+(`t.value <- Eval_some result`) after its internal convergence loop, and
+separately self-invalidating (`do_invalidate self`) if `doc` is *still*
+damaged once the witness has stabilized.
+
+Verified directly: reproduced the missed-invalidation symptom against
+`master` (`is_damaged` stays `true` from the very first sample onward, and
+`on_invalidate` is not called for the second logical change) with a
+standalone script mirroring this exact scenario; it does not reproduce on
+`fixes`. Pinned by: `test/test_lwd.ml`, *"fix: is correctly \"re-armed\"
+after convergence ..."*, adapted from upstream's own `test_fix_dirty_bit_clearance`.
+
+### Reference removal used to stay deferred inside the release queue
+
+Commit `85c90f7` ("Separate removing reference from releasing graph"):
+previously, both *removing a reference* (decrementing a node's trace) and
+*actually releasing it* (tearing down children, calling `Prim.release`) were
+deferred together into the release queue. If a `bind`'s inner graph stayed
+referenced-but-queued longer than expected, this could cause spurious
+invalidations. Now `remove_reference` runs synchronously at the point of
+disconnection, and only the deep release is deferred; a new `TA` trace state
+("like `T0` but the node is still acquired — it is in a release queue
+somewhere") tracks that distinction, fixed alongside in `95c580a` ("fix
+assertions in nodes acquired while in release queue"). This was originally
+caught by upstream's own `test_fix_with_bind`.
+
+A stress test bouncing a `bind` back and forth between three branches many
+times without ever flushing the release queue in between (`test/test_lwd.ml`,
+*"bind: switching back and forth between branches without flushing the
+release queue ..."*) passes on `fixes`; note this exact sequence was checked
+and does *not* happen to reproduce a failure on pre-fix code either — it's
+kept as a general stress test of the same area, not a proven regression test
+for this specific historical bug.
+
+## Still-open bugs
+
+None.
+
+### FIXED: an exception during evaluation left the root's diagnostic state confused
+
+If a computation raised while being evaluated, `sample`/`sub_sample` never
+got to run the code that caches the result, so both the failing node *and the
+observing root itself* were left at `Eval_progress`. The root being stuck this
+way is what mattered: the very next time anything invalidated it — even a
+completely unrelated, perfectly ordinary `Lwd.set` — `invalidate_node`'s
+`Root` case saw `Eval_progress` and unconditionally set
+`status.unsafe <- true`, exactly as if a real re-entrant sample were in
+progress. Recomputation itself was correct; only the diagnostic was a false
+positive.
+
+**Fix applied:** `sample` now resets the root to `Eval_none` when
+`sub_sample` raises, then re-raises. This costs one exception handler per
+`sample` call, not per node.
+
+The inner operators on the path of the exception are deliberately left at
+`Eval_progress`: for an operator that is not being evaluated, that state
+behaves like `Eval_none`. `sub_sample` recomputes it, and `invalidate_node` resets
+and propagates it. The two cases that stop propagation, `Fix` and the `Join`
+carve-out, are harmless there, because a stuck node never has an ancestor
+holding a cached value derived from it: every ancestor on the exception's
+path is stuck too, and any other ancestor was already invalidated when the
+node was. Adding a handler per node in `sub_sample` would put it on the hot
+path for no observable benefit.
+
+The one consequence: `Eval_progress` on an operator does not mean "currently
+being evaluated". Joins are the exception: their evaluation resets them to
+`Eval_none` when it raises, which is what cycle detection relies on (see
+below).
+
+Pinned by: `test/test_lwd.ml`:
+- *"FIXED: after an exception escapes evaluation, the root is reset to Eval_none ..."*
+- the *"exceptions: ..."* tests that follow it, which check that inner nodes
+  left at `Eval_progress` are harmless: deep chains, repeated failures,
+  stuck nodes shared between roots or with more than 4 parents (`Tn`
+  traces), `fix` and `bind` (selector or branch raising), prims whose
+  `acquire` raises, and releasing a root right after a failed sample. Each
+  checks values, `on_invalidate` calls, prim acquire/release balance and the
+  unsafe-mutation logger.
+
+### FIXED: `map2`/`pair`/`app` evaluated their right operand before their left one
+
+`sub_sample`'s cases for these three combinators were written as direct
+nested applications, e.g. `f (aux self x) (aux self y)` for `Map2`. OCaml's
+evaluation order for function arguments is unspecified by the language, and
+both the bytecode and native backends evaluate `f a b` as "compute `b`, then
+`a`, then apply" — so for `Lwd.map2 lhs rhs ~f`, `rhs` was sampled before
+`lhs`, `Lwd.pair a b` sampled `b` before `a`, and `Lwd.app fdoc xdoc`
+sampled `xdoc` before `fdoc`. Since this fell out of an unspecified language
+behavior, it was not guaranteed to be stable across OCaml
+versions/optimization settings either.
+
+**Fix applied:** operands are now bound with `let` in source order, so they
+are evaluated left to right; `lwd.mli` documents this for `map2` and `app`
+(and `pair`, defined as a `map2`). This matches the order in which
+`sub_acquire` and `sub_release` already visit them.
+
+Pinned by: `test/test_lwd.ml`, *"FIXED: map2/pair/app evaluate their
+operands left to right ..."*, which also checks a nested combination.
+
+### FIXED: a released and re-acquired graph did not behave like a fresh one
+
+`sub_release` left released nodes at `Eval_progress` instead of `Eval_none`
+(since `e299f31`, without a stated reason). The two states only differ in
+`invalidate_node`: `Eval_none` stops an invalidation, `Eval_progress` resets
+the node and propagates to its parents. A released node has no parents, but
+once a root acquires the graph again, the parts not evaluated yet are
+acquired but not computed, and user code running meanwhile could observe the
+difference. For instance, in a `map2` whose left operand sets a var read by
+the right one, the mutation was not flagged on a fresh graph but was flagged
+as unsafe after a release and re-observe.
+
+**Fix applied:** `sub_release` resets released nodes to `Eval_none`. This
+also keeps `Eval_progress` meaningful (see "No cycle detection" below). As
+a side effect, a node released in the middle of its own evaluation no
+longer caches the result when that evaluation finishes.
+
+Pinned by: `test/test_lwd.ml`, *"a released and re-acquired graph behaves
+like a fresh one ..."*.
+
+### FIXED: no cycle detection: a self-referential document overflowed the stack
+
+The `eval` type's `Eval_progress` constructor was commented as "used to
+detect cycles", but no code path inspected that state to *reject* a cycle.
+A document that, through `bind`/`join`, ends up depending on itself
+(constructible via a `let rec`/`Lazy.t` indirection) recursed without bound
+and overflowed the stack, rather than raising a clean, diagnosable error.
+
+Cyclic documents have no legitimate use. `map`/`map2`/`pair`/`app` can only
+refer to nodes that already exist, so every cycle closes through the
+intermediate of a join. A join only acquires its intermediate to sample it,
+so a cycle in the acquired graph is always re-entered during sampling, and
+re-entering a join has no base case: its child is cached and returns the same
+intermediate. The only way out is to mutate a var during evaluation, which is
+already flagged unsafe. Computations that need to reach a fixed point have
+`Lwd.fix`.
+
+**Fix applied:** `sub_sample` raises `Lwd.Cycle` when it reaches a join that
+is at `Eval_progress`. For that state to mean "being evaluated" on joins,
+released nodes are reset to `Eval_none` (see above), and a join whose
+evaluation raises resets itself to `Eval_none`; other operators are not
+checked, so they can stay at `Eval_progress` after an exception. The handler
+is only installed on joins, so the hot path of other operators is unchanged.
+
+Raising is not enough: by the time the cycle is detected, the intermediate
+of a join refers back to that join, and this loop of references would never
+be released. Internally, the cycle is propagated as `Cycle_at node` up to the
+evaluation of `node`, the join that was reached again; every join on that path
+whose intermediate was being evaluated drops it (and queues it for release),
+which always includes the edge closing the cycle. It is then turned into
+`Lwd.Cycle`.
+
+A cycle that only exists through a mutation during evaluation is not reported
+as a cycle: the mutation resets the join to `Eval_none`, so it is evaluated
+again rather than detected, and the mutation is flagged unsafe as before.
+
+Pinned by: `test/test_lwd.ml`:
+- *"FIXED: a self-referential document raises Lwd.Cycle instead of
+  overflowing the stack, and the root recovers once the cycle is gone"*
+- *"cycle: the intermediate closing the cycle is dropped ..."* and *"cycle: a
+  cycle entering the join through its child is detected ..."*, which check
+  that every primitive is released, both in the cycle and in the join itself.
+- *"cycle: no false positives ..."* (two tests): a join reached twice in the
+  same sample, released and re-acquired, or sampled again after its
+  evaluation raised, in its child or in its intermediate.
+
+## Notable, apparently-intentional behaviors (not bugs, but easy to trip over)
+
+All of the following were re-verified against `fixes` and still hold exactly
+as originally described against `master` — the invalidation-logic rewrite
+changed *how* unsafe mutations are detected (see above) but not these
+user-visible outcomes.
+
+### Cross-sibling mutation in `map2`/`pair`/`app` is flagged unsafe, unless the target was never evaluated
+
+A comment above `invalidate_node` in `lwd.ml` floats the idea of treating
+`map2`/`pair`/`app` operands as independent enough that one could mutate a
+variable the other one reads, since they're "morally" evaluated in parallel,
+but explicitly says this was never implemented. Still true post-rewrite:
+the right operand mutating a dependency of the left one, which was already
+read, is flagged `` `Mutation `` exactly like any other re-entrant mutation,
+because the invalidation propagates up to the currently-`Eval_progress` root.
+
+The left operand mutating a dependency of the right one depends on whether
+that dependency holds a cached value. If it was never evaluated (typically on
+the first sample), `invalidate_node` stops at its `Eval_none` state: nothing
+is flagged, and the right operand, which runs next, reads the new value. On
+later samples the dependency is cached, so the same mutation is flagged. The
+diagnostic is conservative here: the value read is not stale either way.
+Before operands were evaluated left to right, the same applied with the roles
+swapped.
+
+Pinned by: `test/test_lwd.ml`, *"map2: the right operand mutating a
+dependency of the left one ..."* and *"map2: the left operand mutating a
+dependency of the right one is only flagged ..."*.
+
+### The "safe inner invalidation during a Join's outer evaluation" carve-out is real, and narrow
+
+`invalidate_node` has a special case: while the *selector* half of a `bind`
+(the "outer" document that decides which branch to run) is still being
+evaluated, invalidating the *previously selected* branch is explicitly treated
+as safe and not flagged, because that branch is about to be replaced/dropped
+anyway. This is a real, working code path, not just aspirational — confirmed
+with a scenario that mutates a variable the *old* branch depends on while the
+selector closure itself is still running.
+
+The carve-out is narrow, though: mutating a variable that the *newly
+selected* branch depends on, during that branch's own (separate) evaluation
+pass, is **not** covered by it and is flagged `` `Mutation `` like anything
+else.
+
+Pinned by: `test/test_lwd.ml`, *"bind: mutating a var only the OLD
+(about-to-be-replaced) branch depends on ... IS considered safe"* and
+*"bind: mutating a var read by the freshly-selected branch ..."*.
+
+### The "unsafe mutation" diagnostic is a per-`set`-call flag, not per-observer
+
+`do_invalidate` threads a single `status` record through the *entire*
+invalidation fan-out of one `Lwd.set` call. If that one `set` reaches several
+independent observers of the same variable, and even just one of them happens
+to be behaving re-entrantly (e.g. it's the classic "read a var, then set it
+again" pattern), the whole call is logged as unsafe — including for
+completely unrelated, perfectly well-behaved observers that were invalidated
+by the very same `set`. The unrelated observers still recompute correctly;
+only the diagnostic is coarse-grained. There is no way, from the logger
+callback alone, to tell which observer actually misbehaved.
+
+Pinned by: `test/test_lwd.ml`, *"unsafe status is a per-`set`-call flag, not
+per-observer ..."*.
+
+### `fix` has no built-in iteration cap
+
+`Lwd.fix` retries its body for as long as the `wrt` witness keeps changing
+(now via a tail-recursive internal `loop`, still with no maximum iteration
+count). A `fix` whose body keeps invalidating its own witness spins
+indefinitely (confirmed at several hundred thousand iterations per second;
+bounded in the test only by an external wall-clock alarm). This matches the
+documented semantics ("tries to stabilize... by repeating evaluation until
+the witness stabilizes"), but it's worth calling out explicitly since it
+means a convergence bug in application code turns into a hang, not a bounded
+error.
+
+Pinned by: `test/test_lwd.ml`, *"fix: a non-convergent computation is not
+bounded ..."*, contrasted with the convergent case in *"fix: converges in the
+expected number of rounds ..."*.
+
+### `Lwd_table.row` is a cyclic mutable value: never compare it with `(=)`/`compare`
+
+`'a Lwd_table.row` (= `'a Lwd_table.t`, the internal `tree` type) is a
+balanced-tree node that holds a mutable `parent` back-pointer alongside its
+`left`/`right` children — a live, bound row is a genuinely cyclic OCaml value.
+Comparing two such values with structural equality/comparison (`(=)`,
+`compare`, `Hashtbl.hash`-based structures, `[@@deriving eq]`, etc.) walks
+that cycle. OCaml's generic `compare`/`(=)` has no cycle detection; in
+practice this doesn't stack-overflow (the runtime uses an explicit,
+heap-allocated worklist rather than the C stack specifically so it can handle
+deep-but-acyclic structures) — instead the worklist grows forever and the
+process dies with `Out_of_memory`.
+
+This is easy to reach by accident: `Lwd_table.next r1 = Some r2` looks like an
+entirely ordinary, innocuous comparison. It only crashes when both sides are
+`Some _` (the discriminant-only fast path for `None` vs `Some _` never
+touches the row's contents); comparing against `None`, or checking
+`is_bound`/`get`, is unaffected. As of this branch there's a documented,
+sanctioned fix: always compare rows with the new `Lwd_table.equal_row`
+(physical equality) — see "Fixed since the initial pass" above.
+
+This was hit directly while writing the testsuite itself (see
+`test/test_lwd_table.ml`'s `row_opt_eq` helper and its doc comment); it is
+*not* included as an automated regression test, since deliberately inducing
+an `Out_of_memory` condition inside a shared test process is inherently
+unreliable across machines/heap sizes and risks destabilizing whatever runs
+after it. Minimal repro, run standalone:
+```ocaml
+let t = Lwd_table.make () in
+let r1 = Lwd_table.append t ~set:1 in
+let r2 = Lwd_table.append t ~set:2 in
+let _r3 = Lwd_table.append t ~set:3 in
+Lwd_table.unset r2;
+ignore (Lwd_table.next r1 = Some r2) (* Out_of_memory *)
+```
+
+## Things that were suspected to be bugs, but weren't
+
+While iterating on the testsuite itself, two things looked at first like
+library bugs and turned out to be bugs in the test code instead — worth
+recording so the reasoning isn't lost:
+
+- An early property-test failure for `Lwd_table` (order mismatches between a
+  naive list model and the real table after `before`/`after` operations)
+  turned out to be an off-by-one in the test's own shadow model: the `Before`
+  action spliced the `live`-rows list using `after`-style index boundaries
+  while splicing the plain-value model list using `before`-style boundaries.
+  Once aligned, 300 random `prepend/append/before/after/remove/set/clear`
+  scenarios against `Lwd_table` all pass — see *"lwd_table: order and
+  incremental reduction agree with a naive model ..."*.
+- An early version of the "map2/pair/app evaluation order" test above used
+  `Lwd.map ~f (Lwd.return ())` to build its instrumented operands. `map`
+  over a `Pure` value is folded into a new `Pure` value *eagerly*, at graph
+  construction time (`Pure vx -> Pure (f vx)` in `lwd.ml`), bypassing
+  `sub_sample` entirely — so the test was unknowingly measuring OCaml's
+  argument-evaluation order for the *test's own* function calls, not `lwd`'s
+  operand evaluation order at all. It happened to agree with the
+  answer at the time by coincidence (both were instances of the same
+  right-to-left convention). Rewritten to use `Lwd.var`/`Lwd.get` as the base document,
+  which forces a genuine, lazily-evaluated `Operator` node.

@@ -22,7 +22,8 @@ val map : 'a t -> f:('a -> 'b) -> 'b t
 
 val map2 : 'a t -> 'b t -> f:('a -> 'b -> 'c) -> 'c t
 (** [map2 d1 d2 ~f] is the document that has value [f x1 x2] whenever
-    [d1] has value [x1] and [d2] has value [x2]. *)
+    [d1] has value [x1] and [d2] has value [x2].
+    [d1] is evaluated before [d2]. *)
 
 val join : 'a t t -> 'a t
 (** Monadic operator [join d] is the document pointed to by document [d].
@@ -34,7 +35,8 @@ val bind : 'a t -> f:('a -> 'b t) -> 'b t
 
 val app : ('a -> 'b) t -> 'a t -> 'b t
 (** Applicative: [app df dx] is the document that has value [f x]
-    whenever [df] has value [f] and [dx] has value [x]. *)
+    whenever [df] has value [f] and [dx] has value [x].
+    [df] is evaluated before [dx]. *)
 
 val pair : 'a t -> 'b t -> ('a * 'b) t
 (** [pair a b] is [map2 (fun x y -> (x, y)) a b]. *)
@@ -128,6 +130,11 @@ val observe : ?on_invalidate:('a -> unit) -> 'a t -> 'a root
 val set_on_invalidate : 'a root -> ('a -> unit) -> unit
 (** Change the callback for the root.
     See [observe] for more details. *)
+
+exception Cycle
+(** Raised by {!sample} when a document depends on its own value, which can
+    only happen through {!join} or {!bind}. To iterate until a value
+    stabilizes, use {!fix}. *)
 
 val sample : release_queue -> 'a root -> 'a
 (** Force the computation of the value for this root.
