@@ -29,21 +29,29 @@ val v : ?d:document -> ?at:At.t col -> ?ev:handler col -> tag_name -> t col -> t
 
 type root
 
-val insert_sibling : [ `Before | `After | `Replace ] -> t -> t Lwd.t -> root
+type pacer = (unit -> unit) -> unit
+(** A [pacer] decides the maximum sampling frequency. The default pacer uses
+    [G.request_animation_frame], which is meant for UI rendering. For some
+    computations other javascript scheduling functions such as
+    [queueMicrotask()], which are not tied to the browser's refresh rate might
+    be a better fit. *)
+
+val insert_sibling :
+  ?pacer:pacer -> [ `Before | `After | `Replace ] -> t -> t Lwd.t -> root
 (** Inserts a reactive element in the DOM, right before/after/instead of the
     given element. The element is updated until the return value is passed to
     {!release}. *)
 
-val set_children : t -> t col -> root
+val set_children : ?pacer:pacer -> t -> t col -> root
 (** Sets a set of reactive elements as the children of the given element. The
     set is updated until the return value is passed to {!release}. *)
 
-val append_child : t -> t Lwd.t -> root
+val append_child : ?pacer:pacer -> t -> t Lwd.t -> root
 (** Inserts a reactive element in the DOM, as last child of the given
     element. The element is updated until the return value is passed to
     {!release}. *)
 
-val prepend_child : t -> t Lwd.t -> root
+val prepend_child : ?pacer:pacer -> t -> t Lwd.t -> root
 (** Inserts a reactive element in the DOM, as first child of the given
     element. The element is updated until the return value is passed to
     {!release}. *)

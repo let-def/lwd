@@ -412,36 +412,38 @@ let wbr = void_cons Name.wbr
 
 type root = t Lwd.root
 
-let insert first_insert anchor reactive =
+type pacer = (unit -> unit) -> unit
+
+let animation_frame_pacer f =
+  G.request_animation_frame (fun _ -> f ()) |> ignore
+
+let insert ?(pacer=animation_frame_pacer) first_insert anchor reactive =
   let root = Lwd.observe reactive in
   let last_element = ref (Lwd.quick_sample root) in
   first_insert anchor [!last_element];
   let on_invalidate _ =
-    let _ : int =
-      G.request_animation_frame @@ fun _ ->
-      let new_element = Lwd.quick_sample root in
-      if !last_element = new_element then ()
-      else (
-        El.insert_siblings `Replace !last_element [ new_element ];
-        last_element := new_element
-      )
-    in
-    ()
+    pacer @@ fun () ->
+    let new_element = Lwd.quick_sample root in
+    if !last_element = new_element then ()
+    else (
+      El.insert_siblings `Replace !last_element [ new_element ];
+      last_element := new_element
+    )
   in
   Lwd.set_on_invalidate root on_invalidate;
   root
 
-let insert_sibling where anchor reactive =
+let insert_sibling ?pacer where anchor reactive =
   let first_insert = El.insert_siblings where in
-  insert first_insert anchor reactive
+  insert ?pacer first_insert anchor reactive
 
-let append_child anchor reactive =
-  insert El.append_children anchor reactive
+let append_child ?pacer anchor reactive =
+  insert ?pacer El.append_children anchor reactive
 
-let prepend_child anchor reactive =
-  insert El.prepend_children anchor reactive
+let prepend_child ?pacer anchor reactive =
+  insert ?pacer El.prepend_children anchor reactive
 
-let set_children el children =
+let set_children ?(pacer= animation_frame_pacer) el children =
   let reactive =
     let children, impure_children = consume_children children in
     match impure_children with
@@ -451,11 +453,8 @@ let set_children el children =
   let root = Lwd.observe reactive in
   let _el = Lwd.quick_sample root in
   let on_invalidate _ =
-    let _ : int =
-      G.request_animation_frame @@ fun _ ->
-      let _el = Lwd.quick_sample root in
-      ()
-    in
+    pacer @@ fun () ->
+    let _el = Lwd.quick_sample root in
     ()
   in
   Lwd.set_on_invalidate root on_invalidate;
