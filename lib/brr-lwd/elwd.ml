@@ -417,6 +417,12 @@ type pacer = (unit -> unit) -> unit
 let animation_frame_pacer f =
   G.request_animation_frame (fun _ -> f ()) |> ignore
 
+let queue_micro_task w (f : unit -> unit) =
+  Jv.call (Window.to_jv w) "queueMicrotask" [| Jv.callback ~arity:1 f |]
+  |> ignore
+
+let micro_task_pacer f = queue_micro_task G.window f
+
 let insert ?(pacer=animation_frame_pacer) first_insert anchor reactive =
   let root = Lwd.observe reactive in
   let last_element = ref (Lwd.quick_sample root) in

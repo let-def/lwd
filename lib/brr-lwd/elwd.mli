@@ -36,6 +36,10 @@ type pacer = (unit -> unit) -> unit
     [queueMicrotask()], which are not tied to the browser's refresh rate might
     be a better fit. *)
 
+val animation_frame_pacer : pacer
+
+val micro_task_pacer : pacer
+
 val insert_sibling :
   ?pacer:pacer -> [ `Before | `After | `Replace ] -> t -> t Lwd.t -> root
 (** Inserts a reactive element in the DOM, right before/after/instead of the
